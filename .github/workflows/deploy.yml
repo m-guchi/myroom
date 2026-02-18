@@ -57,17 +57,18 @@ jobs:
             set -e
             cd ${{ secrets.TARGET_DIR }}
             
-            # Activate venv if exists
-            if [ -d "venv" ]; then
-              source venv/bin/activate
+            # Create venv if not exists
+            if [ ! -d "venv" ]; then
+              echo "Creating virtual environment..."
+              python3 -m venv venv
             fi
             
-            # Update Python dependencies
-            pip install -r requirements.txt
+            # Update Python dependencies using venv pip explicitly
+            ./venv/bin/pip install -r requirements.txt
             
             # Run migrations (ensure DB schema is up to date)
             if [ -f "migrate_db.py" ]; then
-                python migrate_db.py
+                ./venv/bin/python migrate_db.py
             fi
             
             # Restart service using PM2 (No sudo required)
@@ -78,6 +79,6 @@ jobs:
               npx pm2 start ecosystem.config.js
             fi
             
-            # Save PM2 process list to resurrect on reboot (optional, requires initial setup)
+            # Save PM2 process list (optional)
             # npx pm2 save
           EOF
