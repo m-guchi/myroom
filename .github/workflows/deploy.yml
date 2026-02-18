@@ -35,8 +35,12 @@ jobs:
 
       - name: Deploy with rsync
         run: |
-          rsync -avz --delete \
-            -e "ssh -p ${{ secrets.SSH_PORT }}" \
+          # Ensure target directory exists
+          ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no ${{ secrets.USERNAME }}@${{ secrets.HOST }} "mkdir -p ${{ secrets.TARGET_DIR }}"
+
+          # Sync files
+          rsync -avz \
+            -e "ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no" \
             --exclude '.git' \
             --exclude '.github' \
             --exclude '.env' \
