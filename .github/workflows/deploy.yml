@@ -65,8 +65,15 @@ jobs:
               python3 -m venv venv
             fi
             
-            echo "Checking python version..."
-            ./venv/bin/python3 --version
+            echo "Ensuring pip is installed..."
+            # Try ensurepip (standard lib)
+            ./venv/bin/python3 -m ensurepip || true
+            
+            # Fallback to get-pip.py if ensurepip failed or is disabled
+            if ! ./venv/bin/python3 -m pip --version > /dev/null 2>&1; then
+                echo "Downloading get-pip.py..."
+                curl -sS https://bootstrap.pypa.io/get-pip.py | ./venv/bin/python3
+            fi
             
             # Update Python dependencies using python -m pip
             echo "Installing dependencies..."
