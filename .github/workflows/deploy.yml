@@ -1,0 +1,73 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend-react/package-lock.json
+
+      - name: Install dependencies and Build Frontend
+        working-directory: ./frontend-react
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: 'placeholder'
+          if_key_exists: replace
+
+      - name: Add Known Hosts
+        run: ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy with rsync
+        run: |
+          rsync -avz --delete \
+            -e "ssh -p ${{ secrets.SSH_PORT }}" \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.env' \
+            --exclude 'venv' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude 'frontend-react/node_modules' \
+            --exclude 'frontend-react/.env' \
+            ./ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.TARGET_DIR }}/
+
+      - name: Restart Backend Service
+        run: |
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'EOF'
+            set -e
+            cd ${{ secrets.TARGET_DIR }}
+            
+            # Activate venv if exists
+            if [ -d "venv" ]; then
+              source venv/bin/activate
+            fi
+            
+            # Update Python dependencies
+            pip install -r requirements.txt
+            
+            # Run migrations (ensure DB schema is up to date)
+            if [ -f "migrate_db.py" ]; then
+                python migrate_db.py
+            fi
+            
+            # Restart service
+            # Note: This requires the user to have sudo privileges without password
+            # for 'systemctl restart insight-backend', or execute as root.
+            sudo systemctl restart insight-backend
+          EOF

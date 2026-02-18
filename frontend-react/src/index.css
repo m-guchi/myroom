@@ -1,0 +1,210 @@
+/* Modern Mobile-First CSS */
+:root {
+    --primary-color: #2ecc71;
+    --secondary-color: #3498db;
+    --bg-color: #f0f2f5;
+    --card-bg: #ffffff;
+    --text-primary: #1a1b1e;
+    --text-secondary: #868e96;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
+    --radius-lg: 24px;
+    --radius-md: 16px;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+}
+
+/* Container limits for mobile look even on desktop */
+#root {
+    max-width: 480px;
+    /* Mobile width constraint */
+    margin: 0 auto;
+    min-height: 100vh;
+    background-color: var(--bg-color);
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.05);
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* Modern Card */
+.modern-card {
+    background: var(--card-bg);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+/* Hero Section: Weather App Style */
+.hero-weather {
+    text-align: center;
+    padding: 40px 20px 20px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(46, 204, 113, 0.05) 100%);
+}
+
+.current-temp-container {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    margin: 10px 0;
+}
+
+.current-temp {
+    font-size: 6rem;
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -2px;
+    color: var(--text-primary);
+}
+
+.current-unit {
+    font-size: 2rem;
+    font-weight: 400;
+    margin-top: 15px;
+    color: var(--text-secondary);
+}
+
+.weather-meta {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 10px;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Grid Metrics */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.mini-card {
+    background: white;
+    padding: 16px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.mini-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.mini-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Charts Section */
+.chart-container {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 20px 10px;
+    /* Less side padding for max chart width */
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 24px;
+}
+
+.chart-header {
+    padding: 0 14px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.section-label {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Daily List */
+.daily-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.daily-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: white;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+}
+
+.daily-date {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.daily-values {
+    display: flex;
+    gap: 16px;
+}
+
+.temp-hi {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.temp-lo {
+    font-weight: 600;
+    color: var(--text-secondary);
+    opacity: 0.8;
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-color: #000000;
+        --card-bg: #1c1c1e;
+        --text-primary: #ffffff;
+        --text-secondary: #8e8e93;
+        --shadow-sm: none;
+        --shadow-md: none;
+    }
+
+    #root {
+        background-color: #000000;
+        box-shadow: none;
+    }
+
+    .modern-card,
+    .mini-card,
+    .chart-container,
+    .daily-item {
+        background: var(--card-bg);
+        border: 1px solid #2c2c2e;
+    }
+
+    .hero-weather {
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(46, 204, 113, 0.1) 100%);
+    }
+}
