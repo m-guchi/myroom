@@ -38,8 +38,8 @@ jobs:
           # Ensure target directory exists
           ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no ${{ secrets.USERNAME }}@${{ secrets.HOST }} "mkdir -p ${{ secrets.TARGET_DIR }}"
 
-          # Sync files
-          rsync -avz \
+          # Sync files (using -rltDvz instead of -avz to avoid permission errors on owner/group)
+          rsync -rltDvz \
             -e "ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no" \
             --exclude '.git' \
             --exclude '.github' \
