@@ -55,7 +55,9 @@ jobs:
         run: |
           ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'EOF'
             set -e
+            echo "Current directory: $(pwd)"
             cd ${{ secrets.TARGET_DIR }}
+            echo "Working directory: $(pwd)"
             
             # Create venv if not exists
             if [ ! -d "venv" ]; then
@@ -63,22 +65,26 @@ jobs:
               python3 -m venv venv
             fi
             
-            # Update Python dependencies using venv pip explicitly
-            ./venv/bin/pip install -r requirements.txt
+            echo "Checking python version..."
+            ./venv/bin/python3 --version
+            
+            # Update Python dependencies using python -m pip
+            echo "Installing dependencies..."
+            ./venv/bin/python3 -m pip install --upgrade pip
+            ./venv/bin/python3 -m pip install -r requirements.txt
             
             # Run migrations (ensure DB schema is up to date)
             if [ -f "migrate_db.py" ]; then
-                ./venv/bin/python migrate_db.py
+                echo "Running migrations..."
+                ./venv/bin/python3 migrate_db.py
             fi
             
             # Restart service using PM2 (No sudo required)
             # Ensure PM2 is installed on the server: 'npm install -g pm2'
+            echo "Managing PM2 process..."
             if npx pm2 list | grep -q "insight-backend"; then
               npx pm2 restart insight-backend
             else
               npx pm2 start ecosystem.config.js
             fi
-            
-            # Save PM2 process list (optional)
-            # npx pm2 save
           EOF
