@@ -66,8 +66,14 @@ jobs:
                 python migrate_db.py
             fi
             
-            # Restart service
-            # Note: This requires the user to have sudo privileges without password
-            # for 'systemctl restart insight-backend', or execute as root.
-            sudo systemctl restart insight-backend
+            # Restart service using PM2 (No sudo required)
+            # Ensure PM2 is installed on the server: 'npm install -g pm2'
+            if npx pm2 list | grep -q "insight-backend"; then
+              npx pm2 restart insight-backend
+            else
+              npx pm2 start ecosystem.config.js
+            fi
+            
+            # Save PM2 process list to resurrect on reboot (optional, requires initial setup)
+            # npx pm2 save
           EOF
