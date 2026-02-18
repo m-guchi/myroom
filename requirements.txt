@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+streamlit
+sqlalchemy
+mysql-connector-python
+pandas
+plotly
+requests
+python-dotenv
+python-jose[cryptography]
+python-multipart
+streamlit-javascript
+

@@ -1,0 +1,17 @@
+[Unit]
+Description=Insight MyRoom Frontend
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory={{APP_DIR}}
+Environment="API_BASE_URL=https://app.minagu.work/insight-myroom/api"
+Environment="FRONTEND_URL=https://app.minagu.work/insight-myroom/"
+Environment="AUTH_SERVER_URL=https://app.minagu.work/auth"
+Environment="LOGIN_URL=https://app.minagu.work/login/"
+ExecStart={{PYTHON_PATH}} -m streamlit run frontend/app.py --server.port 8501 --server.baseUrlPath=insight-myroom --server.enableCORS=false --server.enableXsrfProtection=false
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
