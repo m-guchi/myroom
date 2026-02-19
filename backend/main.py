@@ -86,7 +86,7 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
             "datetime": get_now_jst(),
             "temperature": round(23.5 + random.uniform(-0.5, 0.5), 1),
             "humidity": round(45.0 + random.uniform(-1, 1), 1),
-            "pressure": round(1013.0 + random.uniform(-1, 1), 1)
+            "pressure": round(101300.0 + random.uniform(-100, 100), 1)
         }
     
     record = db.query(database.DHTRecord).filter(database.DHTRecord.device_id == device).order_by(database.DHTRecord.datetime.desc()).first()
@@ -101,7 +101,7 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
         "datetime": record.datetime,
         "temperature": record.temperature,
         "humidity": record.humidity,
-        "pressure": round(record.pressure / 100.0, 1) if record.pressure else None,
+        "pressure": record.pressure,
         "outdoor_temperature": outdoor["temperature"] if outdoor else None,
         "outdoor_humidity": outdoor["humidity"] if outdoor else None
     }
@@ -153,8 +153,8 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
                 "temp_min_time": min_temp_row['datetime'].strftime("%H:%M"),
                 "humid_max": float(group['humidity'].max()),
                 "humid_min": float(group['humidity'].min()),
-                "pressure_max": round(group['pressure'].max() / 100.0, 1) if 'pressure' in group and group['pressure'].notnull().any() else None,
-                "pressure_min": round(group['pressure'].min() / 100.0, 1) if 'pressure' in group and group['pressure'].notnull().any() else None,
+                "pressure_max": group['pressure'].max() if 'pressure' in group and group['pressure'].notnull().any() else None,
+                "pressure_min": group['pressure'].min() if 'pressure' in group and group['pressure'].notnull().any() else None,
             })
     
     # Sort by date
@@ -163,23 +163,63 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
     return daily_stats
 
 @app.get("/api/history")
-def get_history(date: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
-    if database.DB_MOCK:
-        # Mock doesn't support date yet, just return default
-        return database.generate_mock_history()
+def get_history(date: Optional[str] = None, range: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
+    end_time = get_now_jst()
+    start_time = end_time - datetime.timedelta(hours=24)
 
-    if date:
+    if range:
+        if range == 'day':
+            start_time = end_time - datetime.timedelta(days=1)
+        elif range == 'week':
+            start_time = end_time - datetime.timedelta(days=7)
+        elif range == 'month':
+            start_time = end_time - datetime.timedelta(days=30)
+        elif range == 'year':
+            start_time = end_time - datetime.timedelta(days=365)
+    elif date:
         try:
             target_date = datetime.datetime.strptime(date, "%Y-%m-%d").date()
             start_time = datetime.datetime.combine(target_date, datetime.time.min)
             end_time = datetime.datetime.combine(target_date, datetime.time.max)
         except ValueError:
-            end_time = get_now_jst()
-            start_time = end_time - datetime.timedelta(hours=24)
-    else:
-        end_time = get_now_jst()
-        start_time = end_time - datetime.timedelta(hours=24)
-    
+            pass
+
+    if database.DB_MOCK:
+        all_mock = database.generate_mock_history()
+        s_cmp = start_time.replace(tzinfo=None)
+        e_cmp = end_time.replace(tzinfo=None)
+        filtered = [d for d in all_mock if s_cmp <= (d['datetime'].replace(tzinfo=None) if d['datetime'].tzinfo else d['datetime']) <= e_cmp]
+
+        if range in ['month', 'year']:
+            daily_map = {}
+            for d in filtered:
+                date_str = d['datetime'].strftime('%Y-%m-%d')
+                if date_str not in daily_map:
+                    daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': []}
+                daily_map[date_str]['temps'].append(d['temperature'])
+                daily_map[date_str]['humids'].append(d['humidity'])
+                daily_map[date_str]['pressures'].append(d['pressure'])
+            
+            aggregated = []
+            for date_str, values in daily_map.items():
+                if not values['temps']: continue
+                aggregated.append({
+                    "datetime": datetime.datetime.strptime(date_str, '%Y-%m-%d'),
+                    "temperature": round(sum(values['temps']) / len(values['temps']), 1),
+                    "temperature_min": min(values['temps']),
+                    "temperature_max": max(values['temps']),
+                    "humidity": round(sum(values['humids']) / len(values['humids']), 1),
+                    "humidity_min": min(values['humids']),
+                    "humidity_max": max(values['humids']),
+                    "pressure": round(sum(values['pressures']) / len(values['pressures']), 1),
+                    "pressure_min": min(values['pressures']),
+                    "pressure_max": max(values['pressures']),
+                })
+            aggregated.sort(key=lambda x: x['datetime'])
+            return aggregated
+            
+        return filtered
+
     records = db.query(database.DHTRecord).filter(
         database.DHTRecord.datetime >= start_time,
         database.DHTRecord.datetime <= end_time,
@@ -224,7 +264,7 @@ def get_history(date: Optional[str] = None, device: int = 1, db: Session = Depen
             "datetime": r.datetime,
             "temperature": r.temperature,
             "humidity": r.humidity,
-            "pressure": round(r.pressure / 100.0, 1) if r.pressure else None,
+            "pressure": r.pressure,
             "outdoor_temperature": out_data.get("temp"),
             "outdoor_humidity": out_data.get("humid")
         })

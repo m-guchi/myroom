@@ -12,17 +12,26 @@
 - Python 3.x
 - Node.js (および npm)
 
-### 1. バックエンド (Python / FastAPI)
+### 1. 環境設定 (.env)
+
+開発環境で手軽に動作確認をする場合は、プロジェクトルートにある `.env` ファイルでモックモードを有効にしてください。これによりデータベース接続なしでダミーデータが表示されます。
+
+```ini
+# .env ファイル
+DB_MOCK=true
+```
+
+### 2. バックエンド (Python / FastAPI)
 
 データベースへの接続やAPIサーバーとして機能します。
 
 #### セットアップと起動
 
-ルートディレクトリで以下のコマンドを実行してください。
+新しいターミナルを開き、ルートディレクトリで以下のコマンドを実行してください。
 
 ```bash
 # 1. 仮想環境の作成（推奨）と有効化
-python -m venv venv
+python3 -m venv venv
 
 # Windows (PowerShell) の場合
 .\venv\Scripts\activate
@@ -33,13 +42,22 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 3. サーバーの起動 (開発モード)
-uvicorn backend.main:app --reload
+# --host 0.0.0.0 --port 8000 を指定して起動します
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 - サーバーは `http://localhost:8000` で起動します。
+- 正常に起動すると `Application startup complete.` と表示されます。
 - APIドキュメント (Swagger UI) は `http://localhost:8000/docs` で確認できます。
 
-### 2. フロントエンド (React)
+### 3. フロントエンド (React)
+
+ユーザーインターフェースを提供します。Vite を使用して構築されています。
+**注意: バックエンドサーバーが起動していないとAPIエラーになります。**
+
+#### セットアップと起動
+
+**別のターミナル**を開き、`frontend-react` ディレクトリに移動して実行してください。
 
 ユーザーインターフェースを提供します。Vite を使用して構築されています。
 
