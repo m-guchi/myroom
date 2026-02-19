@@ -110,7 +110,8 @@ function AppContent() {
     }, [isAuthenticated]);
 
     const handleLogin = () => {
-        if (password === 'admin' || password.length > 0) {
+        const envPassword = import.meta.env.VITE_APP_PASSWORD || 'admin';
+        if (password === envPassword) {
             setIsAuthenticated(true);
             localStorage.setItem('app_auth', 'true');
             fetchData();
@@ -147,7 +148,7 @@ function AppContent() {
                     datetimeObj: item.datetime ? new Date(item.datetime).getTime() : 0,
                     temperature: item.temperature || 0,
                     humidity: item.humidity || 0,
-                    pressure: item.pressure || 0,
+                    pressure: item.pressure ? item.pressure / 100 : 0,
                 }));
                 setHistoryData(processed);
             }
@@ -281,8 +282,11 @@ function AppContent() {
     // Helper Variables
     const temp = latestData?.temperature != null ? Math.round(latestData.temperature) : '--';
     const humid = latestData?.humidity != null ? latestData.humidity : '--';
-    const press = latestData?.pressure != null ? latestData.pressure : '--';
+    const press = latestData?.pressure != null ? Math.round(latestData.pressure / 100) : '--';
     const outTemp = latestData?.outdoor_temperature != null ? latestData.outdoor_temperature : '--';
+    const lastUpdated = latestData?.datetime
+        ? new Date(latestData.datetime).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : '--';
 
     const acMode = analysisData?.ac_status || "OFF";
     const acText = acMode === "HEATING" ? "暖房 ON" : acMode === "COOLING" ? "冷房 ON" : "AC OFF";
@@ -320,7 +324,15 @@ function AppContent() {
                             <span style={{ fontWeight: 600 }}>{outTemp}°</span>
                         </div>
                     </div>
+
+                    <Box sx={{ mt: 1, opacity: 0.6 }}>
+                        <Typography variant="caption">
+                            最終更新: {lastUpdated}
+                        </Typography>
+                    </Box>
                 </div>
+
+
 
                 <Container maxWidth="xs" sx={{ padding: '0 20px' }}>
                     <div className="metrics-grid">

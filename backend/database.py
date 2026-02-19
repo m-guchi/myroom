@@ -41,7 +41,7 @@ def generate_mock_history():
         # Generate somewhat realistic sine wave data
         temp = 20 + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-1, 1)
         humid = 50 + 10 * (1 + math.cos(t.hour / 24 * 2 * math.pi)) + random.uniform(-2, 2)
-        pressure = 1013 + random.uniform(-5, 5)
+        pressure = 101300 + random.uniform(-500, 500)
         data.append({
             "datetime": t,
             "temperature": round(temp, 1),
