@@ -311,19 +311,10 @@ function AppContent() {
 
                     <div className="current-temp-container">
                         <span className="current-temp">{temp}</span>
-                        <span className="current-unit">°</span>
+                        <span className="current-unit">°C</span>
                     </div>
 
-                    <div className="weather-meta">
-                        <div className="meta-item">
-                            <span style={{ opacity: 0.7 }}>湿度</span>
-                            <span style={{ fontWeight: 600 }}>{humid}%</span>
-                        </div>
-                        <div className="meta-item">
-                            <span style={{ opacity: 0.7 }}>外気温</span>
-                            <span style={{ fontWeight: 600 }}>{outTemp}°</span>
-                        </div>
-                    </div>
+
 
                     <Box sx={{ mt: 1, opacity: 0.6 }}>
                         <Typography variant="caption">
@@ -336,6 +327,14 @@ function AppContent() {
 
                 <Container maxWidth="xs" sx={{ padding: '0 20px' }}>
                     <div className="metrics-grid">
+                        <div className="mini-card">
+                            <div className="mini-label">湿度</div>
+                            <div className="mini-value" style={{ color: '#3498db' }}>{humid}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>%</span></div>
+                        </div>
+                        <div className="mini-card">
+                            <div className="mini-label">外気温</div>
+                            <div className="mini-value">{outTemp}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>°C</span></div>
+                        </div>
                         <div className="mini-card">
                             <div className="mini-label">気圧</div>
                             <div className="mini-value" style={{ color: '#2ecc71' }}>{press}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>hPa</span></div>
