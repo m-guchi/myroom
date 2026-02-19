@@ -5,7 +5,7 @@ import {
     Tabs, Tab, Fade, CircularProgress, Alert
 } from '@mui/material';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Brush
 } from 'recharts';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpacityIcon from '@mui/icons-material/Opacity';
@@ -91,6 +91,7 @@ function AppContent() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [chartTab, setChartTab] = useState(0);
+    const [timeRange, setTimeRange] = useState('day');
 
     // Check LocalStorage on mount
     useEffect(() => {
@@ -107,7 +108,7 @@ function AppContent() {
             const interval = setInterval(fetchData, 30000);
             return () => clearInterval(interval);
         }
-    }, [isAuthenticated]);
+    }, [isAuthenticated, timeRange]);
 
     const handleLogin = () => {
         const envPassword = import.meta.env.VITE_APP_PASSWORD || 'admin';
@@ -132,7 +133,7 @@ function AppContent() {
             // Parallel requests for speed
             const [latestRes, historyRes, dailyRes, analysisRes] = await Promise.allSettled([
                 axios.get('/api/latest'),
-                axios.get('/api/history'),
+                axios.get(`/api/history?range=${timeRange}`),
                 axios.get('/api/daily-stats'),
                 axios.get('/api/analysis')
             ]);
@@ -148,7 +149,11 @@ function AppContent() {
                     datetimeObj: item.datetime ? new Date(item.datetime).getTime() : 0,
                     temperature: item.temperature || 0,
                     humidity: item.humidity || 0,
-                    pressure: item.pressure ? item.pressure / 100 : 0,
+                    pressure: item.pressure ? Math.round(item.pressure / 100) : 0,
+                    // Ranges for aggregated view
+                    temperatureRange: (item.temperature_min !== undefined && item.temperature_max !== undefined) ? [item.temperature_min, item.temperature_max] : null,
+                    humidityRange: (item.humidity_min !== undefined && item.humidity_max !== undefined) ? [item.humidity_min, item.humidity_max] : null,
+                    pressureRange: (item.pressure_min !== undefined && item.pressure_max !== undefined) ? [Math.round(item.pressure_min / 100), Math.round(item.pressure_max / 100)] : null,
                 }));
                 setHistoryData(processed);
             }
@@ -167,25 +172,30 @@ function AppContent() {
         }
 
         let dataKey = "temperature";
+        let rangeKey = "temperatureRange";
         let color = "#2ecc71";
         let outdoorKey = "outdoor_temperature";
 
         if (chartTab === 1) {
             dataKey = "humidity";
+            rangeKey = "humidityRange";
             color = "#3498db";
             outdoorKey = "outdoor_humidity";
         } else if (chartTab === 2) {
             dataKey = "pressure";
+            rangeKey = "pressureRange";
             color = "#9b59b6";
             outdoorKey = null;
         }
 
+
+
         return (
             <ResponsiveContainer width="100%" height={220}>
                 <AreaChart
-                    key={chartTab} /* Force re-render on tab change to prevent Tooltip bugs */
+                    key={`${chartTab}-${timeRange}`} /* Force re-render on tab/range change */
                     data={historyData}
-                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
                 >
                     <defs>
                         <linearGradient id={`color-${chartTab}`} x1="0" y1="0" x2="0" y2="1">
@@ -198,7 +208,13 @@ function AppContent() {
                         dataKey="datetimeObj"
                         type="number"
                         domain={['dataMin', 'dataMax']}
-                        tickFormatter={(t) => new Date(t).getHours()}
+                        tickFormatter={(t) => {
+                            const date = new Date(t);
+                            if (timeRange === 'day' || timeRange === 'week') return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                            if (timeRange === 'month') return `${date.getMonth() + 1}/${date.getDate()}`;
+                            if (timeRange === 'year') return `${date.getFullYear().toString().slice(-2)}/${date.getMonth() + 1}/${date.getDate()}`;
+                            return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                        }}
                         tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
                         axisLine={false}
                         tickLine={false}
@@ -214,8 +230,20 @@ function AppContent() {
                         width={40}
                     />
                     <Tooltip
-                        labelFormatter={(t) => new Date(t).getHours() + "時"}
-                        contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }}
+                        labelFormatter={(t) => {
+                            const date = new Date(t);
+                            if (timeRange === 'day' || timeRange === 'week') return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                            if (timeRange === 'month') return `${date.getMonth() + 1}/${date.getDate()}`;
+                            if (timeRange === 'year') return `${date.getFullYear().toString().slice(-2)}/${date.getMonth() + 1}/${date.getDate()}`;
+                            return date.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        }}
+                        formatter={(value, name) => {
+                            if (Array.isArray(value)) return [`${value[0]} ~ ${value[1]}`, "範囲"];
+                            return [value, name];
+                        }}
+                        contentStyle={{ backgroundColor: '#2d3436', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 16px rgba(0,0,0,0.3)' }}
+                        itemStyle={{ color: '#dfe6e9' }}
+                        labelStyle={{ color: '#b2bec3', marginBottom: 4 }}
                         isAnimationActive={false} /* Disable animation to prevent crash on rapid updates/missing props */
                     />
                     {outdoorKey && (
@@ -230,6 +258,19 @@ function AppContent() {
                             isAnimationActive={false}
                         />
                     )}
+
+                    {/* Range Area (Min-Max) */}
+                    <Area
+                        type="monotone"
+                        dataKey={rangeKey}
+                        stroke="none"
+                        fill={color}
+                        fillOpacity={0.2}
+                        isAnimationActive={false}
+                        connectNulls
+                        name="範囲"
+                    />
+
                     <Area
                         type="monotone"
                         dataKey={dataKey}
@@ -240,6 +281,7 @@ function AppContent() {
                         name="現在"
                         isAnimationActive={false}
                     />
+
                 </AreaChart>
             </ResponsiveContainer>
         );
@@ -362,19 +404,57 @@ function AppContent() {
                                 sx={{ width: '100%', minHeight: 40 }}
                                 TabIndicatorProps={{ style: { backgroundColor: chartTab === 0 ? '#2ecc71' : chartTab === 1 ? '#3498db' : '#9b59b6', borderRadius: 2 } }}
                             >
-                                <Tab icon={<ThermostatIcon fontSize="small" />} label="温度" sx={{ minHeight: 40, padding: 0 }} />
-                                <Tab icon={<OpacityIcon fontSize="small" />} label="湿度" sx={{ minHeight: 40, padding: 0 }} />
-                                <Tab icon={<CompressIcon fontSize="small" />} label="気圧" sx={{ minHeight: 40, padding: 0 }} />
+                                <Tab icon={<ThermostatIcon fontSize="small" />} label="温度" sx={{ minHeight: 40, padding: 0, color: chartTab === 0 ? '#2ecc71' : 'inherit', '&.Mui-selected': { color: '#2ecc71' } }} />
+                                <Tab icon={<OpacityIcon fontSize="small" />} label="湿度" sx={{ minHeight: 40, padding: 0, color: chartTab === 1 ? '#3498db' : 'inherit', '&.Mui-selected': { color: '#3498db' } }} />
+                                <Tab icon={<CompressIcon fontSize="small" />} label="気圧" sx={{ minHeight: 40, padding: 0, color: chartTab === 2 ? '#9b59b6' : 'inherit', '&.Mui-selected': { color: '#9b59b6' } }} />
                             </Tabs>
                         </div>
 
-                        {loading && !historyData.length ? (
-                            <Box display="flex" justifyContent="center" alignItems="center" height={220}>
-                                <CircularProgress size={30} />
-                            </Box>
-                        ) : (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 2 }}>
+                            {['day', 'week', 'month', 'year'].map((range) => (
+                                <Button
+                                    key={range}
+                                    size="small"
+                                    onClick={() => setTimeRange(range)}
+                                    sx={{
+                                        minWidth: 40,
+                                        borderRadius: 4,
+                                        color: timeRange === range ? '#fff' : 'text.secondary',
+                                        backgroundColor: timeRange === range ? (chartTab === 0 ? '#2ecc71' : chartTab === 1 ? '#3498db' : '#9b59b6') : 'transparent',
+                                        '&:hover': {
+                                            backgroundColor: timeRange === range ? (chartTab === 0 ? '#2ecc71' : chartTab === 1 ? '#3498db' : '#9b59b6') : 'rgba(0,0,0,0.05)'
+                                        }
+                                    }}
+                                >
+                                    {range === 'day' ? '1D' : range === 'week' ? '1W' : range === 'month' ? '1M' : '1Y'}
+                                </Button>
+                            ))}
+                        </Box>
+
+
+
+                        <div style={{ position: 'relative', minHeight: 220 }}>
+                            {loading && (
+                                <Box
+                                    sx={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        bottom: 0,
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        bgcolor: 'rgba(0,0,0,0.5)',
+                                        zIndex: 10,
+                                        borderRadius: 2
+                                    }}
+                                >
+                                    <CircularProgress size={30} />
+                                </Box>
+                            )}
                             <ErrorBoundary>{renderChart()}</ErrorBoundary>
-                        )}
+                        </div>
                     </div>
 
                     <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
