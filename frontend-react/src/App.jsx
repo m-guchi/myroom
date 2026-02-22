@@ -241,10 +241,11 @@ function AppContent() {
                         }}
                         formatter={(value, name) => {
                             const unit = chartTab === 0 ? '°C' : chartTab === 1 ? '%' : 'hPa';
-                            if (Array.isArray(value)) return [`${value[0]}${unit} ~ ${value[1]}${unit}`, "範囲"];
+                            const formattedValue = (typeof value === 'number') ? value.toFixed(1) : value;
+                            if (Array.isArray(value)) return [`${value[0].toFixed(1)}${unit} ~ ${value[1].toFixed(1)}${unit}`, "範囲"];
                             const displayName = name === "outdoor_temperature" || name === "outdoor_humidity" ? "屋外" :
                                 name === "temperature" || name === "humidity" || name === "pressure" ? "現在" : name;
-                            return [`${value}${unit}`, displayName];
+                            return [`${formattedValue}${unit}`, displayName];
                         }}
                         contentStyle={{ backgroundColor: '#2d3436', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 16px rgba(0,0,0,0.3)' }}
                         itemStyle={{ color: '#dfe6e9' }}
@@ -327,10 +328,10 @@ function AppContent() {
     }
 
     // Helper Variables
-    const temp = latestData?.temperature != null ? Math.round(latestData.temperature) : '--';
+    const temp = latestData?.temperature != null ? latestData.temperature.toFixed(1) : '--';
     const humid = latestData?.humidity != null ? latestData.humidity : '--';
     const press = latestData?.pressure != null ? (latestData.pressure > 5000 ? Math.round(latestData.pressure / 100) : Math.round(latestData.pressure)) : '--';
-    const outTemp = latestData?.outdoor_temperature != null ? latestData.outdoor_temperature : '--';
+    const outTemp = latestData?.outdoor_temperature != null ? latestData.outdoor_temperature.toFixed(1) : '--';
     const lastUpdated = latestData?.datetime
         ? new Date(latestData.datetime).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         : '--';
@@ -483,9 +484,9 @@ function AppContent() {
                                     })()}
                                 </span>
                                 <div className="daily-values">
-                                    <span className="temp-lo">{day.temp_min != null ? Math.round(day.temp_min) : '-'}°</span>
+                                    <span className="temp-lo">{day.temp_min != null ? day.temp_min.toFixed(1) : '-'}°</span>
                                     <div style={{ width: 60, height: 4, background: 'linear-gradient(90deg, #3498db 0%, #e74c3c 100%)', borderRadius: 2, margin: 'auto 0', opacity: 0.3 }}></div>
-                                    <span className="temp-hi">{day.temp_max != null ? Math.round(day.temp_max) : '-'}°</span>
+                                    <span className="temp-hi">{day.temp_max != null ? day.temp_max.toFixed(1) : '-'}°</span>
                                 </div>
                             </div>
                         ))}
