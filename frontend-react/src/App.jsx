@@ -149,11 +149,13 @@ function AppContent() {
                     datetimeObj: item.datetime ? new Date(item.datetime).getTime() : 0,
                     temperature: item.temperature || 0,
                     humidity: item.humidity || 0,
-                    pressure: item.pressure ? Math.round(item.pressure) : 0,
+                    pressure: item.pressure ? (item.pressure > 5000 ? Math.round(item.pressure / 100) : Math.round(item.pressure)) : 0,
                     // Ranges for aggregated view
                     temperatureRange: (item.temperature_min !== undefined && item.temperature_max !== undefined) ? [item.temperature_min, item.temperature_max] : null,
                     humidityRange: (item.humidity_min !== undefined && item.humidity_max !== undefined) ? [item.humidity_min, item.humidity_max] : null,
-                    pressureRange: (item.pressure_min !== undefined && item.pressure_max !== undefined) ? [Math.round(item.pressure_min), Math.round(item.pressure_max)] : null,
+                    pressureRange: (item.pressure_min !== undefined && item.pressure_max !== undefined) ?
+                        [Math.round(item.pressure_min > 5000 ? item.pressure_min / 100 : item.pressure_min),
+                        Math.round(item.pressure_max > 5000 ? item.pressure_max / 100 : item.pressure_max)] : null,
                 }));
                 setHistoryData(processed);
             }
@@ -238,8 +240,11 @@ function AppContent() {
                             return date.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                         }}
                         formatter={(value, name) => {
-                            if (Array.isArray(value)) return [`${value[0]} ~ ${value[1]}`, "範囲"];
-                            return [value, name];
+                            const unit = chartTab === 0 ? '°C' : chartTab === 1 ? '%' : 'hPa';
+                            if (Array.isArray(value)) return [`${value[0]}${unit} ~ ${value[1]}${unit}`, "範囲"];
+                            const displayName = name === "outdoor_temperature" || name === "outdoor_humidity" ? "屋外" :
+                                name === "temperature" || name === "humidity" || name === "pressure" ? "現在" : name;
+                            return [`${value}${unit}`, displayName];
                         }}
                         contentStyle={{ backgroundColor: '#2d3436', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 16px rgba(0,0,0,0.3)' }}
                         itemStyle={{ color: '#dfe6e9' }}
@@ -324,7 +329,7 @@ function AppContent() {
     // Helper Variables
     const temp = latestData?.temperature != null ? Math.round(latestData.temperature) : '--';
     const humid = latestData?.humidity != null ? latestData.humidity : '--';
-    const press = latestData?.pressure != null ? Math.round(latestData.pressure) : '--';
+    const press = latestData?.pressure != null ? (latestData.pressure > 5000 ? Math.round(latestData.pressure / 100) : Math.round(latestData.pressure)) : '--';
     const outTemp = latestData?.outdoor_temperature != null ? latestData.outdoor_temperature : '--';
     const lastUpdated = latestData?.datetime
         ? new Date(latestData.datetime).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
