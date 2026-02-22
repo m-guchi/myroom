@@ -194,56 +194,31 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, device:
         all_mock = database.generate_mock_history()
         s_cmp = start_time.replace(tzinfo=None)
         e_cmp = end_time.replace(tzinfo=None)
-        filtered = [d for d in all_mock if s_cmp <= (d['datetime'].replace(tzinfo=None) if d['datetime'].tzinfo else d['datetime']) <= e_cmp]
-
-        if range in ['month', 'year']:
-            daily_map = {}
-            for d in filtered:
-                date_str = d['datetime'].strftime('%Y-%m-%d')
-                if date_str not in daily_map:
-                    daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': []}
-                daily_map[date_str]['temps'].append(d['temperature'])
-                daily_map[date_str]['humids'].append(d['humidity'])
-                daily_map[date_str]['pressures'].append(d['pressure'])
-            
-            aggregated = []
-            for date_str, values in daily_map.items():
-                if not values['temps']: continue
-                aggregated.append({
-                    "datetime": datetime.datetime.strptime(date_str, '%Y-%m-%d'),
-                    "temperature": round(sum(values['temps']) / len(values['temps']), 1),
-                    "temperature_min": min(values['temps']),
-                    "temperature_max": max(values['temps']),
-                    "humidity": round(sum(values['humids']) / len(values['humids']), 1),
-                    "humidity_min": min(values['humids']),
-                    "humidity_max": max(values['humids']),
-                    "pressure": round(sum(values['pressures']) / len(values['pressures']), 1),
-                    "pressure_min": min(values['pressures']),
-                    "pressure_max": max(values['pressures']),
-                })
-            aggregated.sort(key=lambda x: x['datetime'])
-            return aggregated
-            
-        return filtered
-
-    records = db.query(database.DHTRecord).filter(
-        database.DHTRecord.datetime >= start_time,
-        database.DHTRecord.datetime <= end_time,
-        database.DHTRecord.device_id == device
-    ).order_by(database.DHTRecord.datetime.asc()).all()
+        records_raw = [d for d in all_mock if s_cmp <= (d['datetime'].replace(tzinfo=None) if d['datetime'].tzinfo else d['datetime']) <= e_cmp]
+    else:
+        records_raw_unformatted = db.query(database.DHTRecord).filter(
+            database.DHTRecord.datetime >= start_time,
+            database.DHTRecord.datetime <= end_time,
+            database.DHTRecord.device_id == device
+        ).order_by(database.DHTRecord.datetime.asc()).all()
+        # Convert SQLAlchemy objects to dicts
+        records_raw = []
+        for r in records_raw_unformatted:
+            records_raw.append({
+                "datetime": r.datetime,
+                "temperature": r.temperature,
+                "humidity": r.humidity,
+                "pressure": r.pressure
+            })
     
-    # Fetch outdoor history for the same range
-    # Open-Meteo needs YYYY-MM-DD
+    # Fetch outdoor history
     outdoor_hist = weather.get_outdoor_history(start_time.strftime("%Y-%m-%d"), end_time.strftime("%Y-%m-%d"))
-    
-    # Simple merge: Map outdoor hourly data for lookups
     outdoor_map = {}
     if outdoor_hist:
         for i, t_str in enumerate(outdoor_hist["time"]):
-            # t_str is like '2026-01-24T00:00'
             try:
                 dt_key = datetime.datetime.fromisoformat(t_str)
-                outdoor_map[dt_key] = {
+                outdoor_map[dt_key.replace(tzinfo=None)] = {
                     "temp": outdoor_hist["temperature"][i],
                     "humid": outdoor_hist["humidity"][i],
                     "press": outdoor_hist["pressure"][i]
@@ -251,27 +226,62 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, device:
             except Exception:
                 pass
 
-    # Convert pressure Pa -> hPa and merge outdoor data
+    if range in ['month', 'year']:
+        daily_map = {}
+        for d in records_raw:
+            date_str = d['datetime'].strftime('%Y-%m-%d')
+            if date_str not in daily_map:
+                daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': []}
+            if d['temperature'] is not None: daily_map[date_str]['temps'].append(d['temperature'])
+            if d['humidity'] is not None: daily_map[date_str]['humids'].append(d['humidity'])
+            if d['pressure'] is not None: daily_map[date_str]['pressures'].append(d['pressure'])
+        
+        aggregated = []
+        for date_str, values in daily_map.items():
+            if not values['temps']: continue
+            dt = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+            
+            # Find outdoor data at 12:00 for this day as a representative
+            out_target = dt.replace(hour=12)
+            out_data = outdoor_map.get(out_target, {})
+
+            aggregated.append({
+                "datetime": dt,
+                "temperature": round(sum(values['temps']) / len(values['temps']), 1),
+                "temperature_min": min(values['temps']),
+                "temperature_max": max(values['temps']),
+                "humidity": round(sum(values['humids']) / len(values['humids']), 1),
+                "humidity_min": min(values['humids']),
+                "humidity_max": max(values['humids']),
+                "pressure": round(sum(values['pressures']) / len(values['pressures']), 1),
+                "pressure_min": min(values['pressures']),
+                "pressure_max": max(values['pressures']),
+                "outdoor_temperature": out_data.get("temp"),
+                "outdoor_humidity": out_data.get("humid"),
+                "outdoor_pressure": out_data.get("press")
+            })
+        aggregated.sort(key=lambda x: x['datetime'])
+        return aggregated
+
+    # For day/week, return all records with merged outdoor data
     formatted_records = []
     
-    # Helper to find closest outdoor data
     def get_outdoor(dt):
-        # Round to nearest hour
-        if dt.minute >= 30:
-             hour_dt = dt + datetime.timedelta(minutes=60-dt.minute, seconds=-dt.second)
+        dt_naive = dt.replace(tzinfo=None)
+        if dt_naive.minute >= 30:
+             hour_dt = dt_naive + datetime.timedelta(minutes=60-dt_naive.minute, seconds=-dt_naive.second)
         else:
-             hour_dt = dt - datetime.timedelta(minutes=dt.minute, seconds=dt.second)
+             hour_dt = dt_naive - datetime.timedelta(minutes=dt_naive.minute, seconds=dt_naive.second)
         hour_dt = hour_dt.replace(microsecond=0)
         return outdoor_map.get(hour_dt, {})
 
-    for r in records:
-        out_data = get_outdoor(r.datetime)
-
+    for r in records_raw:
+        out_data = get_outdoor(r['datetime'])
         formatted_records.append({
-            "datetime": r.datetime,
-            "temperature": r.temperature,
-            "humidity": r.humidity,
-            "pressure": r.pressure if r.pressure else None,
+            "datetime": r['datetime'],
+            "temperature": r['temperature'],
+            "humidity": r['humidity'],
+            "pressure": r['pressure'],
             "outdoor_temperature": out_data.get("temp"),
             "outdoor_humidity": out_data.get("humid"),
             "outdoor_pressure": out_data.get("press")
