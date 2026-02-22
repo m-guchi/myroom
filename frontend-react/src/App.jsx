@@ -5,7 +5,8 @@ import {
     Tabs, Tab, Fade, CircularProgress, Alert
 } from '@mui/material';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Brush
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Brush,
+    PieChart, Pie, Cell
 } from 'recharts';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpacityIcon from '@mui/icons-material/Opacity';
@@ -80,6 +81,71 @@ class ErrorBoundary extends React.Component {
         return this.props.children;
     }
 }
+
+const ComfortGauge = ({ value }) => {
+    if (value == null || isNaN(value)) return null;
+
+    const min = 40;
+    const max = 90;
+    const clampedValue = Math.min(Math.max(value, min), max);
+    const pos = ((clampedValue - min) / (max - min)) * 100;
+
+    return (
+        <Box sx={{ width: '100%', margin: '40px auto 12px' }}>
+            <Box sx={{ position: 'relative', height: 20, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 10, overflow: 'visible', mb: 1.5 }}>
+                {/* Segments */}
+                <Box sx={{ position: 'absolute', left: '0%', width: '40%', height: '100%', bgcolor: '#3498db', opacity: 0.2, borderRadius: '10px 0 0 10px' }} />
+                <Box sx={{ position: 'absolute', left: '40%', width: '30%', height: '100%', bgcolor: '#2ecc71', opacity: 0.2 }} />
+                <Box sx={{ position: 'absolute', left: '70%', width: '30%', height: '100%', bgcolor: '#e74c3c', opacity: 0.2, borderRadius: '0 10px 10px 0' }} />
+
+                {/* Marker Group */}
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        left: `${pos}%`,
+                        top: 0,
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transform: 'translateX(-50%)',
+                        transition: 'left 1s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        zIndex: 2,
+                        overflow: 'visible'
+                    }}
+                >
+                    {/* Value + Triangle (Above the bar) */}
+                    <Box sx={{ position: 'absolute', bottom: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 0.5 }}>
+                        <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap', mb: -0.5 }}>
+                            {value.toFixed(1)}
+                        </Typography>
+                        <Box sx={{
+                            width: 0, height: 0,
+                            borderLeft: '6px solid transparent',
+                            borderRight: '6px solid transparent',
+                            borderTop: '8px solid var(--text-primary)',
+                        }} />
+                    </Box>
+
+                    {/* Vertical Line (Crossing the bar) */}
+                    <Box sx={{
+                        width: 4,
+                        height: 32,
+                        bgcolor: 'var(--text-primary)',
+                        borderRadius: 1,
+                        boxShadow: '0 0 4px rgba(0,0,0,0.2)'
+                    }} />
+                </Box>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', px: 1 }}>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5 }}>寒</Typography>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5 }}>快適</Typography>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5 }}>暑</Typography>
+            </Box>
+        </Box>
+    );
+};
 
 function AppContent() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -181,13 +247,13 @@ function AppContent() {
         if (chartTab === 1) {
             dataKey = "humidity";
             rangeKey = "humidityRange";
-            color = "#3498db";
+            color = "#2ecc71"; // Changed from blue to green
             outdoorKey = "outdoor_humidity";
         } else if (chartTab === 2) {
             dataKey = "pressure";
             rangeKey = "pressureRange";
             color = "#9b59b6";
-            outdoorKey = null;
+            outdoorKey = "outdoor_pressure";
         }
 
 
@@ -342,6 +408,8 @@ function AppContent() {
     const humid = latestData?.humidity != null ? latestData.humidity : '--';
     const press = latestData?.pressure != null ? Math.round(latestData.pressure) : '--';
     const outTemp = latestData?.outdoor_temperature != null ? latestData.outdoor_temperature.toFixed(1) : '--';
+    const outHumid = latestData?.outdoor_humidity != null ? latestData.outdoor_humidity : '--';
+    const outPress = latestData?.outdoor_pressure != null ? Math.round(latestData.outdoor_pressure) : '--';
     const lastUpdated = latestData?.datetime
         ? new Date(latestData.datetime).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         : '--';
@@ -367,12 +435,29 @@ function AppContent() {
                         </Box>
                     </Box>
 
-                    <div className="current-temp-container">
-                        <span className="current-temp">{temp}</span>
-                        <span className="current-unit">°C</span>
+                    <div className="main-metrics-row">
+                        <div className="metric-item">
+                            <span className="metric-label">温度</span>
+                            <div className="metric-value">
+                                {temp}<span className="metric-unit">°C</span>
+                            </div>
+                            <div className="outdoor-sub-value">屋外: {outTemp}°C</div>
+                        </div>
+                        <div className="metric-item">
+                            <span className="metric-label">湿度</span>
+                            <div className="metric-value" style={{ color: '#2ecc71' }}>
+                                {humid}<span className="metric-unit">%</span>
+                            </div>
+                            <div className="outdoor-sub-value">屋外: {outHumid}%</div>
+                        </div>
+                        <div className="metric-item">
+                            <span className="metric-label">気圧</span>
+                            <div className="metric-value" style={{ color: '#9b59b6' }}>
+                                {press}<span className="metric-unit">hPa</span>
+                            </div>
+                            <div className="outdoor-sub-value">屋外: {outPress}hPa</div>
+                        </div>
                     </div>
-
-
 
                     <Box sx={{ mt: 1, opacity: 0.6 }}>
                         <Typography variant="caption">
@@ -384,32 +469,38 @@ function AppContent() {
 
 
                 <Container maxWidth="xs" sx={{ padding: '0 20px' }}>
-                    <div className="metrics-grid">
-                        <div className="mini-card">
-                            <div className="mini-label">湿度</div>
-                            <div className="mini-value" style={{ color: '#3498db' }}>{humid}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>%</span></div>
-                        </div>
-                        <div className="mini-card">
-                            <div className="mini-label">外気温</div>
-                            <div className="mini-value">{outTemp}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>°C</span></div>
-                        </div>
-                        <div className="mini-card">
-                            <div className="mini-label">気圧</div>
-                            <div className="mini-value" style={{ color: '#9b59b6' }}>{press}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>hPa</span></div>
-                        </div>
-                        <div className="mini-card">
-                            <div className="mini-label">快適度</div>
-                            <div className="mini-value" style={{ fontSize: '1rem' }}>
-                                {(() => {
-                                    if (latestData?.temperature == null) return '--';
-                                    const di = 0.81 * latestData.temperature + 0.01 * latestData.humidity * (0.99 * latestData.temperature - 14.3) + 46.3;
-                                    if (di < 60) return "寒い 🥶";
-                                    if (di < 75) return "快適 🙂";
-                                    return "暑い 🥵";
-                                })()}
-                            </div>
-                        </div>
-                    </div>
+                    <Box sx={{ mb: 6, textAlign: 'center' }}>
+                        {(() => {
+                            if (latestData?.temperature == null) return null;
+                            const di = 0.81 * latestData.temperature + 0.01 * latestData.humidity * (0.99 * latestData.temperature - 14.3) + 46.3;
+                            let mainAdvice = "とても快適な環境です 🙂";
+                            let subAdvice = "";
+
+                            if (di < 55) mainAdvice = "寒いですね。暖房の使用を検討してください 🧣";
+                            else if (di < 60) mainAdvice = "少し肌寒いです。羽織るものがあると良さそうです 🧥";
+                            else if (di < 70) mainAdvice = "ちょうど良い、快適な状態です ✨";
+                            else if (di < 75) mainAdvice = "少し暖かくなってきましたね 🙂";
+                            else if (di < 80) mainAdvice = "やや蒸し暑いです。風通しを良くしてください 🎐";
+                            else mainAdvice = "かなり暑いです！熱中症に気をつけてください ⚠️";
+
+                            if (latestData.humidity < 40) subAdvice = "空気が乾燥しています。加湿を検討してください 💧";
+                            else if (latestData.humidity > 65) subAdvice = "湿気が多いです。除湿や換気がオススメです ☂️";
+
+                            return (
+                                <Box>
+                                    <ComfortGauge value={di} />
+                                    <Typography sx={{ fontSize: '1rem', fontWeight: 600, mt: 1.5 }}>
+                                        {mainAdvice}
+                                    </Typography>
+                                    {subAdvice && (
+                                        <Typography sx={{ fontSize: '0.8rem', color: 'var(--text-secondary)', mt: 0.5 }}>
+                                            {subAdvice}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            );
+                        })()}
+                    </Box>
 
                     <div className="chart-container">
                         <div className="chart-header">
@@ -418,10 +509,10 @@ function AppContent() {
                                 onChange={(e, v) => setChartTab(v)}
                                 variant="fullWidth"
                                 sx={{ width: '100%', minHeight: 40 }}
-                                TabIndicatorProps={{ style: { backgroundColor: chartTab === 0 ? '#2ecc71' : chartTab === 1 ? '#3498db' : '#9b59b6', borderRadius: 2 } }}
+                                TabIndicatorProps={{ style: { backgroundColor: chartTab === 2 ? '#9b59b6' : '#2ecc71', borderRadius: 2 } }}
                             >
                                 <Tab icon={<ThermostatIcon fontSize="small" />} label="温度" sx={{ minHeight: 40, padding: 0, color: chartTab === 0 ? '#2ecc71' : 'inherit', '&.Mui-selected': { color: '#2ecc71' } }} />
-                                <Tab icon={<OpacityIcon fontSize="small" />} label="湿度" sx={{ minHeight: 40, padding: 0, color: chartTab === 1 ? '#3498db' : 'inherit', '&.Mui-selected': { color: '#3498db' } }} />
+                                <Tab icon={<OpacityIcon fontSize="small" />} label="湿度" sx={{ minHeight: 40, padding: 0, color: chartTab === 1 ? '#2ecc71' : 'inherit', '&.Mui-selected': { color: '#2ecc71' } }} />
                                 <Tab icon={<CompressIcon fontSize="small" />} label="気圧" sx={{ minHeight: 40, padding: 0, color: chartTab === 2 ? '#9b59b6' : 'inherit', '&.Mui-selected': { color: '#9b59b6' } }} />
                             </Tabs>
                         </div>
@@ -512,7 +603,7 @@ function AppContent() {
                                     dayMax = day.humid_max;
                                     curTempVal = latestData?.humidity;
                                     unit = '%';
-                                    barGradient = 'linear-gradient(90deg, #a5d8ff 0%, #3498db 100%)';
+                                    barGradient = 'linear-gradient(90deg, #d4f7d4 0%, #2ecc71 100%)';
                                 } else { // Pressure
                                     dayMin = day.pressure_min;
                                     dayMax = day.pressure_max;

@@ -108,7 +108,8 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
         "humidity": record.humidity,
         "pressure": record.pressure if record.pressure else None,
         "outdoor_temperature": outdoor["temperature"] if outdoor else None,
-        "outdoor_humidity": outdoor["humidity"] if outdoor else None
+        "outdoor_humidity": outdoor["humidity"] if outdoor else None,
+        "outdoor_pressure": outdoor["pressure"] if outdoor else None
     }
 
 from sqlalchemy import func
@@ -244,7 +245,8 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, device:
                 dt_key = datetime.datetime.fromisoformat(t_str)
                 outdoor_map[dt_key] = {
                     "temp": outdoor_hist["temperature"][i],
-                    "humid": outdoor_hist["humidity"][i]
+                    "humid": outdoor_hist["humidity"][i],
+                    "press": outdoor_hist["pressure"][i]
                 }
             except Exception:
                 pass
@@ -271,7 +273,8 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, device:
             "humidity": r.humidity,
             "pressure": r.pressure if r.pressure else None,
             "outdoor_temperature": out_data.get("temp"),
-            "outdoor_humidity": out_data.get("humid")
+            "outdoor_humidity": out_data.get("humid"),
+            "outdoor_pressure": out_data.get("press")
         })
         
     return formatted_records
@@ -305,7 +308,10 @@ def get_analysis(date: Optional[str] = None, device: int = 1, db: Session = Depe
             for i, t_str in enumerate(outdoor_hist["time"]):
                 try:
                     dt_key = datetime.datetime.fromisoformat(t_str)
-                    outdoor_map[dt_key] = outdoor_hist["temperature"][i]
+                    outdoor_map[dt_key] = {
+                        "temp": outdoor_hist["temperature"][i],
+                        "press": outdoor_hist["pressure"][i]
+                    }
                 except Exception:
                     pass
 
@@ -318,12 +324,15 @@ def get_analysis(date: Optional[str] = None, device: int = 1, db: Session = Depe
                  hour_dt = r.datetime - datetime.timedelta(minutes=r.datetime.minute, seconds=r.datetime.second)
             hour_dt = hour_dt.replace(microsecond=0)
             
+            out_data = outdoor_map.get(hour_dt)
+
             history.append({
                 "datetime": r.datetime,
                 "temperature": r.temperature,
                 "humidity": r.humidity,
                 "pressure": r.pressure if r.pressure else None,
-                "outdoor_temperature": outdoor_map.get(hour_dt)
+                "outdoor_temperature": out_data.get("temp") if isinstance(out_data, dict) else None,
+                "outdoor_pressure": out_data.get("press") if isinstance(out_data, dict) else None
             })
     
     return analysis.analyze_room_data(history)
