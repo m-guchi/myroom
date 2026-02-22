@@ -181,7 +181,7 @@ function AppContent() {
         if (chartTab === 1) {
             dataKey = "humidity";
             rangeKey = "humidityRange";
-            color = "#3498db";
+            color = "#2ecc71"; // Changed from blue to green
             outdoorKey = "outdoor_humidity";
         } else if (chartTab === 2) {
             dataKey = "pressure";
@@ -342,6 +342,8 @@ function AppContent() {
     const humid = latestData?.humidity != null ? latestData.humidity : '--';
     const press = latestData?.pressure != null ? Math.round(latestData.pressure) : '--';
     const outTemp = latestData?.outdoor_temperature != null ? latestData.outdoor_temperature.toFixed(1) : '--';
+    const outHumid = latestData?.outdoor_humidity != null ? latestData.outdoor_humidity : '--';
+    const outPress = latestData?.outdoor_pressure != null ? Math.round(latestData.outdoor_pressure) : '--';
     const lastUpdated = latestData?.datetime
         ? new Date(latestData.datetime).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         : '--';
@@ -367,12 +369,29 @@ function AppContent() {
                         </Box>
                     </Box>
 
-                    <div className="current-temp-container">
-                        <span className="current-temp">{temp}</span>
-                        <span className="current-unit">°C</span>
+                    <div className="main-metrics-row">
+                        <div className="metric-item">
+                            <span className="metric-label">温度</span>
+                            <div className="metric-value">
+                                {temp}<span className="metric-unit">°C</span>
+                            </div>
+                            <div className="outdoor-sub-value">屋外: {outTemp}°C</div>
+                        </div>
+                        <div className="metric-item">
+                            <span className="metric-label">湿度</span>
+                            <div className="metric-value" style={{ color: '#2ecc71' }}>
+                                {humid}<span className="metric-unit">%</span>
+                            </div>
+                            <div className="outdoor-sub-value">屋外: {outHumid}%</div>
+                        </div>
+                        <div className="metric-item">
+                            <span className="metric-label">気圧</span>
+                            <div className="metric-value" style={{ color: '#9b59b6' }}>
+                                {press}<span className="metric-unit">hPa</span>
+                            </div>
+                            <div className="outdoor-sub-value">屋外: {outPress}hPa</div>
+                        </div>
                     </div>
-
-
 
                     <Box sx={{ mt: 1, opacity: 0.6 }}>
                         <Typography variant="caption">
@@ -384,21 +403,9 @@ function AppContent() {
 
 
                 <Container maxWidth="xs" sx={{ padding: '0 20px' }}>
-                    <div className="metrics-grid">
-                        <div className="mini-card">
-                            <div className="mini-label">湿度</div>
-                            <div className="mini-value" style={{ color: '#3498db' }}>{humid}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>%</span></div>
-                        </div>
-                        <div className="mini-card">
-                            <div className="mini-label">外気温</div>
-                            <div className="mini-value">{outTemp}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>°C</span></div>
-                        </div>
-                        <div className="mini-card">
-                            <div className="mini-label">気圧</div>
-                            <div className="mini-value" style={{ color: '#9b59b6' }}>{press}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>hPa</span></div>
-                        </div>
-                        <div className="mini-card">
-                            <div className="mini-label">快適度</div>
+                    <div className="metrics-grid" style={{ gridTemplateColumns: '1fr' }}>
+                        <div className="mini-card" style={{ flexDirection: 'row', gap: '12px', justifyContent: 'center' }}>
+                            <div className="mini-label" style={{ marginBottom: 0 }}>現在の快適度:</div>
                             <div className="mini-value" style={{ fontSize: '1rem' }}>
                                 {(() => {
                                     if (latestData?.temperature == null) return '--';
@@ -418,10 +425,10 @@ function AppContent() {
                                 onChange={(e, v) => setChartTab(v)}
                                 variant="fullWidth"
                                 sx={{ width: '100%', minHeight: 40 }}
-                                TabIndicatorProps={{ style: { backgroundColor: chartTab === 0 ? '#2ecc71' : chartTab === 1 ? '#3498db' : '#9b59b6', borderRadius: 2 } }}
+                                TabIndicatorProps={{ style: { backgroundColor: chartTab === 2 ? '#9b59b6' : '#2ecc71', borderRadius: 2 } }}
                             >
                                 <Tab icon={<ThermostatIcon fontSize="small" />} label="温度" sx={{ minHeight: 40, padding: 0, color: chartTab === 0 ? '#2ecc71' : 'inherit', '&.Mui-selected': { color: '#2ecc71' } }} />
-                                <Tab icon={<OpacityIcon fontSize="small" />} label="湿度" sx={{ minHeight: 40, padding: 0, color: chartTab === 1 ? '#3498db' : 'inherit', '&.Mui-selected': { color: '#3498db' } }} />
+                                <Tab icon={<OpacityIcon fontSize="small" />} label="湿度" sx={{ minHeight: 40, padding: 0, color: chartTab === 1 ? '#2ecc71' : 'inherit', '&.Mui-selected': { color: '#2ecc71' } }} />
                                 <Tab icon={<CompressIcon fontSize="small" />} label="気圧" sx={{ minHeight: 40, padding: 0, color: chartTab === 2 ? '#9b59b6' : 'inherit', '&.Mui-selected': { color: '#9b59b6' } }} />
                             </Tabs>
                         </div>
@@ -512,7 +519,7 @@ function AppContent() {
                                     dayMax = day.humid_max;
                                     curTempVal = latestData?.humidity;
                                     unit = '%';
-                                    barGradient = 'linear-gradient(90deg, #a5d8ff 0%, #3498db 100%)';
+                                    barGradient = 'linear-gradient(90deg, #d4f7d4 0%, #2ecc71 100%)';
                                 } else { // Pressure
                                     dayMin = day.pressure_min;
                                     dayMax = day.pressure_max;

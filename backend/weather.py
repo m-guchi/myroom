@@ -8,17 +8,18 @@ LON = 135.56
 
 def get_outdoor_weather() -> Optional[Dict[str, Any]]:
     """
-    Open-Meteo APIから Ibaraki-shi の現在の気温と湿度を取得する。
+    Open-Meteo APIから Ibaraki-shi の現在の気温、湿度、気圧を取得する。
     """
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&current=temperature_2m,relative_humidity_2m&timezone=Asia%2FTokyo"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&current=temperature_2m,relative_humidity_2m,surface_pressure&timezone=Asia%2FTokyo"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
             current = data.get("current", {})
             return {
                 "temperature": current.get("temperature_2m"),
-                "humidity": current.get("relative_humidity_2m")
+                "humidity": current.get("relative_humidity_2m"),
+                "pressure": current.get("surface_pressure")
             }
     except Exception as e:
         print(f"Error fetching outdoor weather: {e}")
@@ -29,7 +30,7 @@ def get_outdoor_history(start_date: str, end_date: str) -> Optional[Dict[str, Li
     指定された期間の外気履歴を取得する (ISO 8601 format: YYYY-MM-DD)
     """
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_2m,relative_humidity_2m&start_date={start_date}&end_date={end_date}&timezone=Asia%2FTokyo"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_2m,relative_humidity_2m,surface_pressure&start_date={start_date}&end_date={end_date}&timezone=Asia%2FTokyo"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
@@ -37,7 +38,8 @@ def get_outdoor_history(start_date: str, end_date: str) -> Optional[Dict[str, Li
             return {
                 "time": hourly.get("time"), # ISO8601 strings
                 "temperature": hourly.get("temperature_2m"),
-                "humidity": hourly.get("relative_humidity_2m")
+                "humidity": hourly.get("relative_humidity_2m"),
+                "pressure": hourly.get("surface_pressure")
             }
     except Exception as e:
         print(f"Error fetching outdoor history: {e}")

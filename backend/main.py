@@ -108,7 +108,8 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
         "humidity": record.humidity,
         "pressure": record.pressure if record.pressure else None,
         "outdoor_temperature": outdoor["temperature"] if outdoor else None,
-        "outdoor_humidity": outdoor["humidity"] if outdoor else None
+        "outdoor_humidity": outdoor["humidity"] if outdoor else None,
+        "outdoor_pressure": outdoor["pressure"] if outdoor else None
     }
 
 from sqlalchemy import func
