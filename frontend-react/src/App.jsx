@@ -394,7 +394,7 @@ function AppContent() {
                         </div>
                         <div className="mini-card">
                             <div className="mini-label">気圧</div>
-                            <div className="mini-value" style={{ color: '#2ecc71' }}>{press}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>hPa</span></div>
+                            <div className="mini-value" style={{ color: '#9b59b6' }}>{press}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>hPa</span></div>
                         </div>
                         <div className="mini-card">
                             <div className="mini-label">快適度</div>

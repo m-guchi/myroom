@@ -40,6 +40,11 @@ class SensorData(BaseModel):
 
 # --- Endpoints ---
 
+@app.get("/api/health")
+@app.head("/api/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.post("/api/sensor")
 async def create_sensor_data(
     data: SensorData,
@@ -329,7 +334,7 @@ frontend_dist = os.path.join(os.path.dirname(__file__), "../frontend-react/dist"
 if os.path.exists(frontend_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
     
-    @app.get("/{full_path:path}")
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def serve_react_app(full_path: str):
         # Allow API calls to pass through
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
