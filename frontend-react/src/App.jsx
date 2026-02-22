@@ -355,19 +355,17 @@ function AppContent() {
         <ThemeProvider theme={theme}>
             <Box sx={{ paddingBottom: 4 }}>
                 <div className="hero-weather">
-                    {acMode !== "OFF" && (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 1 }}>
-                            <Box sx={{
-                                display: 'flex', alignItems: 'center', gap: 1,
-                                padding: '4px 12px', borderRadius: 20,
-                                backgroundColor: 'rgba(255,255,255,0.5)', backdropFilter: 'blur(4px)',
-                                border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer'
-                            }} onClick={fetchData}>
-                                <span style={{ color: acColor, display: 'flex', alignItems: 'center' }}>{acIcon}</span>
-                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{acText}</span>
-                            </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 1 }}>
+                        <Box sx={{
+                            display: 'flex', alignItems: 'center', gap: 1,
+                            padding: '4px 12px', borderRadius: 20,
+                            backgroundColor: 'rgba(255,255,255,0.5)', backdropFilter: 'blur(4px)',
+                            border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer'
+                        }} onClick={fetchData}>
+                            <span style={{ color: acColor, display: 'flex', alignItems: 'center' }}>{acIcon}</span>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{acText}</span>
                         </Box>
-                    )}
+                    </Box>
 
                     <div className="current-temp-container">
                         <span className="current-temp">{temp}</span>
