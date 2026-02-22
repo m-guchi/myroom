@@ -92,6 +92,7 @@ function AppContent() {
     const [error, setError] = useState('');
     const [chartTab, setChartTab] = useState(0);
     const [timeRange, setTimeRange] = useState('day');
+    const [dailyLimit, setDailyLimit] = useState(7);
 
     // Check LocalStorage on mount
     useEffect(() => {
@@ -480,25 +481,92 @@ function AppContent() {
                     </Box>
 
                     <div className="daily-list">
-                        {dailyStats && dailyStats.slice(-5).reverse().map((day, index) => (
-                            <div className="daily-item" key={index}>
-                                <span className="daily-date">
-                                    {(() => {
-                                        if (index === 0) return "今日";
-                                        if (index === 1) return "昨日";
-                                        if (!day.date) return "--";
-                                        const dateStr = String(day.date);
-                                        if (dateStr.length >= 10) return dateStr.substring(5).replace('-', '/');
-                                        return dateStr;
-                                    })()}
-                                </span>
-                                <div className="daily-values">
-                                    <span className="temp-lo">{day.temp_min != null ? day.temp_min.toFixed(1) : '-'}°</span>
-                                    <div style={{ width: 60, height: 4, background: 'linear-gradient(90deg, #3498db 0%, #e74c3c 100%)', borderRadius: 2, margin: 'auto 0', opacity: 0.3 }}></div>
-                                    <span className="temp-hi">{day.temp_max != null ? day.temp_max.toFixed(1) : '-'}°</span>
-                                </div>
-                            </div>
-                        ))}
+                        {(() => {
+                            const lastFive = dailyStats && dailyStats.slice(-dailyLimit).reverse();
+                            if (!lastFive) return null;
+
+                            // Calculate global min/max to scale bars based on active tab
+                            let allValues = [];
+                            if (chartTab === 0) {
+                                allValues = lastFive.flatMap(d => [d.temp_min, d.temp_max]);
+                            } else if (chartTab === 1) {
+                                allValues = lastFive.flatMap(d => [d.humid_min, d.humid_max]);
+                            } else {
+                                allValues = lastFive.flatMap(d => [d.pressure_min, d.pressure_max]);
+                            }
+
+                            const validValues = allValues.filter(v => v != null);
+                            const gMin = validValues.length > 0 ? Math.min(...validValues) : 0;
+                            const gMax = validValues.length > 0 ? Math.max(...validValues) : 100;
+                            const gRange = gMax - gMin || 1;
+
+                            return lastFive.map((day, index) => {
+                                // Decide which values to show based on chartTab
+                                let dayMin, dayMax, curTempVal, unit;
+                                let barGradient = 'linear-gradient(90deg, #3498db 0%, #f1c40f 50%, #e74c3c 100%)';
+
+                                if (chartTab === 0) { // Temperature
+                                    dayMin = day.temp_min;
+                                    dayMax = day.temp_max;
+                                    curTempVal = latestData?.temperature;
+                                    unit = '°';
+                                } else if (chartTab === 1) { // Humidity
+                                    dayMin = day.humid_min;
+                                    dayMax = day.humid_max;
+                                    curTempVal = latestData?.humidity;
+                                    unit = '%';
+                                    barGradient = 'linear-gradient(90deg, #a5d8ff 0%, #3498db 100%)';
+                                } else { // Pressure
+                                    dayMin = day.pressure_min;
+                                    dayMax = day.pressure_max;
+                                    curTempVal = latestData?.pressure;
+                                    unit = '';
+                                    barGradient = 'linear-gradient(90deg, #e0c3fc 0%, #9b59b6 100%)';
+                                }
+
+                                const left = (dayMin != null) ? ((dayMin - gMin) / gRange) * 100 : 0;
+                                const width = (dayMin != null && dayMax != null) ? ((dayMax - dayMin) / gRange) * 100 : 0;
+                                const isToday = index === 0;
+                                const curPos = (isToday && curTempVal != null && gRange > 0) ? ((curTempVal - gMin) / gRange) * 100 : null;
+
+                                return (
+                                    <div className="daily-item" key={index}>
+                                        <span className="daily-date">
+                                            {isToday ? "今日" : index === 1 ? "昨日" : (String(day.date).substring(5).replace('-', '/') || '--')}
+                                        </span>
+                                        <div className="daily-values">
+                                            <span className="temp-lo">
+                                                {dayMin != null ? (chartTab === 2 ? Math.round(dayMin) : dayMin.toFixed(1)) : '-'}{unit}
+                                            </span>
+                                            <div className="range-bar-bg">
+                                                <div
+                                                    className="range-bar-fill"
+                                                    style={{ left: `${left}%`, width: `${width}%`, background: barGradient }}
+                                                ></div>
+                                                {curPos !== null && (
+                                                    <div
+                                                        className="range-current-dot"
+                                                        style={{ left: `${curPos}%` }}
+                                                    ></div>
+                                                )}
+                                            </div>
+                                            <span className="temp-hi">
+                                                {dayMax != null ? (chartTab === 2 ? Math.round(dayMax) : dayMax.toFixed(1)) : '-'}{unit}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            });
+                        })()}
+                        {dailyStats && dailyStats.length > dailyLimit && (
+                            <Button
+                                fullWidth
+                                onClick={() => setDailyLimit(prev => Math.min(prev + 7, dailyStats.length))}
+                                sx={{ mt: 1, color: 'var(--text-secondary)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                            >
+                                さらに表示する
+                            </Button>
+                        )}
                     </div>
                     <Box height={50} />
                 </Container>

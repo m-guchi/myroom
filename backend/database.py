@@ -53,7 +53,7 @@ def generate_mock_history():
 def generate_mock_daily():
     data = []
     today = datetime.date.today()
-    for i in range(7):
+    for i in range(30):
         d = today - datetime.timedelta(days=i)
         data.append({
             "date": d,

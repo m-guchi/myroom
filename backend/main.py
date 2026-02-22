@@ -119,7 +119,7 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
         return database.generate_mock_daily()
         
     today = datetime.date.today()
-    start_date = today - datetime.timedelta(days=7)
+    start_date = today - datetime.timedelta(days=30)
     
     import pandas as pd
     
@@ -158,8 +158,8 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
                 "temp_min_time": min_temp_row['datetime'].strftime("%H:%M"),
                 "humid_max": float(group['humidity'].max()),
                 "humid_min": float(group['humidity'].min()),
-                "pressure_max": group['pressure'].max() if 'pressure' in group and group['pressure'].notnull().any() else None,
-                "pressure_min": group['pressure'].min() if 'pressure' in group and group['pressure'].notnull().any() else None,
+                "pressure_max": float(group['pressure'].max()) if 'pressure' in group and group['pressure'].notnull().any() else None,
+                "pressure_min": float(group['pressure'].min()) if 'pressure' in group and group['pressure'].notnull().any() else None,
             })
     
     # Sort by date
