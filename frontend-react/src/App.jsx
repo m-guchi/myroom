@@ -556,10 +556,11 @@ function AppContent() {
                                     sx={{
                                         minWidth: 40,
                                         borderRadius: 4,
-                                        color: timeRange === range ? '#fff' : 'text.secondary',
-                                        backgroundColor: timeRange === range ? (chartTab === 0 ? '#2ecc71' : chartTab === 1 ? '#3498db' : '#9b59b6') : 'transparent',
+                                        color: timeRange === range ? '#fff' : 'var(--text-primary)',
+                                        opacity: timeRange === range ? 1 : 0.6,
+                                        backgroundColor: timeRange === range ? (chartTab === 2 ? '#9b59b6' : '#2ecc71') : 'transparent',
                                         '&:hover': {
-                                            backgroundColor: timeRange === range ? (chartTab === 0 ? '#2ecc71' : chartTab === 1 ? '#3498db' : '#9b59b6') : 'rgba(0,0,0,0.05)'
+                                            backgroundColor: timeRange === range ? (chartTab === 2 ? '#9b59b6' : '#2ecc71') : 'rgba(128,128,128,0.1)'
                                         }
                                     }}
                                 >
