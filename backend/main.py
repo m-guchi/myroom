@@ -86,7 +86,7 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
             "datetime": get_now_jst(),
             "temperature": round(23.5 + random.uniform(-0.5, 0.5), 1),
             "humidity": round(45.0 + random.uniform(-1, 1), 1),
-            "pressure": round(101300.0 + random.uniform(-100, 100), 1)
+            "pressure": round(1013.0 + random.uniform(-1, 1), 1)
         }
     
     record = db.query(database.DHTRecord).filter(database.DHTRecord.device_id == device).order_by(database.DHTRecord.datetime.desc()).first()
@@ -101,7 +101,7 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
         "datetime": record.datetime,
         "temperature": record.temperature,
         "humidity": record.humidity,
-        "pressure": record.pressure,
+        "pressure": round(record.pressure / 100.0, 1) if record.pressure else None,
         "outdoor_temperature": outdoor["temperature"] if outdoor else None,
         "outdoor_humidity": outdoor["humidity"] if outdoor else None
     }
@@ -131,7 +131,7 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
         "datetime": r.datetime,
         "temperature": r.temperature,
         "humidity": r.humidity,
-        "pressure": r.pressure
+        "pressure": r.pressure / 100.0 if r.pressure else None
     } for r in records]
     
     df = pd.DataFrame(data)
@@ -264,7 +264,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, device:
             "datetime": r.datetime,
             "temperature": r.temperature,
             "humidity": r.humidity,
-            "pressure": r.pressure,
+            "pressure": round(r.pressure / 100.0, 1) if r.pressure else None,
             "outdoor_temperature": out_data.get("temp"),
             "outdoor_humidity": out_data.get("humid")
         })
@@ -317,7 +317,7 @@ def get_analysis(date: Optional[str] = None, device: int = 1, db: Session = Depe
                 "datetime": r.datetime,
                 "temperature": r.temperature,
                 "humidity": r.humidity,
-                "pressure": r.pressure,
+                "pressure": r.pressure / 100.0 if r.pressure else None,
                 "outdoor_temperature": outdoor_map.get(hour_dt)
             })
     
