@@ -240,8 +240,18 @@ function AppContent() {
                         }}
                         formatter={(value, name) => {
                             const unit = chartTab === 0 ? '°C' : chartTab === 1 ? '%' : 'hPa';
-                            const formattedValue = (typeof value === 'number') ? value.toFixed(1) : value;
-                            if (Array.isArray(value)) return [`${value[0].toFixed(1)}${unit} ~ ${value[1].toFixed(1)}${unit}`, "範囲"];
+                            let formattedValue;
+                            if (typeof value === 'number') {
+                                formattedValue = chartTab === 2 ? Math.round(value) : value.toFixed(1);
+                            } else {
+                                formattedValue = value;
+                            }
+
+                            if (Array.isArray(value)) {
+                                const v0 = chartTab === 2 ? Math.round(value[0]) : value[0].toFixed(1);
+                                const v1 = chartTab === 2 ? Math.round(value[1]) : value[1].toFixed(1);
+                                return [`${v0}${unit} ~ ${v1}${unit}`, "範囲"];
+                            }
                             const displayName = name === "outdoor_temperature" || name === "outdoor_humidity" ? "屋外" :
                                 name === "temperature" || name === "humidity" || name === "pressure" ? "現在" : name;
                             return [`${formattedValue}${unit}`, displayName];
