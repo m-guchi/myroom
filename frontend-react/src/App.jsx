@@ -276,27 +276,36 @@ function AppContent() {
                         dataKey="datetimeObj"
                         type="number"
                         domain={['dataMin', 'dataMax']}
-                        ticks={timeRange === 'day' ? (() => {
+                        ticks={(timeRange === 'day' || timeRange === 'week') ? (() => {
                             const start = historyData[0]?.datetimeObj;
                             const end = historyData[historyData.length - 1]?.datetimeObj;
                             if (!start || !end) return undefined;
                             const ticks = [];
                             const startDate = new Date(start);
                             const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
-                            // Generate potential marks for 2 days to cover the 24h range
-                            for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-                                const base = startDay + (dayOffset * 86400000);
-                                [0, 6, 12, 18].forEach(h => {
-                                    const t = base + (h * 3600000);
+
+                            if (timeRange === 'day') {
+                                // Generate potential marks for 2 days to cover the 24h range
+                                for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+                                    const base = startDay + (dayOffset * 86400000);
+                                    [0, 6, 12, 18].forEach(h => {
+                                        const t = base + (h * 3600000);
+                                        if (t >= start && t <= end) ticks.push(t);
+                                    });
+                                }
+                            } else if (timeRange === 'week') {
+                                // 0:00 for each day (up to 8 days to cover the whole week)
+                                for (let dayOffset = 0; dayOffset <= 8; dayOffset++) {
+                                    const t = startDay + (dayOffset * 86400000);
                                     if (t >= start && t <= end) ticks.push(t);
-                                });
+                                }
                             }
                             return ticks.sort((a, b) => a - b);
                         })() : undefined}
                         tickFormatter={(t) => {
                             const date = new Date(t);
                             if (timeRange === 'day') return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                            if (timeRange === 'week') return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                            if (timeRange === 'week') return `${date.getMonth() + 1}/${date.getDate()}`;
                             if (timeRange === 'month') return `${date.getMonth() + 1}/${date.getDate()}`;
                             if (timeRange === 'year') return `${date.getFullYear().toString().slice(-2)}/${date.getMonth() + 1}/${date.getDate()}`;
                             return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
@@ -369,6 +378,22 @@ function AppContent() {
                                 lines.push(<ReferenceLine key={`${base}-${h}`} x={base + (h * 3600000)} stroke="var(--chart-line)" strokeDasharray="3 3" />);
                             });
                         });
+                        return lines;
+                    })()}
+
+                    {timeRange === 'week' && (() => {
+                        const start = historyData[0]?.datetimeObj;
+                        const end = historyData[historyData.length - 1]?.datetimeObj;
+                        if (!start || !end) return null;
+                        const startDate = new Date(start);
+                        const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
+                        const lines = [];
+                        for (let dayOffset = 0; dayOffset <= 8; dayOffset++) {
+                            const t = startDay + (dayOffset * 86400000);
+                            if (t >= start && t <= end) {
+                                lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+                            }
+                        }
                         return lines;
                     })()}
 
