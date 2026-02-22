@@ -159,6 +159,8 @@ function AppContent() {
     const [chartTab, setChartTab] = useState(0);
     const [timeRange, setTimeRange] = useState('day');
     const [dailyLimit, setDailyLimit] = useState(7);
+    const [customStartDate, setCustomStartDate] = useState(new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0]);
+    const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Check LocalStorage on mount
     useEffect(() => {
@@ -175,7 +177,7 @@ function AppContent() {
             const interval = setInterval(fetchData, 30000);
             return () => clearInterval(interval);
         }
-    }, [isAuthenticated, timeRange]);
+    }, [isAuthenticated, timeRange, customStartDate, customEndDate]);
 
     const handleLogin = () => {
         const envPassword = import.meta.env.VITE_APP_PASSWORD || 'admin';
@@ -198,9 +200,14 @@ function AppContent() {
         setError('');
         try {
             // Parallel requests for speed
+            let historyUrl = `/api/history?range=${timeRange}`;
+            if (timeRange === 'custom') {
+                historyUrl = `/api/history?start=${customStartDate}&end=${customEndDate}`;
+            }
+
             const [latestRes, historyRes, dailyRes, analysisRes] = await Promise.allSettled([
                 axios.get('/api/latest'),
-                axios.get(`/api/history?range=${timeRange}`),
+                axios.get(historyUrl),
                 axios.get('/api/daily-stats'),
                 axios.get('/api/analysis')
             ]);
@@ -282,7 +289,7 @@ function AppContent() {
                         dataKey="datetimeObj"
                         type="number"
                         domain={['dataMin', 'dataMax']}
-                        ticks={(timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year') ? (() => {
+                        ticks={(timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year' || timeRange === 'custom') ? (() => {
                             const start = historyData[0]?.datetimeObj;
                             const end = historyData[historyData.length - 1]?.datetimeObj;
                             if (!start || !end) return undefined;
@@ -290,8 +297,17 @@ function AppContent() {
                             const startDate = new Date(start);
                             const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
 
-                            if (timeRange === 'day') {
-                                // Generate potential marks for 2 days to cover the 24h range
+                            const durationDays = (end - start) / 86400000;
+                            let effectiveLogic = timeRange;
+                            if (timeRange === 'custom') {
+                                if (durationDays <= 2.1) effectiveLogic = 'day';
+                                else if (durationDays <= 14) effectiveLogic = 'week';
+                                else if (durationDays <= 65) effectiveLogic = 'month';
+                                else if (durationDays <= 200) effectiveLogic = 'month_starts';
+                                else effectiveLogic = 'year';
+                            }
+
+                            if (effectiveLogic === 'day') {
                                 for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
                                     const base = startDay + (dayOffset * 86400000);
                                     [0, 6, 12, 18].forEach(h => {
@@ -299,17 +315,15 @@ function AppContent() {
                                         if (t >= start && t <= end) ticks.push(t);
                                     });
                                 }
-                            } else if (timeRange === 'week') {
-                                // 0:00 for each day (up to 8 days to cover the whole week)
-                                for (let dayOffset = 0; dayOffset <= 8; dayOffset++) {
+                            } else if (effectiveLogic === 'week') {
+                                for (let dayOffset = 0; dayOffset <= 14; dayOffset++) {
                                     const t = startDay + (dayOffset * 86400000);
                                     if (t >= start && t <= end) ticks.push(t);
                                 }
-                            } else if (timeRange === 'month') {
-                                // 1st, 11th, 21st of each month in range
+                            } else if (effectiveLogic === 'month') {
                                 let current = new Date(startDay);
-                                current.setDate(1); // Start at the 1st of the current month
-                                for (let i = 0; i < 60; i++) { // Check enough points (e.g., 5 years * 12 months)
+                                current.setDate(1);
+                                for (let i = 0; i < 60; i++) {
                                     [1, 11, 21].forEach(day => {
                                         const t = new Date(current.getFullYear(), current.getMonth(), day).getTime();
                                         if (t >= start && t <= end) ticks.push(t);
@@ -317,9 +331,17 @@ function AppContent() {
                                     current.setMonth(current.getMonth() + 1);
                                     if (current.getTime() > end) break;
                                 }
-                            } else if (timeRange === 'year') {
-                                let current = new Date(startDate.getFullYear(), 0, 1); // Jan 1st
-                                for (let i = 0; i < 20; i++) { // Check few years
+                            } else if (effectiveLogic === 'month_starts') {
+                                let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+                                for (let i = 0; i < 24; i++) {
+                                    const t = current.getTime();
+                                    if (t >= start && t <= end) ticks.push(t);
+                                    current.setMonth(current.getMonth() + 1);
+                                    if (current.getTime() > end) break;
+                                }
+                            } else if (effectiveLogic === 'year') {
+                                let current = new Date(startDate.getFullYear(), 0, 1);
+                                for (let i = 0; i < 20; i++) {
                                     [0, 3, 6, 9].forEach(monthOffset => {
                                         const t = new Date(current.getFullYear(), monthOffset, 1).getTime();
                                         if (t >= start && t <= end) ticks.push(t);
@@ -333,8 +355,7 @@ function AppContent() {
                         tickFormatter={(t) => {
                             const date = new Date(t);
                             if (timeRange === 'day') return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                            if (timeRange === 'week' || timeRange === 'month' || timeRange === 'year') return `${date.getMonth() + 1}/${date.getDate()}`;
-                            return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                            return `${date.getMonth() + 1}/${date.getDate()}`;
                         }}
                         tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
                         axisLine={false}
@@ -371,7 +392,10 @@ function AppContent() {
                             if (Array.isArray(value)) return null; // Safety: skip any remaining arrays
 
                             const displayName = name === "outdoor_temperature" || name === "outdoor_humidity" ? "屋外" :
-                                name === "temperature" || name === "humidity" || name === "pressure" ? (timeRange === 'month' || timeRange === 'year' ? "平均" : "現在") : name;
+                                name === "temperature" || name === "humidity" || name === "pressure" ? (timeRange === 'month' || timeRange === 'year' || timeRange === 'custom' ? "平均" : "現在") : name;
+
+                            // Skip average for aggregated views if user requested "平均は不要"
+                            if (displayName === "平均") return null;
 
                             return [`${formattedValue}${unit}`, displayName];
                         }}
@@ -394,7 +418,7 @@ function AppContent() {
                     )}
 
                     {/* Vertical Guide Lines */}
-                    {(timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year') && (() => {
+                    {(timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year' || timeRange === 'custom') && (() => {
                         const start = historyData[0]?.datetimeObj;
                         const end = historyData[historyData.length - 1]?.datetimeObj;
                         if (!start || !end) return null;
@@ -403,7 +427,17 @@ function AppContent() {
                         const startDate = new Date(start);
                         const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
 
-                        if (timeRange === 'day') {
+                        const durationDays = (end - start) / 86400000;
+                        let effectiveLogic = timeRange;
+                        if (timeRange === 'custom') {
+                            if (durationDays <= 2.1) effectiveLogic = 'day';
+                            else if (durationDays <= 14) effectiveLogic = 'week';
+                            else if (durationDays <= 65) effectiveLogic = 'month';
+                            else if (durationDays <= 200) effectiveLogic = 'month_starts';
+                            else effectiveLogic = 'year';
+                        }
+
+                        if (effectiveLogic === 'day') {
                             [0, 1].forEach(dayOffset => {
                                 const base = startDay + (dayOffset * 86400000);
                                 [0, 6, 12, 18].forEach(h => {
@@ -411,12 +445,12 @@ function AppContent() {
                                     if (t >= start && t <= end) lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
                                 });
                             });
-                        } else if (timeRange === 'week') {
-                            for (let i = 0; i <= 8; i++) {
+                        } else if (effectiveLogic === 'week') {
+                            for (let i = 0; i <= 14; i++) {
                                 const t = startDay + (i * 86400000);
                                 if (t >= start && t <= end) lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
                             }
-                        } else if (timeRange === 'month') {
+                        } else if (effectiveLogic === 'month') {
                             let current = new Date(startDay);
                             current.setDate(1);
                             for (let i = 0; i < 60; i++) {
@@ -427,7 +461,15 @@ function AppContent() {
                                 current.setMonth(current.getMonth() + 1);
                                 if (current.getTime() > end) break;
                             }
-                        } else if (timeRange === 'year') {
+                        } else if (effectiveLogic === 'month_starts') {
+                            let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+                            for (let i = 0; i < 24; i++) {
+                                const t = current.getTime();
+                                if (t >= start && t <= end) lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+                                current.setMonth(current.getMonth() + 1);
+                                if (current.getTime() > end) break;
+                            }
+                        } else if (effectiveLogic === 'year') {
                             let current = new Date(startDate.getFullYear(), 0, 1);
                             for (let i = 0; i < 20; i++) {
                                 [0, 3, 6, 9].forEach(monthOffset => {
@@ -452,7 +494,7 @@ function AppContent() {
                         name="屋内の最高・最低範囲"
                     />
 
-                    {(timeRange === 'month' || timeRange === 'year') && (
+                    {(timeRange === 'month' || timeRange === 'year' || timeRange === 'custom') && (
                         <>
                             <Line
                                 type="monotone"
@@ -476,7 +518,7 @@ function AppContent() {
                         </>
                     )}
 
-                    {(timeRange !== 'month' && timeRange !== 'year') && (
+                    {(timeRange !== 'month' && timeRange !== 'year' && timeRange !== 'custom') && (
                         <Area
                             type="monotone"
                             dataKey={dataKey}
@@ -642,8 +684,8 @@ function AppContent() {
                             </Tabs>
                         </div>
 
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 2 }}>
-                            {['day', 'week', 'month', 'year'].map((range) => (
+                        <Box sx={{ display: 'flex', gap: 0.5, mb: 2, justifyContent: 'center', width: '100%' }}>
+                            {['day', 'week', 'month', 'year', 'custom'].map((range) => (
                                 <Button
                                     key={range}
                                     size="small"
@@ -659,13 +701,55 @@ function AppContent() {
                                         }
                                     }}
                                 >
-                                    {range === 'day' ? '1D' : range === 'week' ? '1W' : range === 'month' ? '1M' : '1Y'}
+                                    {range === 'day' ? '1D' : range === 'week' ? '1W' : range === 'month' ? '1M' : range === 'year' ? '1Y' : '全期間'}
                                 </Button>
                             ))}
                         </Box>
 
-
-
+                        {timeRange === 'custom' && (() => {
+                            const activeColor = chartTab === 0 ? '#3498db' : chartTab === 1 ? '#2ecc71' : '#9b59b6';
+                            return (
+                                <Box sx={{ display: 'flex', gap: 1, mb: 2, px: 2, alignItems: 'center', justifyContent: 'center' }}>
+                                    <TextField
+                                        type="date"
+                                        size="small"
+                                        label="開始"
+                                        value={customStartDate}
+                                        onChange={(e) => setCustomStartDate(e.target.value)}
+                                        InputLabelProps={{ shrink: true }}
+                                        sx={{
+                                            maxWidth: 140,
+                                            '& .MuiInputBase-input': { color: 'var(--text-primary)' },
+                                            '& .MuiInputLabel-root': { color: activeColor },
+                                            '& .MuiOutlinedInput-root': {
+                                                '& fieldset': { borderColor: 'rgba(128,128,128,0.3)' },
+                                                '&:hover fieldset': { borderColor: activeColor },
+                                                '&.Mui-focused fieldset': { borderColor: activeColor },
+                                            }
+                                        }}
+                                    />
+                                    <Typography variant="body2" color="text.secondary">〜</Typography>
+                                    <TextField
+                                        type="date"
+                                        size="small"
+                                        label="終了"
+                                        value={customEndDate}
+                                        onChange={(e) => setCustomEndDate(e.target.value)}
+                                        InputLabelProps={{ shrink: true }}
+                                        sx={{
+                                            maxWidth: 140,
+                                            '& .MuiInputBase-input': { color: 'var(--text-primary)' },
+                                            '& .MuiInputLabel-root': { color: activeColor },
+                                            '& .MuiOutlinedInput-root': {
+                                                '& fieldset': { borderColor: 'rgba(128,128,128,0.3)' },
+                                                '&:hover fieldset': { borderColor: activeColor },
+                                                '&.Mui-focused fieldset': { borderColor: activeColor },
+                                            }
+                                        }}
+                                    />
+                                </Box>
+                            );
+                        })()}
                         <div style={{ position: 'relative', minHeight: 220 }}>
                             {loading && (
                                 <Box
@@ -813,7 +897,7 @@ function AppContent() {
                     </Box>
                 </Container>
             </Box>
-        </ThemeProvider>
+        </ThemeProvider >
     );
 }
 
