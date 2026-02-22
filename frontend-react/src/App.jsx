@@ -5,7 +5,8 @@ import {
     Tabs, Tab, Fade, CircularProgress, Alert
 } from '@mui/material';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Brush
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Brush,
+    PieChart, Pie, Cell
 } from 'recharts';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpacityIcon from '@mui/icons-material/Opacity';
@@ -80,6 +81,71 @@ class ErrorBoundary extends React.Component {
         return this.props.children;
     }
 }
+
+const ComfortGauge = ({ value }) => {
+    if (value == null || isNaN(value)) return null;
+
+    const min = 40;
+    const max = 90;
+    const clampedValue = Math.min(Math.max(value, min), max);
+    const pos = ((clampedValue - min) / (max - min)) * 100;
+
+    return (
+        <Box sx={{ width: '100%', margin: '40px auto 12px' }}>
+            <Box sx={{ position: 'relative', height: 20, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 10, overflow: 'visible', mb: 1.5 }}>
+                {/* Segments */}
+                <Box sx={{ position: 'absolute', left: '0%', width: '40%', height: '100%', bgcolor: '#3498db', opacity: 0.2, borderRadius: '10px 0 0 10px' }} />
+                <Box sx={{ position: 'absolute', left: '40%', width: '30%', height: '100%', bgcolor: '#2ecc71', opacity: 0.2 }} />
+                <Box sx={{ position: 'absolute', left: '70%', width: '30%', height: '100%', bgcolor: '#e74c3c', opacity: 0.2, borderRadius: '0 10px 10px 0' }} />
+
+                {/* Marker Group */}
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        left: `${pos}%`,
+                        top: 0,
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transform: 'translateX(-50%)',
+                        transition: 'left 1s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        zIndex: 2,
+                        overflow: 'visible'
+                    }}
+                >
+                    {/* Value + Triangle (Above the bar) */}
+                    <Box sx={{ position: 'absolute', bottom: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 0.5 }}>
+                        <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap', mb: -0.5 }}>
+                            {value.toFixed(1)}
+                        </Typography>
+                        <Box sx={{
+                            width: 0, height: 0,
+                            borderLeft: '6px solid transparent',
+                            borderRight: '6px solid transparent',
+                            borderTop: '8px solid var(--text-primary)',
+                        }} />
+                    </Box>
+
+                    {/* Vertical Line (Crossing the bar) */}
+                    <Box sx={{
+                        width: 4,
+                        height: 32,
+                        bgcolor: 'var(--text-primary)',
+                        borderRadius: 1,
+                        boxShadow: '0 0 4px rgba(0,0,0,0.2)'
+                    }} />
+                </Box>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', px: 1 }}>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5 }}>寒</Typography>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5 }}>快適</Typography>
+                <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5 }}>暑</Typography>
+            </Box>
+        </Box>
+    );
+};
 
 function AppContent() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -403,20 +469,38 @@ function AppContent() {
 
 
                 <Container maxWidth="xs" sx={{ padding: '0 20px' }}>
-                    <div className="metrics-grid" style={{ gridTemplateColumns: '1fr' }}>
-                        <div className="mini-card" style={{ flexDirection: 'row', gap: '12px', justifyContent: 'center' }}>
-                            <div className="mini-label" style={{ marginBottom: 0 }}>現在の快適度:</div>
-                            <div className="mini-value" style={{ fontSize: '1rem' }}>
-                                {(() => {
-                                    if (latestData?.temperature == null) return '--';
-                                    const di = 0.81 * latestData.temperature + 0.01 * latestData.humidity * (0.99 * latestData.temperature - 14.3) + 46.3;
-                                    if (di < 60) return "寒い 🥶";
-                                    if (di < 75) return "快適 🙂";
-                                    return "暑い 🥵";
-                                })()}
-                            </div>
-                        </div>
-                    </div>
+                    <Box sx={{ mb: 6, textAlign: 'center' }}>
+                        {(() => {
+                            if (latestData?.temperature == null) return null;
+                            const di = 0.81 * latestData.temperature + 0.01 * latestData.humidity * (0.99 * latestData.temperature - 14.3) + 46.3;
+                            let mainAdvice = "とても快適な環境です 🙂";
+                            let subAdvice = "";
+
+                            if (di < 55) mainAdvice = "寒いですね。暖房の使用を検討してください 🧣";
+                            else if (di < 60) mainAdvice = "少し肌寒いです。羽織るものがあると良さそうです 🧥";
+                            else if (di < 70) mainAdvice = "ちょうど良い、快適な状態です ✨";
+                            else if (di < 75) mainAdvice = "少し暖かくなってきましたね 🙂";
+                            else if (di < 80) mainAdvice = "やや蒸し暑いです。風通しを良くしてください 🎐";
+                            else mainAdvice = "かなり暑いです！熱中症に気をつけてください ⚠️";
+
+                            if (latestData.humidity < 40) subAdvice = "空気が乾燥しています。加湿を検討してください 💧";
+                            else if (latestData.humidity > 65) subAdvice = "湿気が多いです。除湿や換気がオススメです ☂️";
+
+                            return (
+                                <Box>
+                                    <ComfortGauge value={di} />
+                                    <Typography sx={{ fontSize: '1rem', fontWeight: 600, mt: 1.5 }}>
+                                        {mainAdvice}
+                                    </Typography>
+                                    {subAdvice && (
+                                        <Typography sx={{ fontSize: '0.8rem', color: 'var(--text-secondary)', mt: 0.5 }}>
+                                            {subAdvice}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            );
+                        })()}
+                    </Box>
 
                     <div className="chart-container">
                         <div className="chart-header">
