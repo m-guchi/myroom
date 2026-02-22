@@ -241,13 +241,13 @@ function AppContent() {
 
         let dataKey = "temperature";
         let rangeKey = "temperatureRange";
-        let color = "#2ecc71";
+        let color = "#3498db"; // Changed from green to blue
         let outdoorKey = "outdoor_temperature";
 
         if (chartTab === 1) {
             dataKey = "humidity";
             rangeKey = "humidityRange";
-            color = "#2ecc71"; // Changed from blue to green
+            color = "#2ecc71";
             outdoorKey = "outdoor_humidity";
         } else if (chartTab === 2) {
             dataKey = "pressure";
@@ -468,7 +468,7 @@ function AppContent() {
                     <div className="main-metrics-row">
                         <div className="metric-item">
                             <span className="metric-label">温度</span>
-                            <div className="metric-value">
+                            <div className="metric-value" style={{ color: '#3498db' }}>
                                 {temp}<span className="metric-unit">°C</span>
                             </div>
                             <div className="outdoor-sub-value">屋外: {outTemp}°C</div>
@@ -539,9 +539,9 @@ function AppContent() {
                                 onChange={(e, v) => setChartTab(v)}
                                 variant="fullWidth"
                                 sx={{ width: '100%', minHeight: 40 }}
-                                TabIndicatorProps={{ style: { backgroundColor: chartTab === 2 ? '#9b59b6' : '#2ecc71', borderRadius: 2 } }}
+                                TabIndicatorProps={{ style: { backgroundColor: chartTab === 0 ? '#3498db' : chartTab === 1 ? '#2ecc71' : '#9b59b6', borderRadius: 2 } }}
                             >
-                                <Tab icon={<ThermostatIcon fontSize="small" />} label="温度" sx={{ minHeight: 40, padding: 0, color: chartTab === 0 ? '#2ecc71' : 'inherit', '&.Mui-selected': { color: '#2ecc71' } }} />
+                                <Tab icon={<ThermostatIcon fontSize="small" />} label="温度" sx={{ minHeight: 40, padding: 0, color: chartTab === 0 ? '#3498db' : 'inherit', '&.Mui-selected': { color: '#3498db' } }} />
                                 <Tab icon={<OpacityIcon fontSize="small" />} label="湿度" sx={{ minHeight: 40, padding: 0, color: chartTab === 1 ? '#2ecc71' : 'inherit', '&.Mui-selected': { color: '#2ecc71' } }} />
                                 <Tab icon={<CompressIcon fontSize="small" />} label="気圧" sx={{ minHeight: 40, padding: 0, color: chartTab === 2 ? '#9b59b6' : 'inherit', '&.Mui-selected': { color: '#9b59b6' } }} />
                             </Tabs>
@@ -558,9 +558,9 @@ function AppContent() {
                                         borderRadius: 4,
                                         color: timeRange === range ? '#fff' : 'var(--text-primary)',
                                         opacity: timeRange === range ? 1 : 0.6,
-                                        backgroundColor: timeRange === range ? (chartTab === 2 ? '#9b59b6' : '#2ecc71') : 'transparent',
+                                        backgroundColor: timeRange === range ? (chartTab === 0 ? '#3498db' : chartTab === 1 ? '#2ecc71' : '#9b59b6') : 'transparent',
                                         '&:hover': {
-                                            backgroundColor: timeRange === range ? (chartTab === 2 ? '#9b59b6' : '#2ecc71') : 'rgba(128,128,128,0.1)'
+                                            backgroundColor: timeRange === range ? (chartTab === 0 ? '#3498db' : chartTab === 1 ? '#2ecc71' : '#9b59b6') : 'rgba(128,128,128,0.1)'
                                         }
                                     }}
                                 >
