@@ -371,5 +371,10 @@ if os.path.exists(frontend_dist):
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
              raise HTTPException(status_code=404, detail="Not Found") # Let FastAPI handle routes
              
+        # Check if requested file exists in dist directory
+        requested_file = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(requested_file):
+            return FileResponse(requested_file)
+             
         # Serve index.html for any other path (SPA)
         return FileResponse(os.path.join(frontend_dist, "index.html"))
