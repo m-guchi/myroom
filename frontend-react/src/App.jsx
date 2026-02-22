@@ -241,17 +241,23 @@ function AppContent() {
 
         let dataKey = "temperature";
         let rangeKey = "temperatureRange";
-        let color = "#3498db"; // Changed from green to blue
+        let maxKey = "temperature_max";
+        let minKey = "temperature_min";
+        let color = "#3498db";
         let outdoorKey = "outdoor_temperature";
 
         if (chartTab === 1) {
             dataKey = "humidity";
             rangeKey = "humidityRange";
+            maxKey = "humidity_max";
+            minKey = "humidity_min";
             color = "#2ecc71";
             outdoorKey = "outdoor_humidity";
         } else if (chartTab === 2) {
             dataKey = "pressure";
             rangeKey = "pressureRange";
+            maxKey = "pressure_max";
+            minKey = "pressure_min";
             color = "#9b59b6";
             outdoorKey = "outdoor_pressure";
         }
@@ -276,7 +282,7 @@ function AppContent() {
                         dataKey="datetimeObj"
                         type="number"
                         domain={['dataMin', 'dataMax']}
-                        ticks={(timeRange === 'day' || timeRange === 'week') ? (() => {
+                        ticks={(timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year') ? (() => {
                             const start = historyData[0]?.datetimeObj;
                             const end = historyData[historyData.length - 1]?.datetimeObj;
                             if (!start || !end) return undefined;
@@ -299,15 +305,35 @@ function AppContent() {
                                     const t = startDay + (dayOffset * 86400000);
                                     if (t >= start && t <= end) ticks.push(t);
                                 }
+                            } else if (timeRange === 'month') {
+                                // 1st, 11th, 21st of each month in range
+                                let current = new Date(startDay);
+                                current.setDate(1); // Start at the 1st of the current month
+                                for (let i = 0; i < 60; i++) { // Check enough points (e.g., 5 years * 12 months)
+                                    [1, 11, 21].forEach(day => {
+                                        const t = new Date(current.getFullYear(), current.getMonth(), day).getTime();
+                                        if (t >= start && t <= end) ticks.push(t);
+                                    });
+                                    current.setMonth(current.getMonth() + 1);
+                                    if (current.getTime() > end) break;
+                                }
+                            } else if (timeRange === 'year') {
+                                let current = new Date(startDate.getFullYear(), 0, 1); // Jan 1st
+                                for (let i = 0; i < 20; i++) { // Check few years
+                                    [0, 3, 6, 9].forEach(monthOffset => {
+                                        const t = new Date(current.getFullYear(), monthOffset, 1).getTime();
+                                        if (t >= start && t <= end) ticks.push(t);
+                                    });
+                                    current.setFullYear(current.getFullYear() + 1);
+                                    if (current.getTime() > end) break;
+                                }
                             }
-                            return ticks.sort((a, b) => a - b);
+                            return [...new Set(ticks)].sort((a, b) => a - b);
                         })() : undefined}
                         tickFormatter={(t) => {
                             const date = new Date(t);
                             if (timeRange === 'day') return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                            if (timeRange === 'week') return `${date.getMonth() + 1}/${date.getDate()}`;
-                            if (timeRange === 'month') return `${date.getMonth() + 1}/${date.getDate()}`;
-                            if (timeRange === 'year') return `${date.getFullYear().toString().slice(-2)}/${date.getMonth() + 1}/${date.getDate()}`;
+                            if (timeRange === 'week' || timeRange === 'month' || timeRange === 'year') return `${date.getMonth() + 1}/${date.getDate()}`;
                             return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                         }}
                         tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
@@ -331,6 +357,9 @@ function AppContent() {
                             return date.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                         }}
                         formatter={(value, name) => {
+                            // Skip range display
+                            if (name === "屋内の最高・最低範囲" || name === "範囲") return null;
+
                             const unit = chartTab === 0 ? '°C' : chartTab === 1 ? '%' : 'hPa';
                             let formattedValue;
                             if (typeof value === 'number') {
@@ -339,19 +368,17 @@ function AppContent() {
                                 formattedValue = value;
                             }
 
-                            if (Array.isArray(value)) {
-                                const v0 = chartTab === 2 ? Math.round(value[0]) : value[0].toFixed(1);
-                                const v1 = chartTab === 2 ? Math.round(value[1]) : value[1].toFixed(1);
-                                return [`${v0}${unit} ~ ${v1}${unit}`, "範囲"];
-                            }
+                            if (Array.isArray(value)) return null; // Safety: skip any remaining arrays
+
                             const displayName = name === "outdoor_temperature" || name === "outdoor_humidity" ? "屋外" :
-                                name === "temperature" || name === "humidity" || name === "pressure" ? "現在" : name;
+                                name === "temperature" || name === "humidity" || name === "pressure" ? (timeRange === 'month' || timeRange === 'year' ? "平均" : "現在") : name;
+
                             return [`${formattedValue}${unit}`, displayName];
                         }}
                         contentStyle={{ backgroundColor: '#2d3436', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 16px rgba(0,0,0,0.3)' }}
                         itemStyle={{ color: '#dfe6e9' }}
                         labelStyle={{ color: '#b2bec3', marginBottom: 4 }}
-                        isAnimationActive={false} /* Disable animation to prevent crash on rapid updates/missing props */
+                        isAnimationActive={false}
                     />
                     {outdoorKey && (
                         <Line
@@ -366,32 +393,49 @@ function AppContent() {
                         />
                     )}
 
-                    {/* Range Area (Min-Max) */}
-                    {timeRange === 'day' && (() => {
-                        const now = new Date();
-                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-                        const yesterday = today - 86400000;
-                        const lines = [];
-                        // 6 hour steps: 0, 6, 12, 18
-                        [yesterday, today].forEach(base => {
-                            [0, 6, 12, 18].forEach(h => {
-                                lines.push(<ReferenceLine key={`${base}-${h}`} x={base + (h * 3600000)} stroke="var(--chart-line)" strokeDasharray="3 3" />);
-                            });
-                        });
-                        return lines;
-                    })()}
-
-                    {timeRange === 'week' && (() => {
+                    {/* Vertical Guide Lines */}
+                    {(timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year') && (() => {
                         const start = historyData[0]?.datetimeObj;
                         const end = historyData[historyData.length - 1]?.datetimeObj;
                         if (!start || !end) return null;
+
+                        const lines = [];
                         const startDate = new Date(start);
                         const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
-                        const lines = [];
-                        for (let dayOffset = 0; dayOffset <= 8; dayOffset++) {
-                            const t = startDay + (dayOffset * 86400000);
-                            if (t >= start && t <= end) {
-                                lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+
+                        if (timeRange === 'day') {
+                            [0, 1].forEach(dayOffset => {
+                                const base = startDay + (dayOffset * 86400000);
+                                [0, 6, 12, 18].forEach(h => {
+                                    const t = base + (h * 3600000);
+                                    if (t >= start && t <= end) lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+                                });
+                            });
+                        } else if (timeRange === 'week') {
+                            for (let i = 0; i <= 8; i++) {
+                                const t = startDay + (i * 86400000);
+                                if (t >= start && t <= end) lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+                            }
+                        } else if (timeRange === 'month') {
+                            let current = new Date(startDay);
+                            current.setDate(1);
+                            for (let i = 0; i < 60; i++) {
+                                [1, 11, 21].forEach(day => {
+                                    const t = new Date(current.getFullYear(), current.getMonth(), day).getTime();
+                                    if (t >= start && t <= end) lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+                                });
+                                current.setMonth(current.getMonth() + 1);
+                                if (current.getTime() > end) break;
+                            }
+                        } else if (timeRange === 'year') {
+                            let current = new Date(startDate.getFullYear(), 0, 1);
+                            for (let i = 0; i < 20; i++) {
+                                [0, 3, 6, 9].forEach(monthOffset => {
+                                    const t = new Date(current.getFullYear(), monthOffset, 1).getTime();
+                                    if (t >= start && t <= end) lines.push(<ReferenceLine key={t} x={t} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+                                });
+                                current.setFullYear(current.getFullYear() + 1);
+                                if (current.getTime() > end) break;
                             }
                         }
                         return lines;
@@ -402,22 +446,48 @@ function AppContent() {
                         dataKey={rangeKey}
                         stroke="none"
                         fill={color}
-                        fillOpacity={0.2}
+                        fillOpacity={0.1}
                         isAnimationActive={false}
                         connectNulls
-                        name="範囲"
+                        name="屋内の最高・最低範囲"
                     />
 
-                    <Area
-                        type="monotone"
-                        dataKey={dataKey}
-                        stroke={color}
-                        strokeWidth={3}
-                        fillOpacity={1}
-                        fill={`url(#color-${chartTab})`}
-                        name="現在"
-                        isAnimationActive={false}
-                    />
+                    {(timeRange === 'month' || timeRange === 'year') && (
+                        <>
+                            <Line
+                                type="monotone"
+                                dataKey={maxKey}
+                                stroke={color}
+                                strokeWidth={2}
+                                dot={false}
+                                name="最高"
+                                isAnimationActive={false}
+                            />
+                            <Line
+                                type="monotone"
+                                dataKey={minKey}
+                                stroke={color}
+                                strokeWidth={2}
+                                dot={false}
+                                name="最低"
+                                isAnimationActive={false}
+                                opacity={0.5}
+                            />
+                        </>
+                    )}
+
+                    {(timeRange !== 'month' && timeRange !== 'year') && (
+                        <Area
+                            type="monotone"
+                            dataKey={dataKey}
+                            stroke={color}
+                            strokeWidth={3}
+                            fillOpacity={1}
+                            fill={`url(#color-${chartTab})`}
+                            name="現在"
+                            isAnimationActive={false}
+                        />
+                    )}
 
                 </AreaChart>
             </ResponsiveContainer>
