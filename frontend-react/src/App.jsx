@@ -475,9 +475,6 @@ function AppContent() {
 
                     <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
                         <span className="section-label">最近の記録</span>
-                        <IconButton size="small" onClick={handleLogout} sx={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                            ログアウト
-                        </IconButton>
                     </Box>
 
                     <div className="daily-list">
@@ -568,7 +565,35 @@ function AppContent() {
                             </Button>
                         )}
                     </div>
-                    <Box height={50} />
+                    <Box
+                        sx={{
+                            mt: 4,
+                            mx: -2.5, // compensate for Container padding
+                            px: 2.5,
+                            py: 4,
+                            backgroundColor: 'rgba(0,0,0,0.03)',
+                            borderTop: '1px solid rgba(0,0,0,0.05)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            gap: 2,
+                            pb: 8 // Extra bottom spacing
+                        }}
+                    >
+                        <Button
+                            variant="text"
+                            onClick={() => window.location.reload()}
+                            sx={{ color: 'var(--text-secondary)', fontSize: '0.85rem', flex: 1 }}
+                        >
+                            画面再読み込み
+                        </Button>
+                        <Button
+                            variant="text"
+                            onClick={handleLogout}
+                            sx={{ color: '#e74c3c', fontSize: '0.85rem', opacity: 0.8, flex: 1 }}
+                        >
+                            ログアウト
+                        </Button>
+                    </Box>
                 </Container>
             </Box>
         </ThemeProvider>
