@@ -149,13 +149,12 @@ function AppContent() {
                     datetimeObj: item.datetime ? new Date(item.datetime).getTime() : 0,
                     temperature: item.temperature || 0,
                     humidity: item.humidity || 0,
-                    pressure: item.pressure ? (item.pressure > 5000 ? Math.round(item.pressure / 100) : Math.round(item.pressure)) : 0,
+                    pressure: item.pressure ? Math.round(item.pressure) : 0,
                     // Ranges for aggregated view
                     temperatureRange: (item.temperature_min !== undefined && item.temperature_max !== undefined) ? [item.temperature_min, item.temperature_max] : null,
                     humidityRange: (item.humidity_min !== undefined && item.humidity_max !== undefined) ? [item.humidity_min, item.humidity_max] : null,
                     pressureRange: (item.pressure_min !== undefined && item.pressure_max !== undefined) ?
-                        [Math.round(item.pressure_min > 5000 ? item.pressure_min / 100 : item.pressure_min),
-                        Math.round(item.pressure_max > 5000 ? item.pressure_max / 100 : item.pressure_max)] : null,
+                        [Math.round(item.pressure_min), Math.round(item.pressure_max)] : null,
                 }));
                 setHistoryData(processed);
             }
@@ -330,7 +329,7 @@ function AppContent() {
     // Helper Variables
     const temp = latestData?.temperature != null ? latestData.temperature.toFixed(1) : '--';
     const humid = latestData?.humidity != null ? latestData.humidity : '--';
-    const press = latestData?.pressure != null ? (latestData.pressure > 5000 ? Math.round(latestData.pressure / 100) : Math.round(latestData.pressure)) : '--';
+    const press = latestData?.pressure != null ? Math.round(latestData.pressure) : '--';
     const outTemp = latestData?.outdoor_temperature != null ? latestData.outdoor_temperature.toFixed(1) : '--';
     const lastUpdated = latestData?.datetime
         ? new Date(latestData.datetime).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })

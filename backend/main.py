@@ -68,7 +68,7 @@ async def create_sensor_data(
             device_id=device,
             temperature=data.temperature,
             humidity=int(data.humidity),
-            pressure=int(data.pressure * 100)
+            pressure=data.pressure
         )
         
         db.add(record)
@@ -101,7 +101,7 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
         "datetime": record.datetime,
         "temperature": record.temperature,
         "humidity": record.humidity,
-        "pressure": round(record.pressure / 100.0, 1) if record.pressure else None,
+        "pressure": record.pressure if record.pressure else None,
         "outdoor_temperature": outdoor["temperature"] if outdoor else None,
         "outdoor_humidity": outdoor["humidity"] if outdoor else None
     }
@@ -131,7 +131,7 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
         "datetime": r.datetime,
         "temperature": r.temperature,
         "humidity": r.humidity,
-        "pressure": r.pressure / 100.0 if r.pressure else None
+        "pressure": r.pressure if r.pressure else None
     } for r in records]
     
     df = pd.DataFrame(data)
@@ -264,7 +264,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, device:
             "datetime": r.datetime,
             "temperature": r.temperature,
             "humidity": r.humidity,
-            "pressure": round(r.pressure / 100.0, 1) if r.pressure else None,
+            "pressure": r.pressure if r.pressure else None,
             "outdoor_temperature": out_data.get("temp"),
             "outdoor_humidity": out_data.get("humid")
         })
@@ -317,7 +317,7 @@ def get_analysis(date: Optional[str] = None, device: int = 1, db: Session = Depe
                 "datetime": r.datetime,
                 "temperature": r.temperature,
                 "humidity": r.humidity,
-                "pressure": r.pressure / 100.0 if r.pressure else None,
+                "pressure": r.pressure if r.pressure else None,
                 "outdoor_temperature": outdoor_map.get(hour_dt)
             })
     
