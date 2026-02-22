@@ -187,7 +187,7 @@ function AppContent() {
             dataKey = "pressure";
             rangeKey = "pressureRange";
             color = "#9b59b6";
-            outdoorKey = null;
+            outdoorKey = "outdoor_pressure";
         }
 
 
