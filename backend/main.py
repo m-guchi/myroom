@@ -169,11 +169,23 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
     return daily_stats
 
 @app.get("/api/history")
-def get_history(date: Optional[str] = None, range: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
+def get_history(date: Optional[str] = None, range: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
     end_time = get_now_jst()
     start_time = end_time - datetime.timedelta(hours=24)
 
-    if range:
+    effective_range = range
+
+    if start and end:
+        try:
+            start_time = datetime.datetime.fromisoformat(start)
+            end_time = datetime.datetime.fromisoformat(end)
+            # Auto-determine if we should aggregate
+            delta = end_time - start_time
+            if delta.days > 7:
+                effective_range = 'month' # Trigger aggregation
+        except ValueError:
+            pass
+    elif range:
         if range == 'day':
             start_time = end_time - datetime.timedelta(days=1)
         elif range == 'week':
@@ -226,7 +238,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, device:
             except Exception:
                 pass
 
-    if range in ['month', 'year']:
+    if effective_range in ['month', 'year']:
         daily_map = {}
         for d in records_raw:
             date_str = d['datetime'].strftime('%Y-%m-%d')
