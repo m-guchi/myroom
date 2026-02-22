@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Brush,
-    PieChart, Pie, Cell
+    PieChart, Pie, Cell, ReferenceLine
 } from 'recharts';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpacityIcon from '@mui/icons-material/Opacity';
@@ -271,14 +271,32 @@ function AppContent() {
                             <stop offset="95%" stopColor={color} stopOpacity={0} />
                         </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
                     <XAxis
                         dataKey="datetimeObj"
                         type="number"
                         domain={['dataMin', 'dataMax']}
+                        ticks={timeRange === 'day' ? (() => {
+                            const start = historyData[0]?.datetimeObj;
+                            const end = historyData[historyData.length - 1]?.datetimeObj;
+                            if (!start || !end) return undefined;
+                            const ticks = [];
+                            const startDate = new Date(start);
+                            const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
+                            // Generate potential marks for 2 days to cover the 24h range
+                            for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+                                const base = startDay + (dayOffset * 86400000);
+                                [0, 6, 12, 18].forEach(h => {
+                                    const t = base + (h * 3600000);
+                                    if (t >= start && t <= end) ticks.push(t);
+                                });
+                            }
+                            return ticks.sort((a, b) => a - b);
+                        })() : undefined}
                         tickFormatter={(t) => {
                             const date = new Date(t);
-                            if (timeRange === 'day' || timeRange === 'week') return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                            if (timeRange === 'day') return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                            if (timeRange === 'week') return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                             if (timeRange === 'month') return `${date.getMonth() + 1}/${date.getDate()}`;
                             if (timeRange === 'year') return `${date.getFullYear().toString().slice(-2)}/${date.getMonth() + 1}/${date.getDate()}`;
                             return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
@@ -286,8 +304,6 @@ function AppContent() {
                         tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
                         axisLine={false}
                         tickLine={false}
-                        interval="preserveStartEnd"
-                        tickCount={6}
                         scale="time"
                     />
                     <YAxis
@@ -342,6 +358,20 @@ function AppContent() {
                     )}
 
                     {/* Range Area (Min-Max) */}
+                    {timeRange === 'day' && (() => {
+                        const now = new Date();
+                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                        const yesterday = today - 86400000;
+                        const lines = [];
+                        // 6 hour steps: 0, 6, 12, 18
+                        [yesterday, today].forEach(base => {
+                            [0, 6, 12, 18].forEach(h => {
+                                lines.push(<ReferenceLine key={`${base}-${h}`} x={base + (h * 3600000)} stroke="var(--chart-line)" strokeDasharray="3 3" />);
+                            });
+                        });
+                        return lines;
+                    })()}
+
                     <Area
                         type="monotone"
                         dataKey={rangeKey}
