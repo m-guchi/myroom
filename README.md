@@ -1,7 +1,24 @@
 # MyRoom
 
-部屋の環境データ（温度、湿度、気圧など）を可視化するアプリケーションです。
-バックエンドに FastAPI (Python)、フロントエンドに Next.js (React + TypeScript + Tailwind CSS + shadcn/ui) を使用しています。
+部屋の環境データ（温度、湿度、気圧、CO2 など）を可視化するアプリケーションです。
+
+- **バックエンド**: FastAPI (Python)
+- **フロントエンド**: Next.js (React + TypeScript + Tailwind CSS + shadcn/ui)
+- **本番配信**: Next.js を静的エクスポート (`frontend/out`) し、FastAPI が API と静的ファイルの両方を配信
+
+## プロジェクト構成
+
+```
+myroom/
+├── backend/           # FastAPI API
+├── frontend/          # Next.js UI（開発: port 5173）
+├── raspberry-pi/      # SwitchBot CO2 センサー → MyRoom 連携
+├── data/              # 実行時設定（gitignore 対象）
+│   ├── devices.json           # デバイス表示名
+│   └── outdoor_location.json  # 屋外地点
+├── scripts/           # 開発用起動スクリプト
+└── migrate_db.py      # DB スキーマ更新
+```
 
 ## 開発環境の起動方法
 
@@ -10,7 +27,7 @@
 以下のツールがインストールされていることを確認してください。
 
 - Python 3.x
-- Node.js (および npm)
+- Node.js **20.9 以上** (および npm)
 
 初回のみ Python 依存関係をインストールします（**Streamlit は含みません**。Next.js + FastAPI の開発に必要なものだけです）。
 
@@ -111,42 +128,176 @@ npm run dev
 - UI: http://localhost:5173
 - 開発時は `/api` が FastAPI (`localhost:8000`) にプロキシされます
 
+## 自動テスト
+
+GitHub への push / PR 前に、次のコマンドで CI と同等のチェックを実行できます。
+
+```bash
+chmod +x scripts/test.sh   # 初回のみ
+./scripts/test.sh
+```
+
+個別に実行する場合:
+
+```bash
+# バックエンド（pytest、DB_MOCK=true・外部APIなし）
+source venv/bin/activate
+pip install -r requirements-dev.txt
+pytest tests/ -q
+
+# フロントエンド
+cd frontend
+npm run typecheck
+npm run test          # Vitest（chart-utils 等）
+npm run build
+```
+
+### テスト内容
+
+| 対象 | 内容 |
+|------|------|
+| `tests/test_api.py` | API エンドポイント（health、latest、history、sensor、devices、屋外地点） |
+| `tests/test_config.py` | デバイス名・屋外地点の設定ファイル読み書き |
+| `frontend/lib/chart-utils.test.ts` | グラフ計算・快適度・履歴マージのユニットテスト |
+
+`main` / `develop` への push と PR では [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が自動実行されます。`main` への push 時は、CI 通過後にデプロイ（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）が続きます。
+
 ## システム仕様
 
+### 画面構成
+
+SwitchBot 風のスマートホーム UI をベースに、モバイル向け（最大幅 480px）のライトテーマで構成しています。
+
+1. **履歴グラフ** — 画面上部。横スクロールで過去データを読み込み
+2. **センサーカード（2列）** — 屋内デバイス / 屋外地点
+3. **最近の記録** — 日ごとの最高・最低値をバー表示
+
+フォントは **Noto Sans JP**、背景 `#F5F5F5`、カードは白背景・角丸 18〜20px です。
+
 ### 単位と表示
-- **気圧**: システム全体で `hPa` 単位で統一。UIでは紫色 (`#9b59b6`) の整数値で表示。
-- **温度**: `°C` 単位。UIでは小数点第1位まで表示。色は青色 (`#3498db`)。
-- **湿度**: `%` 単位。UIでは整数値として表示。色は緑色 (`#2ecc71`)。
 
-### 主要機能
-- **履歴グラフ**:
-    - **1D / 1W / 1M / 1Y**: それぞれ最適な時間軸目盛りを表示（例: 1Mは1/11/21日、1Yは四半期ごと）。
-    - **全期間（カスタムレンジ）**: カレンダーから開始日・終了日を自由に指定して表示可能。
-    - **長期データ表示**: 1M/1Y/全期間では日次の最高・最低値を強調表示し、トレンドを把握しやすく最適化。
-- **モバイルアプリ対応 (PWA)**:
-    - ホーム画面に追加することで、ネイティブアプリのように全画面で起動可能。
-    - プレミアムなハウスシルエットの専用アプリアイコンを設定済み。
-- **死活監視用API**: `/api/health` エンドポイントが `GET` および `HEAD` リクエストに対して `200 OK` を返します。
+| 項目 | 単位 | 表示 |
+|------|------|------|
+| 温度 | °C | 小数点第1位、青色 (`#3498db`) |
+| 湿度 | % | 整数、緑色 (`#2ecc71`) |
+| 気圧 | hPa | 整数、紫色 (`#9b59b6`) |
+| CO2 | ppm | 整数、グレー (`#95a5a6`) |
+
+### 履歴グラフ
+
+- **表示幅**: 日 / 週 / 月 / 年 を切り替え。横スクロールで表示範囲外のデータを段階的に取得
+- **指標切替**: 温度・湿度・気圧タブ
+- **屋内 / 屋外**: 屋内は実線＋塗り、屋外（Open-Meteo）はグレーの点線
+- **Y軸**: 現在表示中の時間帯のデータに合わせて自動調整
+- **年表示**: 日次集計（最高・最低を含む）。日・週・月は生データ（10分間隔等）
+- **更新**: 30秒ごとの自動更新、手動更新ボタンあり
+
+### デバイス管理
+
+- **複数デバイス対応**: API の `device` クエリで `device_id` を指定（例: `?device=2`）
+- **表示名の変更**: 屋内センサーカードをタップ → UI から名称を変更可能
+- **保存先**: `data/devices.json`（gitignore 対象）。初回デフォルト名は `.env` の `DEVICE_1_NAME`（未設定時: `リビング`）
+
+### 屋外データ
+
+屋内センサーとは別に、[Open-Meteo](https://open-meteo.com/) から外気温・湿度・気圧を取得します。
+
+- **最新値**: Forecast API（`/api/latest` 呼び出し時）
+- **履歴**: 直近90日は Forecast API、それ以前は Archive API（1時間ごと）
+- **地点の変更**: 屋外カードをタップ → 地名検索または緯度・経度を入力
+- **保存先**: `data/outdoor_location.json`（gitignore 対象）
+- **初期値**: `.env` の `OUTDOOR_LAT` / `OUTDOOR_LON` / `OUTDOOR_LOCATION_NAME`（未設定時: 茨木市付近）
+
+### CO2 センサー（SwitchBot）
+
+SwitchBot Meter Pro (CO2) 等から Raspberry Pi 経由でデータを送信できます。
+
+```bash
+# POST 例
+curl -X POST "http://localhost:8000/api/sensor?device=2" \
+  -H "Content-Type: application/json" \
+  -d '{"datetime":"2026-05-30 12:00:00","co2":400,"temperature":23.5,"humidity":45}'
+```
+
+- `temperature` / `humidity` / `pressure` / `co2` のいずれか1つ以上が必須
+- CO2 値はセンサーカードに ppm として表示
+- Raspberry Pi での BLE 読み取り・定期送信の手順は [`raspberry-pi/README.md`](raspberry-pi/README.md) を参照
+
+### その他
+
+- **最近の記録**: 直近7日分から表示し、「もっと見る」で追加読み込み
+- **モバイルアプリ対応 (PWA)**: ホーム画面に追加して全画面起動可能。専用アプリアイコン設定済み
+- **死活監視用 API**: `/api/health` が `GET` / `HEAD` で `200 OK` を返す
 - **ログイン管理**:
-    - デフォルトパスワード: `admin`
-    - デプロイ時の変更: GitHub Secrets に `VITE_APP_PASSWORD` を設定することで反映されます（ビルド時に `NEXT_PUBLIC_APP_PASSWORD` として埋め込まれます）。
+  - デフォルトパスワード: `admin`
+  - デプロイ時の変更: GitHub Secrets の `VITE_APP_PASSWORD`（ビルド時に `NEXT_PUBLIC_APP_PASSWORD` として埋め込み）
 
-### データの整合性
-過去に `Pa` 単位（101300等）で保存されていたデータがある場合は、以下のスクリプトで `hPa > 5000` の条件に基づき、安全に一括変換が可能です。
+## API 概要
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET/HEAD | `/api/health` | 死活監視 |
+| GET | `/api/latest?device=1` | 最新の屋内＋屋外データ |
+| GET | `/api/history?range=day&device=1` | 履歴（`range`: day/week/month/year、または `start`/`end`） |
+| GET | `/api/daily-stats?device=1` | 日次統計（最近の記録） |
+| POST | `/api/sensor?device=1` | センサーデータ受信 |
+| GET | `/api/devices` | デバイス一覧（表示名） |
+| PUT | `/api/devices/{id}` | デバイス表示名の更新 |
+| GET | `/api/outdoor-location` | 屋外地点の取得 |
+| PUT | `/api/outdoor-location` | 屋外地点の更新 |
+| GET | `/api/outdoor-location/search?q=大阪` | 地名検索（Open-Meteo Geocoding） |
+
+## 設定ファイル
+
+| ファイル | 用途 | 備考 |
+|----------|------|------|
+| `.env` | DB接続、モックモード、初期デフォルト値 | gitignore |
+| `data/devices.json` | デバイス表示名 | gitignore、UI から自動生成 |
+| `data/outdoor_location.json` | 屋外地点 | gitignore、UI から自動生成 |
+
+## データベース
+
+### スキーマ更新
+
+`device_id`（複合主キー）と `co2` カラムの追加:
+
+```bash
+source venv/bin/activate
+python3 migrate_db.py
+```
+
+ALTER 権限がない場合は、スクリプトが表示する SQL を管理者ユーザーで実行してください。  
+`DB_ADMIN_USER` / `DB_ADMIN_PASSWORD` を `.env` に設定すると、管理者権限でのマイグレーションが可能です。
+
+デプロイ時（GitHub Actions）も `migrate_db.py` が自動実行されます。
+
+### 気圧単位の変換
+
+過去に `Pa` 単位（101300 等）で保存されていたデータがある場合:
+
 ```bash
 python3 migrate_pressure_to_hpa.py
 ```
 
+`hPa > 5000` の条件に基づき、安全に一括変換します。
+
 ## 本番環境へのデプロイ
 
 ### 1. GitHub Secrets の設定
+
 以下の変数をリポジトリの Secrets に設定してください。
+
 - `VITE_APP_PASSWORD`: 画面ログイン用のパスワード
 - `SSH_PRIVATE_KEY`: サーバー接続用秘密鍵
 - `HOST` / `USERNAME` / `SSH_PORT` / `TARGET_DIR`: サーバー接続情報
 
 ### 2. デプロイフロー
-`main` ブランチにプッシュすると GitHub Actions が起動し、以下の処理を自動で行います。
-1. フロントエンドのビルド（パスワードの埋め込みを含む）
+
+`main` ブランチにプッシュすると GitHub Actions が起動し、以下を自動実行します。
+
+1. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力、パスワード埋め込み含む）
 2. ファイルの転送 (`rsync`)
-3. バックエンドの依存関係更新とプロセス再起動 (`PM2`)
+3. DB マイグレーション (`migrate_db.py`)
+4. バックエンドの依存関係更新と PM2 による再起動
+
+本番では FastAPI が `frontend/out` を配信し、API と UI を同一オリジンで提供します。
