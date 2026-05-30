@@ -1,0 +1,367 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import {
+  ChevronRight,
+  Droplets,
+  Gauge,
+  RefreshCw,
+  Thermometer,
+  Wind,
+} from "lucide-react";
+import { LoginScreen } from "@/components/login-screen";
+import { EnvironmentChart } from "@/components/environment-chart";
+import { DailyStatsList } from "@/components/daily-stats-list";
+import { DeviceNameSettings } from "@/components/device-name-settings";
+import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
+import { Button } from "@/components/ui/button";
+import { fetchDashboardData, fetchDevices, fetchOutdoorLocation } from "@/lib/api";
+import { useChartHistory } from "@/lib/use-chart-history";
+import {
+  PRIMARY_SENSOR_DEVICE_ID,
+  type ChartMetric,
+  type ChartViewRange,
+  type DailyStat,
+  type DeviceInfo,
+  type LatestData,
+  type OutdoorLocation,
+} from "@/lib/types";
+
+const AUTH_KEY = "app_auth";
+
+interface DeviceMetric {
+  key: string;
+  icon?: React.ReactNode;
+  value: React.ReactNode;
+}
+
+interface DeviceCardProps {
+  title: string;
+  metrics: DeviceMetric[];
+  action?: React.ReactNode;
+  onClick?: () => void;
+}
+
+function buildIndoorMetrics(data: LatestData | null | undefined): DeviceMetric[] {
+  if (!data) return [];
+
+  const metrics: DeviceMetric[] = [];
+
+  if (data.temperature != null) {
+    metrics.push({
+      key: "temperature",
+      icon: <Thermometer className="size-5 text-[#6fcf97]" strokeWidth={1.75} />,
+      value: `${data.temperature.toFixed(1)}°C`,
+    });
+  }
+  if (data.humidity != null) {
+    metrics.push({
+      key: "humidity",
+      icon: <Droplets className="size-5 text-[#56ccf2]" strokeWidth={1.75} />,
+      value: `${data.humidity}%`,
+    });
+  }
+  if (data.pressure != null) {
+    metrics.push({
+      key: "pressure",
+      icon: <Gauge className="size-5 text-[#bb86fc]" strokeWidth={1.75} />,
+      value: `${Math.round(data.pressure)} hPa`,
+    });
+  }
+  if (data.co2 != null) {
+    metrics.push({
+      key: "co2",
+      icon: <Wind className="size-5 text-[#95a5a6]" strokeWidth={1.75} />,
+      value: `${data.co2} ppm`,
+    });
+  }
+
+  return metrics;
+}
+
+function buildOutdoorMetrics(data: LatestData | null | undefined): DeviceMetric[] {
+  if (!data) return [];
+
+  const metrics: DeviceMetric[] = [];
+
+  if (data.outdoor_temperature != null) {
+    metrics.push({
+      key: "outdoor_temperature",
+      icon: <Thermometer className="size-5 text-[#f1c40f]" strokeWidth={1.75} />,
+      value: `${data.outdoor_temperature.toFixed(1)}°C`,
+    });
+  }
+  if (data.outdoor_humidity != null) {
+    metrics.push({
+      key: "outdoor_humidity",
+      icon: <Droplets className="size-5 text-[#56ccf2]" strokeWidth={1.75} />,
+      value: `${data.outdoor_humidity}%`,
+    });
+  }
+  if (data.outdoor_pressure != null) {
+    metrics.push({
+      key: "outdoor_pressure",
+      icon: <Gauge className="size-5 text-[#bb86fc]" strokeWidth={1.75} />,
+      value: `${Math.round(data.outdoor_pressure)} hPa`,
+    });
+  }
+
+  return metrics;
+}
+
+function DeviceCard({ title, metrics, action, onClick }: DeviceCardProps) {
+  const className = onClick
+    ? "device-card cursor-pointer text-left transition-transform active:scale-[0.98]"
+    : "device-card text-left";
+  const content = (
+    <>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <p className="device-card-title min-w-0 flex-1">{title}</p>
+        {action}
+      </div>
+      {metrics.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {metrics.map((metric) => (
+            <div key={metric.key} className="flex items-center gap-2">
+              {metric.icon}
+              <span className="text-lg font-bold leading-none text-foreground">
+                {metric.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">データがありません</p>
+      )}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={className}>{content}</div>;
+}
+
+export function MyRoomDashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [latestData, setLatestData] = useState<LatestData | null>(null);
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartMetric, setChartMetric] = useState<ChartMetric>("temperature");
+  const [viewRange, setViewRange] = useState<ChartViewRange>("day");
+  const [dailyLimit, setDailyLimit] = useState(7);
+  const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
+  const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
+  const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
+  const [devices, setDevices] = useState<DeviceInfo[]>([]);
+
+  const {
+    historyData,
+    historyLoading,
+    historyEpoch,
+    noMoreOlderData,
+    resetAndLoad,
+    ensureVisibleRangeLoaded,
+  } = useChartHistory(PRIMARY_SENSOR_DEVICE_ID, viewRange);
+
+  useEffect(() => {
+    if (localStorage.getItem(AUTH_KEY) === "true") {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchOutdoorLocation()
+      .then(setOutdoorLocation)
+      .catch(() => setOutdoorLocation(null));
+    fetchDevices()
+      .then(setDevices)
+      .catch(() => setDevices([]));
+  }, [isAuthenticated]);
+
+  const fetchData = useCallback(
+    async (options?: { showChartLoading?: boolean; reloadHistory?: boolean }) => {
+      const showChartLoading = options?.showChartLoading ?? false;
+      const reloadHistory = options?.reloadHistory ?? false;
+      setRefreshing(true);
+      if (showChartLoading) setChartLoading(true);
+      try {
+        const data = await fetchDashboardData(PRIMARY_SENSOR_DEVICE_ID);
+        setLatestData(data.latest);
+        setDailyStats(data.dailyStats);
+        if (reloadHistory) {
+          await resetAndLoad();
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setRefreshing(false);
+        if (showChartLoading) setChartLoading(false);
+      }
+    },
+    [resetAndLoad]
+  );
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchData();
+    const interval = setInterval(() => fetchData(), 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, fetchData]);
+
+  const handleLogin = (password: string) => {
+    const envPassword = process.env.NEXT_PUBLIC_APP_PASSWORD || "admin";
+    if (password === envPassword) {
+      setIsAuthenticated(true);
+      localStorage.setItem(AUTH_KEY, "true");
+      return true;
+    }
+    return false;
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem(AUTH_KEY);
+  };
+
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  const primaryDevice =
+    devices.find((device) => device.id === PRIMARY_SENSOR_DEVICE_ID) ?? {
+      id: PRIMARY_SENSOR_DEVICE_ID,
+      name: "リビング",
+    };
+  const sensorLatest = latestData;
+  const indoorMetrics = buildIndoorMetrics(sensorLatest);
+  const outdoorMetrics = buildOutdoorMetrics(latestData);
+  const lastUpdated = sensorLatest?.datetime
+    ? new Date(sensorLatest.datetime).toLocaleString("ja-JP", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "--";
+
+  return (
+    <div className="pb-10">
+      <div className="space-y-6 px-5 pt-12">
+        <section>
+          <div className="mb-3 flex items-center justify-between px-0.5">
+            <div>
+              <h2 className="section-title">履歴</h2>
+              <p className="section-subtitle">最終更新: {lastUpdated}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchData({ showChartLoading: true, reloadHistory: true })}
+              className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5"
+              aria-label="更新"
+            >
+              <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+
+          <EnvironmentChart
+            historyData={historyData}
+            chartMetric={chartMetric}
+            onChartMetricChange={setChartMetric}
+            viewRange={viewRange}
+            onViewRangeChange={setViewRange}
+            loading={chartLoading}
+            historyLoading={historyLoading}
+            historyEpoch={historyEpoch}
+            noMoreOlderData={noMoreOlderData}
+            onVisibleDomainChange={ensureVisibleRangeLoaded}
+          />
+        </section>
+
+        <section>
+          <div className="grid grid-cols-2 gap-3">
+            <DeviceCard
+              title={primaryDevice.name}
+              action={
+                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
+              }
+              onClick={() => setDeviceSettingsOpen(true)}
+              metrics={indoorMetrics}
+            />
+
+            <DeviceCard
+              title={outdoorLocation?.name ?? "屋外"}
+              metrics={outdoorMetrics}
+              action={
+                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
+              }
+              onClick={() => setOutdoorSettingsOpen(true)}
+            />
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-3 px-0.5">
+            <h2 className="section-title">最近の記録</h2>
+          </div>
+
+          <DailyStatsList
+            dailyStats={dailyStats}
+            chartMetric={chartMetric}
+            latestData={latestData}
+            dailyLimit={dailyLimit}
+            onLoadMore={() =>
+              setDailyLimit((prev) => Math.min(prev + 7, dailyStats.length))
+            }
+          />
+        </section>
+
+        <div className="flex gap-2 pt-2">
+          <Button
+            variant="ghost"
+            className="flex-1 text-muted-foreground"
+            onClick={() => window.location.reload()}
+          >
+            画面再読み込み
+          </Button>
+          <Button
+            variant="ghost"
+            className="flex-1 text-[#e74c3c]"
+            onClick={handleLogout}
+          >
+            ログアウト
+          </Button>
+        </div>
+      </div>
+
+      <DeviceNameSettings
+        open={deviceSettingsOpen}
+        deviceId={PRIMARY_SENSOR_DEVICE_ID}
+        onClose={() => setDeviceSettingsOpen(false)}
+        onSaved={(device) => {
+          setDevices((prev) => {
+            const others = prev.filter((item) => item.id !== device.id);
+            return [...others, device].sort((a, b) => a.id - b.id);
+          });
+        }}
+      />
+
+      <OutdoorLocationSettings
+        open={outdoorSettingsOpen}
+        onClose={() => setOutdoorSettingsOpen(false)}
+        onSaved={(location) => {
+          setOutdoorLocation(location);
+          fetchData();
+        }}
+      />
+    </div>
+  );
+}

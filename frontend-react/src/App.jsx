@@ -11,10 +11,7 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpacityIcon from '@mui/icons-material/Opacity';
 import CompressIcon from '@mui/icons-material/Compress';
-import WbSunnyIcon from '@mui/icons-material/WbSunny';
-import AcUnitIcon from '@mui/icons-material/AcUnit';
 import ThermostatIcon from '@mui/icons-material/Thermostat';
-import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 
 // Theme setup
 import { createTheme, ThemeProvider } from '@mui/material/styles';
@@ -153,7 +150,6 @@ function AppContent() {
     const [latestData, setLatestData] = useState(null);
     const [historyData, setHistoryData] = useState([]);
     const [dailyStats, setDailyStats] = useState([]);
-    const [analysisData, setAnalysisData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [chartTab, setChartTab] = useState(0);
@@ -205,16 +201,14 @@ function AppContent() {
                 historyUrl = `/api/history?start=${customStartDate}&end=${customEndDate}`;
             }
 
-            const [latestRes, historyRes, dailyRes, analysisRes] = await Promise.allSettled([
+            const [latestRes, historyRes, dailyRes] = await Promise.allSettled([
                 axios.get('/api/latest'),
                 axios.get(historyUrl),
                 axios.get('/api/daily-stats'),
-                axios.get('/api/analysis')
             ]);
 
             if (latestRes.status === 'fulfilled') setLatestData(latestRes.value.data || {});
             if (dailyRes.status === 'fulfilled') setDailyStats(dailyRes.value.data || []);
-            if (analysisRes.status === 'fulfilled') setAnalysisData(analysisRes.value.data || {});
 
             if (historyRes.status === 'fulfilled') {
                 const processed = (historyRes.value.data || []).map(item => ({
@@ -581,27 +575,10 @@ function AppContent() {
         ? new Date(latestData.datetime).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         : '--';
 
-    const acMode = analysisData?.ac_status || "OFF";
-    const acText = acMode === "HEATING" ? "暖房 ON" : acMode === "COOLING" ? "冷房 ON" : "AC OFF";
-    const acColor = acMode === "HEATING" ? "#ff6b6b" : acMode === "COOLING" ? "#4dabf7" : "#868e96";
-    const acIcon = acMode === "HEATING" ? <WbSunnyIcon sx={{ fontSize: 16 }} /> : acMode === "COOLING" ? <AcUnitIcon sx={{ fontSize: 16 }} /> : <PowerSettingsNewIcon sx={{ fontSize: 16 }} />;
-
     return (
         <ThemeProvider theme={theme}>
             <Box sx={{ paddingBottom: 4 }}>
                 <div className="hero-weather">
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 1 }}>
-                        <Box sx={{
-                            display: 'flex', alignItems: 'center', gap: 1,
-                            padding: '4px 12px', borderRadius: 20,
-                            backgroundColor: 'rgba(255,255,255,0.5)', backdropFilter: 'blur(4px)',
-                            border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer'
-                        }} onClick={fetchData}>
-                            <span style={{ color: acColor, display: 'flex', alignItems: 'center' }}>{acIcon}</span>
-                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{acText}</span>
-                        </Box>
-                    </Box>
-
                     <div className="main-metrics-row">
                         <div className="metric-item">
                             <span className="metric-label">温度</span>

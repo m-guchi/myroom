@@ -9,10 +9,10 @@ import os
 
 # --- Configuration ---
 # Use Env var if available, or localhost for dev. 
-# For production (reverse proxy), it should be "/insight-myroom/api" or full URL.
+# For production (reverse proxy), it should be "https://myroom.gucchii.com/api" or full URL.
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 REFRESH_INTERVAL = 30  # seconds
-APP_NAME = "insight-myroom"
+APP_NAME = "myroom"
 
 # --- Authentication ---
 def check_password():
@@ -89,24 +89,7 @@ def get_latest(device=1):
         st.warning(f"Backend offline? {e}")
     return None
 
-@st.cache_data(ttl=REFRESH_INTERVAL, show_spinner="データ取得中...")
-def get_analysis_data(date_str=None, device=1):
-    try:
-        url = f"{API_BASE_URL}/analysis"
-        params = {"device": device}
-        if date_str:
-            params["date"] = date_str
-            
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        pass
-    return None
-
-# --- UI Components ---
-
-def render_header_card(data, analysis):
+def render_header_card(data):
     if not data:
         st.markdown("""
         <div class="hero-container">
@@ -144,20 +127,6 @@ def render_header_card(data, analysis):
     # Calculate Comfort Status (Simple logic)
     temp = data.get('temperature', 0)
     humid = data.get('humidity', 0)
-    
-    # Analysis Status
-    ac_mode = analysis.get('current', {}).get('ac_mode', "---") if analysis else "---"
-    
-    ac_text = "停止中"
-    ac_color = "white" # Changed from #95a5a6 for visibility
-    if ac_mode == "HEATING":
-        ac_text = "暖房中"
-        ac_color = "#e74c3c"
-    elif ac_mode == "COOLING":
-        ac_text = "冷房中"
-        ac_color = "#3498db"
-    
-    label_style = "color: white; opacity: 0.9;" if analysis else "color: #7f8c8d;"
 
     # Outdoor Data
     out_temp = data.get('outdoor_temperature', '--')
@@ -196,12 +165,6 @@ def render_header_card(data, analysis):
     # Markdown Code Block回避のため、インデントを意図的に削除しています
     st.markdown(f"""
 <div class="hero-container">
-<div style="display: flex; justify-content: center; margin-bottom: 10px;">
-<div style="text-align: center;">
-<div style="font-size: 0.8rem; {label_style}">エアコン稼働状況</div>
-<div style="color: {ac_color}; font-weight: bold; font-size: 1.2rem;">{ac_text}</div>
-</div>
-</div>
 <div class="hero-values">
 <div class="value-group">
 <div class="value-label">温度</div>
@@ -274,7 +237,7 @@ def render_header_card(data, analysis):
 def render_latest_placeholder():
     pass
 
-def render_charts(history_data, analysis_data):
+def render_charts(history_data):
     if not history_data:
         return
     
@@ -449,23 +412,6 @@ def render_charts(history_data, analysis_data):
         marker=dict(size=size_press, color='white', line=dict(width=2, color="#9b59b6")),
     ), row=3, col=1)
 
-    # Add Analysis Overlays (AC and Occupancy)
-    if analysis_data and 'history' in analysis_data:
-        analysis_df = pd.DataFrame(analysis_data['history'])
-        analysis_df['datetime'] = pd.to_datetime(analysis_df['datetime'])
-        
-        # AC Highlight on Temperature (row 1)
-        for i in range(len(analysis_df) - 1):
-            mode = analysis_df.iloc[i]['ac_mode']
-            if mode != "OFF":
-                color = "rgba(231, 76, 60, 0.15)" if mode == "HEATING" else "rgba(52, 152, 219, 0.15)"
-                fig.add_vrect(
-                    x0=analysis_df.iloc[i]['datetime'], 
-                    x1=analysis_df.iloc[i+1]['datetime'],
-                    fillcolor=color, opacity=0.5, layer="below", line_width=0,
-                    row=1, col=1
-                )
-
     fig.update_layout(
         template="plotly_white",
         font=dict(family="Helvetica", size=11, color="#7f8c8d"),
@@ -621,7 +567,7 @@ def render_daily(daily_data):
 # --- Main Application Loop ---
 def main():
     st.set_page_config(
-        page_title="Insight MyRoom",
+        page_title="MyRoom",
         page_icon="🌡️",
         layout="centered", # Mobile friendly
         initial_sidebar_state="collapsed"
@@ -649,7 +595,7 @@ def main():
 
     # 3. Latest Data (Hero + Status)
     latest = get_latest(device=device_id)
-    render_header_card(latest, get_analysis_data(device=device_id)) 
+    render_header_card(latest) 
 
     st.divider()
     
@@ -672,9 +618,8 @@ def main():
         selected_date = st.date_input("表示日の選択", value=now_jst.date(), label_visibility="collapsed")
         date_str = selected_date.strftime("%Y-%m-%d")
 
-    analysis = get_analysis_data(date_str, device=device_id)
     history = get_history(date_str, device=device_id)
-    render_charts(history, analysis)
+    render_charts(history)
     
     # 5. Daily Stats
     daily = get_daily_stats(device=device_id)

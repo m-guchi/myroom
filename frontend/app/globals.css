@@ -1,0 +1,115 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 1.25rem;
+  --background: #f5f5f5;
+  --foreground: #333333;
+  --card: #ffffff;
+  --card-foreground: #333333;
+  --popover: #ffffff;
+  --popover-foreground: #333333;
+  --primary: #333333;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #333333;
+  --muted: #f0f0f0;
+  --muted-foreground: #888888;
+  --accent: #f0f0f0;
+  --accent-foreground: #333333;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #eeeeee;
+  --input: #eeeeee;
+  --ring: #cccccc;
+  --temp-color: #3498db;
+  --humid-color: #2ecc71;
+  --pressure-color: #9b59b6;
+  --chart-grid: rgba(0, 0, 0, 0.05);
+  --chart-line: rgba(0, 0, 0, 0.1);
+}
+
+.dark {
+  --background: oklch(0.12 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.72 0.17 155);
+  --primary-foreground: oklch(0.12 0 0);
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.22 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.22 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.72 0.17 155);
+  --chart-grid: rgba(255, 255, 255, 0.05);
+  --chart-line: rgba(255, 255, 255, 0.2);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  .climate-card {
+    @apply rounded-[20px] bg-white p-5;
+  }
+  .metric-value {
+    @apply text-[2.5rem] font-bold leading-none tracking-tight text-foreground;
+  }
+  .metric-label {
+    @apply mt-1.5 text-sm text-muted-foreground;
+  }
+  .section-title {
+    @apply text-[22px] font-bold leading-tight text-foreground;
+  }
+  .section-subtitle {
+    @apply text-sm text-muted-foreground;
+  }
+  .device-card {
+    @apply flex min-h-[120px] flex-col rounded-[18px] bg-white p-4;
+  }
+  .device-card-title {
+    @apply text-[15px] font-bold leading-snug text-foreground;
+  }
+  .device-card-status {
+    @apply text-sm text-muted-foreground;
+  }
+}
