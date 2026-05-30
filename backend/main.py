@@ -8,8 +8,8 @@ from typing import List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, analysis, weather
-from pydantic import BaseModel
+from . import database, analysis, weather, outdoor_config
+from pydantic import BaseModel, model_validator
 
 load_dotenv()
 
@@ -20,7 +20,7 @@ def get_now_jst():
     return datetime.datetime.now(JST).replace(tzinfo=None) # Use naive JST to match DB
 
 
-app = FastAPI(title="Insight MyRoom API")
+app = FastAPI(title="MyRoom API")
 
 # Allow CORS for Streamlit (Mocking mainly, but good practice)
 app.add_middleware(
@@ -34,9 +34,26 @@ app.add_middleware(
 # --- Models ---
 class SensorData(BaseModel):
     datetime: str
-    temperature: float
-    humidity: float
-    pressure: float
+    temperature: Optional[float] = None
+    humidity: Optional[float] = None
+    pressure: Optional[float] = None
+    co2: Optional[int] = None
+
+    @model_validator(mode="after")
+    def at_least_one_measurement(self):
+        if all(
+            v is None
+            for v in (self.temperature, self.humidity, self.pressure, self.co2)
+        ):
+            raise ValueError(
+                "At least one of temperature, humidity, pressure, or co2 is required"
+            )
+        return self
+
+class OutdoorLocation(BaseModel):
+    latitude: float
+    longitude: float
+    name: str
 
 # --- Endpoints ---
 
@@ -44,6 +61,30 @@ class SensorData(BaseModel):
 @app.head("/api/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/outdoor-location")
+def get_outdoor_location():
+    return outdoor_config.get_location()
+
+
+@app.put("/api/outdoor-location")
+def update_outdoor_location(location: OutdoorLocation):
+    try:
+        return outdoor_config.save_location(
+            location.latitude,
+            location.longitude,
+            location.name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.get("/api/outdoor-location/search")
+def search_outdoor_locations(q: str = "", limit: int = 8):
+    if limit < 1 or limit > 20:
+        limit = 8
+    return {"results": weather.search_locations(q, count=limit)}
 
 @app.post("/api/sensor")
 async def create_sensor_data(
@@ -72,8 +113,9 @@ async def create_sensor_data(
             datetime=dt,
             device_id=device,
             temperature=data.temperature,
-            humidity=int(data.humidity),
-            pressure=data.pressure
+            humidity=int(data.humidity) if data.humidity is not None else None,
+            pressure=int(data.pressure) if data.pressure is not None else None,
+            co2=data.co2,
         )
         
         db.add(record)
@@ -86,12 +128,15 @@ async def create_sensor_data(
 @app.get("/api/latest")
 def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
     if database.DB_MOCK:
-        # Return random mock data
+        outdoor = weather.get_outdoor_weather()
         return {
             "datetime": get_now_jst(),
             "temperature": round(23.5 + random.uniform(-0.5, 0.5), 1),
             "humidity": round(45.0 + random.uniform(-1, 1), 1),
-            "pressure": round(1013.0 + random.uniform(-1, 1), 1)
+            "pressure": round(1013.0 + random.uniform(-1, 1), 1),
+            "outdoor_temperature": outdoor["temperature"] if outdoor else None,
+            "outdoor_humidity": outdoor["humidity"] if outdoor else None,
+            "outdoor_pressure": outdoor["pressure"] if outdoor else None,
         }
     
     record = db.query(database.DHTRecord).filter(database.DHTRecord.device_id == device).order_by(database.DHTRecord.datetime.desc()).first()
@@ -107,6 +152,7 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
         "temperature": record.temperature,
         "humidity": record.humidity,
         "pressure": record.pressure if record.pressure else None,
+        "co2": record.co2,
         "outdoor_temperature": outdoor["temperature"] if outdoor else None,
         "outdoor_humidity": outdoor["humidity"] if outdoor else None,
         "outdoor_pressure": outdoor["pressure"] if outdoor else None
@@ -137,7 +183,8 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
         "datetime": r.datetime,
         "temperature": r.temperature,
         "humidity": r.humidity,
-        "pressure": r.pressure if r.pressure else None
+        "pressure": r.pressure if r.pressure else None,
+        "co2": r.co2,
     } for r in records]
     
     df = pd.DataFrame(data)
@@ -147,21 +194,37 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
     # Check if dataframe is not empty
     if not df.empty:
         for date, group in df.groupby('date'):
-            # Get max/min rows
-            max_temp_row = group.loc[group['temperature'].idxmax()]
-            min_temp_row = group.loc[group['temperature'].idxmin()]
-            
-            daily_stats.append({
-                "date": date,
-                "temp_max": float(max_temp_row['temperature']),
-                "temp_max_time": max_temp_row['datetime'].strftime("%H:%M"),
-                "temp_min": float(min_temp_row['temperature']),
-                "temp_min_time": min_temp_row['datetime'].strftime("%H:%M"),
-                "humid_max": float(group['humidity'].max()),
-                "humid_min": float(group['humidity'].min()),
-                "pressure_max": float(group['pressure'].max()) if 'pressure' in group and group['pressure'].notnull().any() else None,
-                "pressure_min": float(group['pressure'].min()) if 'pressure' in group and group['pressure'].notnull().any() else None,
-            })
+            daily_stat = {"date": date}
+
+            if group['temperature'].notna().any():
+                max_temp_row = group.loc[group['temperature'].idxmax()]
+                min_temp_row = group.loc[group['temperature'].idxmin()]
+                daily_stat.update({
+                    "temp_max": float(max_temp_row['temperature']),
+                    "temp_max_time": max_temp_row['datetime'].strftime("%H:%M"),
+                    "temp_min": float(min_temp_row['temperature']),
+                    "temp_min_time": min_temp_row['datetime'].strftime("%H:%M"),
+                })
+
+            if group['humidity'].notna().any():
+                daily_stat.update({
+                    "humid_max": float(group['humidity'].max()),
+                    "humid_min": float(group['humidity'].min()),
+                })
+
+            if group['pressure'].notna().any():
+                daily_stat.update({
+                    "pressure_max": float(group['pressure'].max()),
+                    "pressure_min": float(group['pressure'].min()),
+                })
+
+            if 'co2' in group.columns and group['co2'].notna().any():
+                daily_stat.update({
+                    "co2_max": float(group['co2'].max()),
+                    "co2_min": float(group['co2'].min()),
+                })
+
+            daily_stats.append(daily_stat)
     
     # Sort by date
     daily_stats.sort(key=lambda x: x['date'])
@@ -220,7 +283,8 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
                 "datetime": r.datetime,
                 "temperature": r.temperature,
                 "humidity": r.humidity,
-                "pressure": r.pressure
+                "pressure": r.pressure,
+                "co2": r.co2,
             })
     
     # Fetch outdoor history
@@ -238,40 +302,61 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
             except Exception:
                 pass
 
-    if effective_range in ['month', 'year']:
+    # 日次集計は年表示のみ。月以下は生データ（10分間隔等）を返す
+    if effective_range == 'year':
         daily_map = {}
         for d in records_raw:
             date_str = d['datetime'].strftime('%Y-%m-%d')
             if date_str not in daily_map:
-                daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': []}
+                daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': [], 'co2s': []}
             if d['temperature'] is not None: daily_map[date_str]['temps'].append(d['temperature'])
             if d['humidity'] is not None: daily_map[date_str]['humids'].append(d['humidity'])
             if d['pressure'] is not None: daily_map[date_str]['pressures'].append(d['pressure'])
+            if d.get('co2') is not None: daily_map[date_str]['co2s'].append(d['co2'])
         
         aggregated = []
         for date_str, values in daily_map.items():
-            if not values['temps']: continue
-            dt = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+            if not any([values['temps'], values['humids'], values['pressures'], values['co2s']]):
+                continue
+            # 日次ポイントは正午を代表時刻とする（0:00固定だとグラフ上すべて深夜に見える）
+            dt = datetime.datetime.strptime(date_str, '%Y-%m-%d').replace(hour=12)
             
-            # Find outdoor data at 12:00 for this day as a representative
-            out_target = dt.replace(hour=12)
+            out_target = dt
             out_data = outdoor_map.get(out_target, {})
 
-            aggregated.append({
+            entry = {
                 "datetime": dt,
-                "temperature": round(sum(values['temps']) / len(values['temps']), 1),
-                "temperature_min": min(values['temps']),
-                "temperature_max": max(values['temps']),
-                "humidity": round(sum(values['humids']) / len(values['humids']), 1),
-                "humidity_min": min(values['humids']),
-                "humidity_max": max(values['humids']),
-                "pressure": round(sum(values['pressures']) / len(values['pressures']), 1),
-                "pressure_min": min(values['pressures']),
-                "pressure_max": max(values['pressures']),
                 "outdoor_temperature": out_data.get("temp"),
                 "outdoor_humidity": out_data.get("humid"),
-                "outdoor_pressure": out_data.get("press")
-            })
+                "outdoor_pressure": out_data.get("press"),
+            }
+
+            if values['temps']:
+                entry.update({
+                    "temperature": round(sum(values['temps']) / len(values['temps']), 1),
+                    "temperature_min": min(values['temps']),
+                    "temperature_max": max(values['temps']),
+                })
+            if values['humids']:
+                entry.update({
+                    "humidity": round(sum(values['humids']) / len(values['humids']), 1),
+                    "humidity_min": min(values['humids']),
+                    "humidity_max": max(values['humids']),
+                })
+            if values['pressures']:
+                entry.update({
+                    "pressure": round(sum(values['pressures']) / len(values['pressures']), 1),
+                    "pressure_min": min(values['pressures']),
+                    "pressure_max": max(values['pressures']),
+                })
+            if values['co2s']:
+                entry.update({
+                    "co2": round(sum(values['co2s']) / len(values['co2s'])),
+                    "co2_min": min(values['co2s']),
+                    "co2_max": max(values['co2s']),
+                })
+
+            aggregated.append(entry)
         aggregated.sort(key=lambda x: x['datetime'])
         return aggregated
 
@@ -294,11 +379,13 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
             "temperature": r['temperature'],
             "humidity": r['humidity'],
             "pressure": r['pressure'],
+            "co2": r.get('co2'),
             "outdoor_temperature": out_data.get("temp"),
             "outdoor_humidity": out_data.get("humid"),
             "outdoor_pressure": out_data.get("press")
         })
         
+    formatted_records.sort(key=lambda x: x['datetime'])
     return formatted_records
 
 @app.get("/api/analysis")
@@ -353,28 +440,28 @@ def get_analysis(date: Optional[str] = None, device: int = 1, db: Session = Depe
                 "temperature": r.temperature,
                 "humidity": r.humidity,
                 "pressure": r.pressure if r.pressure else None,
+                "co2": r.co2,
                 "outdoor_temperature": out_data.get("temp") if isinstance(out_data, dict) else None,
                 "outdoor_pressure": out_data.get("press") if isinstance(out_data, dict) else None
             })
     
     return analysis.analyze_room_data(history)
 
-# Serve React App
-frontend_dist = os.path.join(os.path.dirname(__file__), "../frontend-react/dist")
+# Serve Next.js static export (frontend/out)
+frontend_dist = os.path.join(os.path.dirname(__file__), "../frontend/out")
 
 if os.path.exists(frontend_dist):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
-    
+    next_static = os.path.join(frontend_dist, "_next")
+    if os.path.isdir(next_static):
+        app.mount("/_next", StaticFiles(directory=next_static), name="next_static")
+
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
-    async def serve_react_app(full_path: str):
-        # Allow API calls to pass through
+    async def serve_frontend(full_path: str):
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
-             raise HTTPException(status_code=404, detail="Not Found") # Let FastAPI handle routes
-             
-        # Check if requested file exists in dist directory
+            raise HTTPException(status_code=404, detail="Not Found")
+
         requested_file = os.path.join(frontend_dist, full_path)
         if os.path.isfile(requested_file):
             return FileResponse(requested_file)
-             
-        # Serve index.html for any other path (SPA)
+
         return FileResponse(os.path.join(frontend_dist, "index.html"))

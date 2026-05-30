@@ -13,7 +13,7 @@ DB_USER = os.getenv("DB_USER", "user")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
-DB_NAME = os.getenv("DB_NAME", "insight_myroom")
+DB_NAME = os.getenv("DB_NAME", "myroom")
 DB_MOCK = os.getenv("DB_MOCK", "true").lower() == "true"
 
 Base = declarative_base()
@@ -26,9 +26,10 @@ class DHTRecord(Base):
     datetime = Column(DateTime, primary_key=True)
     device_id = Column(Integer, primary_key=True, default=1)
     
-    temperature = Column(Float)
-    humidity = Column(Integer)
-    pressure = Column(Integer)
+    temperature = Column(Float, nullable=True)
+    humidity = Column(Integer, nullable=True)
+    pressure = Column(Integer, nullable=True)
+    co2 = Column(Integer, nullable=True)
 
 # DHTDaily model removed as we aggregate from dht table directly
 

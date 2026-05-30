@@ -1,7 +1,7 @@
-# Insight MyRoom
+# MyRoom
 
 部屋の環境データ（温度、湿度、気圧など）を可視化するアプリケーションです。
-バックエンドに FastAPI (Python)、フロントエンドに React を使用しています。
+バックエンドに FastAPI (Python)、フロントエンドに Next.js (React + TypeScript + Tailwind CSS + shadcn/ui) を使用しています。
 
 ## 開発環境の起動方法
 
@@ -12,81 +12,104 @@
 - Python 3.x
 - Node.js (および npm)
 
-### 1. 環境設定 (.env)
+初回のみ Python 依存関係をインストールします（**Streamlit は含みません**。Next.js + FastAPI の開発に必要なものだけです）。
 
-開発環境の動作モードは、プロジェクトルートにある `.env` ファイルの `DB_MOCK` で切り替えます。
+```bash
+cd /home/guchi/apps/myroom
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-- **モックモード**: `DB_MOCK=true`
-  データベース接続なしでダミーデータを表示します。手軽なUI確認に適しています。
-- **本番データモード**: `DB_MOCK=false`
-  本番環境のデータベース（MySQL）に接続して実データを表示します。
+旧 Streamlit UI (`frontend/app.py`) を使う場合のみ: `pip install -r requirements-streamlit.txt`（`cmake` 等が必要になることがあります）。
 
-### (オプション) 本番データの利用方法
+初回のみ、ルートに `.env` を用意してください（DB接続情報・パスワードなど）。  
+起動スクリプトは **環境変数 `DB_MOCK` でモードを上書き**するため、`.env` の `DB_MOCK` 値を毎回書き換える必要はありません。
 
-`DB_MOCK=false` で本番データを利用する場合は、SSHトンネルを起動する必要があります。
+### まとめて起動（推奨）
 
-#### 1. SSHトンネルの起動
-別のターミナルで以下のコマンドを実行し、接続を維持（開きっぱなしに）してください。
+プロジェクトルートで、どちらか **1コマンド** を実行します。バックエンド・フロントエンドを同時に起動し、Ctrl+C でまとめて停止できます。
+
+| モード | コマンド | データ |
+|--------|----------|--------|
+| **開発データ（モック）** | `./scripts/start.sh mock` | ダミーデータ（DB・SSH不要） |
+| **本番データ** | `./scripts/start.sh prod` | 本番MySQL（SSHトンネル自動起動） |
+
+停止のみ行う場合:
+
+```bash
+./scripts/stop.sh
+```
+
+起動後はブラウザで **http://localhost:5173** を開いてください（API: http://localhost:8000/docs）。
+
+#### 開発データ（モック）で起動
+
+```bash
+chmod +x scripts/*.sh scripts/lib/*.sh   # 初回のみ
+./scripts/start.sh mock
+```
+
+- `DB_MOCK=true`（DB接続なし）
+- UIの動作確認向け
+
+同等: `./scripts/start-mock.sh`
+
+#### 本番データで起動
+
+```bash
+./scripts/start.sh prod
+```
+
+- `DB_MOCK=false`
+- SSHトンネル（ローカル 3307 → 本番 3306）を自動起動
+- `check_db.py` で接続確認後にバックエンド・フロントエンドを起動
+- `.env` の `DB_HOST` / `DB_PORT`（例: `127.0.0.1:3307`）がトンネル先と一致していること
+
+同等: `./scripts/start-prod-db.sh`
+
+SSHトンネルだけ別ターミナルで維持したい場合:
+
 ```bash
 ./scripts/start_tunnel.sh
 ```
-※ 本番サーバー（162.43.74.7）の 3306 ポートを、ローカルの 3307 ポートに転送します。
 
-#### 2. 接続確認
-別のターミナルで以下のコマンドを実行し、`Successfully connected to the database!` と表示されるか確認できます。
+### 手動で起動する場合
+
+#### 1. 環境設定 (.env)
+
+- **モックモード**: `DB_MOCK=true` — ダミーデータ
+- **本番データモード**: `DB_MOCK=false` — 本番DB（要SSHトンネル）
+
+本番データ利用時は別ターミナルで `./scripts/start_tunnel.sh` を実行し、接続確認:
+
 ```bash
+source venv/bin/activate
 python3 check_db.py
 ```
 
-### 2. バックエンド (Python / FastAPI)
-
-データベースへの接続やAPIサーバーとして機能します。
-
-#### セットアップと起動
-
-新しいターミナルを開き、ルートディレクトリで以下のコマンドを実行してください。
+#### 2. バックエンド (Python / FastAPI)
 
 ```bash
-# 1. 仮想環境の作成（推奨）と有効化
 python3 -m venv venv
-
-# Windows (PowerShell) の場合
-.\venv\Scripts\activate
-# Mac / Linux の場合
 source venv/bin/activate
-
-# 2. 依存パッケージのインストール
 pip install -r requirements.txt
-
-# 3. サーバーの起動 (開発モード)
-# --host 0.0.0.0 --port 8000 を指定して起動します
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- サーバーは `http://localhost:8000` で起動します。
-- 正常に起動すると `Application startup complete.` と表示されます。
-- APIドキュメント (Swagger UI) は `http://localhost:8000/docs` で確認できます。
+#### 3. フロントエンド (Next.js)
 
-### 3. フロントエンド (React)
-
-ユーザーインターフェースを提供します。Vite を使用して構築されています。
-**注意: バックエンドサーバーが起動していないとAPIエラーになります。**
-
-#### セットアップと起動
-
-別のターミナルを開き、`frontend-react` ディレクトリに移動して実行してください。
+**バックエンド起動後**に:
 
 ```bash
-cd frontend-react
-
-# 1. 依存パッケージのインストール
+cd frontend
 npm install
-
-# 2. 開発サーバーの起動
 npm run dev
 ```
 
-- ブラウザで `http://localhost:5173` (またはコンソールに表示されるURL) にアクセスしてください。
+- UI: http://localhost:5173
+- 開発時は `/api` が FastAPI (`localhost:8000`) にプロキシされます
 
 ## システム仕様
 
@@ -106,7 +129,7 @@ npm run dev
 - **死活監視用API**: `/api/health` エンドポイントが `GET` および `HEAD` リクエストに対して `200 OK` を返します。
 - **ログイン管理**:
     - デフォルトパスワード: `admin`
-    - デプロイ時の変更: GitHub Secrets に `VITE_APP_PASSWORD` を設定することで反映されます。
+    - デプロイ時の変更: GitHub Secrets に `VITE_APP_PASSWORD` を設定することで反映されます（ビルド時に `NEXT_PUBLIC_APP_PASSWORD` として埋め込まれます）。
 
 ### データの整合性
 過去に `Pa` 単位（101300等）で保存されていたデータがある場合は、以下のスクリプトで `hPa > 5000` の条件に基づき、安全に一括変換が可能です。

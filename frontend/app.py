@@ -9,10 +9,10 @@ import os
 
 # --- Configuration ---
 # Use Env var if available, or localhost for dev. 
-# For production (reverse proxy), it should be "/insight-myroom/api" or full URL.
+# For production (reverse proxy), it should be "https://myroom.gucchii.com/api" or full URL.
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 REFRESH_INTERVAL = 30  # seconds
-APP_NAME = "insight-myroom"
+APP_NAME = "myroom"
 
 # --- Authentication ---
 def check_password():
@@ -621,7 +621,7 @@ def render_daily(daily_data):
 # --- Main Application Loop ---
 def main():
     st.set_page_config(
-        page_title="Insight MyRoom",
+        page_title="MyRoom",
         page_icon="🌡️",
         layout="centered", # Mobile friendly
         initial_sidebar_state="collapsed"

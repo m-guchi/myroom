@@ -15,12 +15,12 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: frontend-react/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies and Build Frontend
-        working-directory: ./frontend-react
+        working-directory: ./frontend
         env:
-          VITE_APP_PASSWORD: ${{ secrets.VITE_APP_PASSWORD }}
+          NEXT_PUBLIC_APP_PASSWORD: ${{ secrets.VITE_APP_PASSWORD }}
         run: |
           npm ci
           npm run build
@@ -49,6 +49,9 @@ jobs:
             --exclude 'venv' \
             --exclude '__pycache__' \
             --exclude '*.pyc' \
+            --exclude 'frontend/node_modules' \
+            --exclude 'frontend/.next' \
+            --exclude 'frontend/.env' \
             --exclude 'frontend-react/node_modules' \
             --exclude 'frontend-react/.env' \
             ./ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.TARGET_DIR }}/
@@ -91,8 +94,11 @@ jobs:
             # Restart service using PM2 (No sudo required)
             # Ensure PM2 is installed on the server: 'npm install -g pm2'
             echo "Managing PM2 process..."
-            if npx pm2 list | grep -q "insight-backend"; then
-              npx pm2 restart insight-backend
+            if npx pm2 list | grep -q "myroom-backend"; then
+              npx pm2 restart myroom-backend
+            elif npx pm2 list | grep -q "insight-backend"; then
+              npx pm2 delete insight-backend || true
+              npx pm2 start ecosystem.config.js
             else
               npx pm2 start ecosystem.config.js
             fi

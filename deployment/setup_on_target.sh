@@ -1,51 +1,40 @@
 #!/bin/bash
 set -e
 
-# Detect current directory
+# Configuration
 APP_DIR=$(pwd)
-PYTHON_PATH=$(which python3)
+PYTHON_PATH="$APP_DIR/venv/bin/python3"
 
-echo "--- Deployment Setup ---"
+echo "Setting up MyRoom on $(hostname)..."
 echo "App Directory: $APP_DIR"
-echo "Python Path: $PYTHON_PATH"
 
-if [ -z "$PYTHON_PATH" ]; then
-    echo "Error: python3 not found."
-    exit 1
+# Create venv if not exists
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv venv
+    ./venv/bin/pip install -r requirements.txt
 fi
 
-echo "1. Installing Python dependencies..."
-pip install -r requirements.txt
+# Install systemd services
+echo "Installing systemd services..."
+sed "s|{{APP_DIR}}|$APP_DIR|g; s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
+    deployment/myroom-backend.service.template > /etc/systemd/system/myroom-backend.service
 
-echo "2. Generating Systemd services..."
+sed "s|{{APP_DIR}}|$APP_DIR|g; s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
+    deployment/myroom-frontend.service.template > /etc/systemd/system/myroom-frontend.service
 
-# Replace placeholders in templates
-sed -e "s|{{APP_DIR}}|$APP_DIR|g" \
-    -e "s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
-    deployment/insight-backend.service.template > /etc/systemd/system/insight-backend.service
-
-sed -e "s|{{APP_DIR}}|$APP_DIR|g" \
-    -e "s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
-    deployment/insight-frontend.service.template > /etc/systemd/system/insight-frontend.service
-
-echo "3. Reloading and restarting services..."
 systemctl daemon-reload
-systemctl enable insight-backend
-systemctl enable insight-frontend
-systemctl restart insight-backend
-systemctl restart insight-frontend
+systemctl enable myroom-backend
+systemctl enable myroom-frontend
+systemctl restart myroom-backend
+systemctl restart myroom-frontend
 
-echo "Services active!"
-systemctl status insight-backend --no-pager
-systemctl status insight-frontend --no-pager
+echo "Service status:"
+systemctl status myroom-backend --no-pager
+systemctl status myroom-frontend --no-pager
 
 echo ""
-echo "--- Apache Setup Hint ---"
-echo "1. Enable required Apache modules:"
-echo "   sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers"
-echo "   sudo systemctl restart apache2"
-echo ""
-echo "2. Configure VirtualHost:"
-echo "   Copy the content from deployment/apache.conf into your Apache config file"
-echo "   (e.g., /etc/apache2/sites-available/000-default-le-ssl.conf)"
-echo "   Then restart Apache."
+echo "Next steps:"
+echo "1. Configure Apache/Nginx using deployment/apache.conf or deployment/nginx.conf"
+echo "2. Update production URL path from /insight-myroom/ to /myroom/ if migrating"
+echo "3. Verify: https://myroom.gucchii.com/"

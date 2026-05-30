@@ -14,6 +14,9 @@ def analyze_room_data(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     df['datetime'] = pd.to_datetime(df['datetime'])
     df = df.sort_values('datetime')
 
+    if 'temperature' not in df.columns or df['temperature'].notna().sum() < 4:
+        return {"ac_status": "OFF", "history": []}
+
     # 1. エアコン（温度勾配と屋外相関）の分析
     # 30分間（3レコード分）の温度変化
     df['temp_diff'] = df['temperature'].diff(periods=3)

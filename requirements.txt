@@ -1,13 +1,10 @@
+# FastAPI backend (Next.js frontend uses npm in frontend/)
 fastapi
-uvicorn
-streamlit
+uvicorn[standard]
 sqlalchemy
 mysql-connector-python
 pandas
-plotly
 requests
 python-dotenv
 python-jose[cryptography]
 python-multipart
-streamlit-javascript
-
