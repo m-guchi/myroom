@@ -2,54 +2,137 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AirVent,
   ChevronRight,
   Droplets,
   Gauge,
-  Power,
   RefreshCw,
-  Sun,
   Thermometer,
+  Wind,
 } from "lucide-react";
 import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
+import { DeviceNameSettings } from "@/components/device-name-settings";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
 import { Button } from "@/components/ui/button";
-import { fetchAllData, fetchOutdoorLocation } from "@/lib/api";
+import { fetchDashboardData, fetchDevices, fetchOutdoorLocation } from "@/lib/api";
+import { useChartHistory } from "@/lib/use-chart-history";
 import {
-  AnalysisData,
-  ChartMetric,
-  ChartViewRange,
-  DailyStat,
-  HistoryPoint,
-  LatestData,
-  OutdoorLocation,
-  TimeRange,
+  PRIMARY_SENSOR_DEVICE_ID,
+  type ChartMetric,
+  type ChartViewRange,
+  type DailyStat,
+  type DeviceInfo,
+  type LatestData,
+  type OutdoorLocation,
 } from "@/lib/types";
 
 const AUTH_KEY = "app_auth";
 
+interface DeviceMetric {
+  key: string;
+  icon?: React.ReactNode;
+  value: React.ReactNode;
+}
+
 interface DeviceCardProps {
-  icon: React.ReactNode;
   title: string;
-  status: string;
+  metrics: DeviceMetric[];
   action?: React.ReactNode;
   onClick?: () => void;
 }
 
-function DeviceCard({ icon, title, status, action, onClick }: DeviceCardProps) {
+function buildIndoorMetrics(data: LatestData | null | undefined): DeviceMetric[] {
+  if (!data) return [];
+
+  const metrics: DeviceMetric[] = [];
+
+  if (data.temperature != null) {
+    metrics.push({
+      key: "temperature",
+      icon: <Thermometer className="size-5 text-[#6fcf97]" strokeWidth={1.75} />,
+      value: `${data.temperature.toFixed(1)}°C`,
+    });
+  }
+  if (data.humidity != null) {
+    metrics.push({
+      key: "humidity",
+      icon: <Droplets className="size-5 text-[#56ccf2]" strokeWidth={1.75} />,
+      value: `${data.humidity}%`,
+    });
+  }
+  if (data.pressure != null) {
+    metrics.push({
+      key: "pressure",
+      icon: <Gauge className="size-5 text-[#bb86fc]" strokeWidth={1.75} />,
+      value: `${Math.round(data.pressure)} hPa`,
+    });
+  }
+  if (data.co2 != null) {
+    metrics.push({
+      key: "co2",
+      icon: <Wind className="size-5 text-[#95a5a6]" strokeWidth={1.75} />,
+      value: `${data.co2} ppm`,
+    });
+  }
+
+  return metrics;
+}
+
+function buildOutdoorMetrics(data: LatestData | null | undefined): DeviceMetric[] {
+  if (!data) return [];
+
+  const metrics: DeviceMetric[] = [];
+
+  if (data.outdoor_temperature != null) {
+    metrics.push({
+      key: "outdoor_temperature",
+      icon: <Thermometer className="size-5 text-[#f1c40f]" strokeWidth={1.75} />,
+      value: `${data.outdoor_temperature.toFixed(1)}°C`,
+    });
+  }
+  if (data.outdoor_humidity != null) {
+    metrics.push({
+      key: "outdoor_humidity",
+      icon: <Droplets className="size-5 text-[#56ccf2]" strokeWidth={1.75} />,
+      value: `${data.outdoor_humidity}%`,
+    });
+  }
+  if (data.outdoor_pressure != null) {
+    metrics.push({
+      key: "outdoor_pressure",
+      icon: <Gauge className="size-5 text-[#bb86fc]" strokeWidth={1.75} />,
+      value: `${Math.round(data.outdoor_pressure)} hPa`,
+    });
+  }
+
+  return metrics;
+}
+
+function DeviceCard({ title, metrics, action, onClick }: DeviceCardProps) {
   const className = onClick
     ? "device-card cursor-pointer text-left transition-transform active:scale-[0.98]"
     : "device-card text-left";
   const content = (
     <>
-      <div className="flex items-start justify-between">
-        <div className="text-muted-foreground">{icon}</div>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <p className="device-card-title min-w-0 flex-1">{title}</p>
         {action}
       </div>
-      <p className="device-card-title">{title}</p>
-      <p className="device-card-status">{status}</p>
+      {metrics.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {metrics.map((metric) => (
+            <div key={metric.key} className="flex items-center gap-2">
+              {metric.icon}
+              <span className="text-lg font-bold leading-none text-foreground">
+                {metric.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">データがありません</p>
+      )}
     </>
   );
 
@@ -67,18 +150,25 @@ function DeviceCard({ icon, title, status, action, onClick }: DeviceCardProps) {
 export function MyRoomDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [latestData, setLatestData] = useState<LatestData | null>(null);
-  const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
-  const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [chartLoading, setChartLoading] = useState(false);
   const [chartMetric, setChartMetric] = useState<ChartMetric>("temperature");
   const [viewRange, setViewRange] = useState<ChartViewRange>("day");
   const [dailyLimit, setDailyLimit] = useState(7);
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
   const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
+  const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
+  const [devices, setDevices] = useState<DeviceInfo[]>([]);
 
-  // 日・週・月は詳細データ（30日分）、年のみ日次集計
-  const historyFetchRange: TimeRange = viewRange === "year" ? "year" : "month";
+  const {
+    historyData,
+    historyLoading,
+    historyEpoch,
+    noMoreOlderData,
+    resetAndLoad,
+    ensureVisibleRangeLoaded,
+  } = useChartHistory(PRIMARY_SENSOR_DEVICE_ID, viewRange);
 
   useEffect(() => {
     if (localStorage.getItem(AUTH_KEY) === "true") {
@@ -91,30 +181,38 @@ export function MyRoomDashboard() {
     fetchOutdoorLocation()
       .then(setOutdoorLocation)
       .catch(() => setOutdoorLocation(null));
+    fetchDevices()
+      .then(setDevices)
+      .catch(() => setDevices([]));
   }, [isAuthenticated]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchAllData(historyFetchRange);
-      setLatestData(data.latest);
-      setHistoryData(data.history);
-      setDailyStats(data.dailyStats);
-      setAnalysisData(data.analysis);
-      if (!data.history.length) {
-        console.warn("History API returned no data. Is the backend running?");
+  const fetchData = useCallback(
+    async (options?: { showChartLoading?: boolean; reloadHistory?: boolean }) => {
+      const showChartLoading = options?.showChartLoading ?? false;
+      const reloadHistory = options?.reloadHistory ?? false;
+      setRefreshing(true);
+      if (showChartLoading) setChartLoading(true);
+      try {
+        const data = await fetchDashboardData(PRIMARY_SENSOR_DEVICE_ID);
+        setLatestData(data.latest);
+        setDailyStats(data.dailyStats);
+        if (reloadHistory) {
+          await resetAndLoad();
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setRefreshing(false);
+        if (showChartLoading) setChartLoading(false);
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [historyFetchRange]);
+    },
+    [resetAndLoad]
+  );
 
   useEffect(() => {
     if (!isAuthenticated) return;
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(() => fetchData(), 30000);
     return () => clearInterval(interval);
   }, [isAuthenticated, fetchData]);
 
@@ -137,19 +235,16 @@ export function MyRoomDashboard() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  const temp =
-    latestData?.temperature != null ? latestData.temperature.toFixed(1) : "--";
-  const humid = latestData?.humidity != null ? latestData.humidity : "--";
-  const press =
-    latestData?.pressure != null ? Math.round(latestData.pressure) : "--";
-  const outTemp =
-    latestData?.outdoor_temperature != null
-      ? latestData.outdoor_temperature.toFixed(1)
-      : "--";
-  const outHumid =
-    latestData?.outdoor_humidity != null ? latestData.outdoor_humidity : "--";
-  const lastUpdated = latestData?.datetime
-    ? new Date(latestData.datetime).toLocaleString("ja-JP", {
+  const primaryDevice =
+    devices.find((device) => device.id === PRIMARY_SENSOR_DEVICE_ID) ?? {
+      id: PRIMARY_SENSOR_DEVICE_ID,
+      name: "リビング",
+    };
+  const sensorLatest = latestData;
+  const indoorMetrics = buildIndoorMetrics(sensorLatest);
+  const outdoorMetrics = buildOutdoorMetrics(latestData);
+  const lastUpdated = sensorLatest?.datetime
+    ? new Date(sensorLatest.datetime).toLocaleString("ja-JP", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -157,14 +252,6 @@ export function MyRoomDashboard() {
         minute: "2-digit",
       })
     : "--";
-
-  const acMode = analysisData?.ac_status || "OFF";
-  const acText =
-    acMode === "HEATING" ? "暖房 ON" : acMode === "COOLING" ? "冷房 ON" : "オフ";
-  const acColor =
-    acMode === "HEATING" ? "#ff6b6b" : acMode === "COOLING" ? "#4dabf7" : "#888888";
-  const AcIcon =
-    acMode === "HEATING" ? Sun : acMode === "COOLING" ? AirVent : Power;
 
   return (
     <div className="pb-10">
@@ -177,11 +264,11 @@ export function MyRoomDashboard() {
             </div>
             <button
               type="button"
-              onClick={fetchData}
+              onClick={() => fetchData({ showChartLoading: true, reloadHistory: true })}
               className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5"
               aria-label="更新"
             >
-              <RefreshCw className={`size-5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} />
             </button>
           </div>
 
@@ -191,63 +278,30 @@ export function MyRoomDashboard() {
             onChartMetricChange={setChartMetric}
             viewRange={viewRange}
             onViewRangeChange={setViewRange}
-            loading={loading}
+            loading={chartLoading}
+            historyLoading={historyLoading}
+            historyEpoch={historyEpoch}
+            noMoreOlderData={noMoreOlderData}
+            onVisibleDomainChange={ensureVisibleRangeLoaded}
           />
         </section>
 
         <section>
-          <div className="mb-3 flex items-center justify-between px-0.5">
-            <div>
-              <h2 className="section-title">リビング</h2>
-              <p className="section-subtitle">
-                {temp}°C | {humid}%
-              </p>
-            </div>
-            <ChevronRight className="size-5 text-muted-foreground/60" />
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
-            <div className="device-card">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Thermometer className="size-5 text-[#6fcf97]" strokeWidth={1.75} />
-                  <span className="text-lg font-bold text-foreground">{temp}°C</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Droplets className="size-5 text-[#56ccf2]" strokeWidth={1.75} />
-                  <span className="text-lg font-bold text-foreground">{humid}%</span>
-                </div>
-              </div>
-              <p className="device-card-title">環境センサー</p>
-            </div>
-
             <DeviceCard
-              icon={<AcIcon className="size-6" style={{ color: acColor }} strokeWidth={1.75} />}
-              title="エアコン"
-              status={acText}
+              title={primaryDevice.name}
               action={
-                <div className="flex size-8 items-center justify-center rounded-full bg-[#f0f0f0]">
-                  <Power className="size-4 text-muted-foreground" strokeWidth={1.75} />
-                </div>
+                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
               }
+              onClick={() => setDeviceSettingsOpen(true)}
+              metrics={indoorMetrics}
             />
 
             <DeviceCard
-              icon={<Gauge className="size-6 text-[#bb86fc]" strokeWidth={1.75} />}
-              title="気圧"
-              status={`${press} hPa`}
-            />
-
-            <DeviceCard
-              icon={<Sun className="size-6 text-[#f1c40f]" strokeWidth={1.75} />}
-              title="屋外"
-              status={
-                outdoorLocation
-                  ? `${outdoorLocation.name} · ${outTemp}°C | ${outHumid}%`
-                  : `${outTemp}°C | ${outHumid}%`
-              }
+              title={outdoorLocation?.name ?? "屋外"}
+              metrics={outdoorMetrics}
               action={
-                <ChevronRight className="size-5 text-muted-foreground/60" strokeWidth={1.75} />
+                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
               }
               onClick={() => setOutdoorSettingsOpen(true)}
             />
@@ -287,6 +341,18 @@ export function MyRoomDashboard() {
           </Button>
         </div>
       </div>
+
+      <DeviceNameSettings
+        open={deviceSettingsOpen}
+        deviceId={PRIMARY_SENSOR_DEVICE_ID}
+        onClose={() => setDeviceSettingsOpen(false)}
+        onSaved={(device) => {
+          setDevices((prev) => {
+            const others = prev.filter((item) => item.id !== device.id);
+            return [...others, device].sort((a, b) => a.id - b.id);
+          });
+        }}
+      />
 
       <OutdoorLocationSettings
         open={outdoorSettingsOpen}

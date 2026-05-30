@@ -26,6 +26,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 # .env を編集（SWITCHBOT_MAC 必須）
+sudo apt install -y bluez   # btmon が必要
 ```
 
 ### 動作確認

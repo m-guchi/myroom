@@ -151,44 +151,46 @@ export function clampDomainOffset(
   historyData: HistoryPoint[],
   viewRange: ChartViewRange,
   domainOffset: number,
-  timeShift: number
+  timeShift: number,
+  options?: { allowPastExtension?: boolean; noMoreOlderData?: boolean }
 ): number {
   if (!historyData.length) return 0;
 
-  const dataMinTime = historyData[0].datetimeObj;
   const dataMaxTime = historyData[historyData.length - 1].datetimeObj;
   let newOffset = domainOffset + timeShift;
 
   if (newOffset > 0) newOffset = 0;
 
-  const minOffset = dataMinTime - dataMaxTime;
-  if (minOffset >= 0) return 0;
-  if (newOffset < minOffset) return minOffset;
+  if (!options?.allowPastExtension || options?.noMoreOlderData) {
+    const dataMinTime = historyData[0].datetimeObj;
+    const minOffset = dataMinTime - dataMaxTime;
+    if (minOffset >= 0) return 0;
+    if (newOffset < minOffset) return minOffset;
+  }
 
   return newOffset;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 export function formatChartAxisDate(timestamp: number, viewRange: ChartViewRange): string {
   const date = new Date(timestamp);
   if (isNaN(date.getTime())) return "";
-  if (viewRange === "day") {
-    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  }
   if (viewRange === "year") {
-    return `${date.getFullYear()}/${date.getMonth() + 1}`;
+    return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
   }
-  return `${date.getMonth() + 1}/${date.getDate()}`;
+  return `${date.getMonth() + 1}/${date.getDate()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 export function formatActivePointLabel(timestamp: number, viewRange: ChartViewRange): string {
   const date = new Date(timestamp);
-  if (viewRange === "day" || viewRange === "week") {
-    return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  }
-  if (viewRange === "month") {
+  if (isNaN(date.getTime())) return "";
+  if (viewRange === "year") {
     return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
   }
-  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 export function getChartTicksForDomain(

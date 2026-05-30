@@ -8,7 +8,7 @@ from typing import List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, analysis, weather, outdoor_config
+from . import database, weather, outdoor_config, device_config
 from pydantic import BaseModel, model_validator
 
 load_dotenv()
@@ -55,6 +55,52 @@ class OutdoorLocation(BaseModel):
     longitude: float
     name: str
 
+class DeviceNameUpdate(BaseModel):
+    name: str
+
+def _discover_device_ids(db: Optional[Session]) -> List[int]:
+    if database.DB_MOCK or db is None:
+        return []
+    rows = db.query(database.DHTRecord.device_id).distinct().all()
+    return sorted({row[0] for row in rows if row[0] is not None})
+
+def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
+    if database.DB_MOCK:
+        outdoor = weather.get_outdoor_weather()
+        offset = (device - 1) * 0.4
+        return {
+            "device_id": device,
+            "datetime": get_now_jst(),
+            "temperature": round(23.5 + offset + random.uniform(-0.5, 0.5), 1),
+            "humidity": round(45.0 - offset + random.uniform(-1, 1), 1),
+            "pressure": round(1013.0 + random.uniform(-1, 1), 1),
+            "outdoor_temperature": outdoor["temperature"] if outdoor else None,
+            "outdoor_humidity": outdoor["humidity"] if outdoor else None,
+            "outdoor_pressure": outdoor["pressure"] if outdoor else None,
+        }
+
+    record = (
+        db.query(database.DHTRecord)
+        .filter(database.DHTRecord.device_id == device)
+        .order_by(database.DHTRecord.datetime.desc())
+        .first()
+    )
+    if not record:
+        return {"device_id": device}
+
+    outdoor = weather.get_outdoor_weather()
+    return {
+        "device_id": device,
+        "datetime": record.datetime,
+        "temperature": record.temperature,
+        "humidity": record.humidity,
+        "pressure": record.pressure if record.pressure else None,
+        "co2": record.co2,
+        "outdoor_temperature": outdoor["temperature"] if outdoor else None,
+        "outdoor_humidity": outdoor["humidity"] if outdoor else None,
+        "outdoor_pressure": outdoor["pressure"] if outdoor else None,
+    }
+
 # --- Endpoints ---
 
 @app.get("/api/health")
@@ -85,6 +131,22 @@ def search_outdoor_locations(q: str = "", limit: int = 8):
     if limit < 1 or limit > 20:
         limit = 8
     return {"results": weather.search_locations(q, count=limit)}
+
+
+@app.get("/api/devices")
+def get_devices(db: Session = Depends(database.get_db)):
+    return {"devices": device_config.list_devices(_discover_device_ids(db))}
+
+
+@app.put("/api/devices/{device_id}")
+def update_device_name(device_id: int, body: DeviceNameUpdate, db: Session = Depends(database.get_db)):
+    if device_id < 1:
+        raise HTTPException(status_code=400, detail="device id must be >= 1")
+    try:
+        device = device_config.save_device_name(device_id, body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return device
 
 @app.post("/api/sensor")
 async def create_sensor_data(
@@ -127,36 +189,9 @@ async def create_sensor_data(
 
 @app.get("/api/latest")
 def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
-    if database.DB_MOCK:
-        outdoor = weather.get_outdoor_weather()
-        return {
-            "datetime": get_now_jst(),
-            "temperature": round(23.5 + random.uniform(-0.5, 0.5), 1),
-            "humidity": round(45.0 + random.uniform(-1, 1), 1),
-            "pressure": round(1013.0 + random.uniform(-1, 1), 1),
-            "outdoor_temperature": outdoor["temperature"] if outdoor else None,
-            "outdoor_humidity": outdoor["humidity"] if outdoor else None,
-            "outdoor_pressure": outdoor["pressure"] if outdoor else None,
-        }
-    
-    record = db.query(database.DHTRecord).filter(database.DHTRecord.device_id == device).order_by(database.DHTRecord.datetime.desc()).first()
-    if not record:
-        return {}
-    
-    # Fetch outdoor weather
-    outdoor = weather.get_outdoor_weather()
-
-    # Return as dict to modify pressure
-    return {
-        "datetime": record.datetime,
-        "temperature": record.temperature,
-        "humidity": record.humidity,
-        "pressure": record.pressure if record.pressure else None,
-        "co2": record.co2,
-        "outdoor_temperature": outdoor["temperature"] if outdoor else None,
-        "outdoor_humidity": outdoor["humidity"] if outdoor else None,
-        "outdoor_pressure": outdoor["pressure"] if outdoor else None
-    }
+    if device < 1:
+        raise HTTPException(status_code=400, detail="device id must be >= 1")
+    return _build_latest_payload(device, db)
 
 from sqlalchemy import func
 
@@ -242,10 +277,11 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
         try:
             start_time = datetime.datetime.fromisoformat(start)
             end_time = datetime.datetime.fromisoformat(end)
-            # Auto-determine if we should aggregate
-            delta = end_time - start_time
-            if delta.days > 7:
-                effective_range = 'month' # Trigger aggregation
+            # range が明示されていればそれを優先（年表示の日次集計など）
+            if not range:
+                delta = end_time - start_time
+                if delta.days > 7:
+                    effective_range = "month"
         except ValueError:
             pass
     elif range:
@@ -266,10 +302,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
             pass
 
     if database.DB_MOCK:
-        all_mock = database.generate_mock_history()
-        s_cmp = start_time.replace(tzinfo=None)
-        e_cmp = end_time.replace(tzinfo=None)
-        records_raw = [d for d in all_mock if s_cmp <= (d['datetime'].replace(tzinfo=None) if d['datetime'].tzinfo else d['datetime']) <= e_cmp]
+        records_raw = database.generate_mock_history_for_range(start_time, end_time)
     else:
         records_raw_unformatted = db.query(database.DHTRecord).filter(
             database.DHTRecord.datetime >= start_time,
@@ -387,65 +420,6 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
         
     formatted_records.sort(key=lambda x: x['datetime'])
     return formatted_records
-
-@app.get("/api/analysis")
-def get_analysis(date: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
-    if database.DB_MOCK:
-        history = database.generate_mock_history()
-    else:
-        if date:
-            try:
-                target_date = datetime.datetime.strptime(date, "%Y-%m-%d").date()
-                start_time = datetime.datetime.combine(target_date, datetime.time.min)
-                end_time = datetime.datetime.combine(target_date, datetime.time.max)
-            except ValueError:
-                end_time = get_now_jst()
-                start_time = end_time - datetime.timedelta(hours=24)
-        else:
-            end_time = get_now_jst()
-            start_time = end_time - datetime.timedelta(hours=24)
-        
-        records = db.query(database.DHTRecord).filter(
-            database.DHTRecord.datetime >= start_time,
-            database.DHTRecord.datetime <= end_time,
-            database.DHTRecord.device_id == device
-        ).order_by(database.DHTRecord.datetime.asc()).all()
-        
-        outdoor_hist = weather.get_outdoor_history(start_time.strftime("%Y-%m-%d"), end_time.strftime("%Y-%m-%d"))
-        outdoor_map = {}
-        if outdoor_hist:
-            for i, t_str in enumerate(outdoor_hist["time"]):
-                try:
-                    dt_key = datetime.datetime.fromisoformat(t_str)
-                    outdoor_map[dt_key] = {
-                        "temp": outdoor_hist["temperature"][i],
-                        "press": outdoor_hist["pressure"][i]
-                    }
-                except Exception:
-                    pass
-
-        history = []
-        for r in records:
-             # Round to nearest hour
-            if r.datetime.minute >= 30:
-                 hour_dt = r.datetime + datetime.timedelta(minutes=60-r.datetime.minute, seconds=-r.datetime.second)
-            else:
-                 hour_dt = r.datetime - datetime.timedelta(minutes=r.datetime.minute, seconds=r.datetime.second)
-            hour_dt = hour_dt.replace(microsecond=0)
-            
-            out_data = outdoor_map.get(hour_dt)
-
-            history.append({
-                "datetime": r.datetime,
-                "temperature": r.temperature,
-                "humidity": r.humidity,
-                "pressure": r.pressure if r.pressure else None,
-                "co2": r.co2,
-                "outdoor_temperature": out_data.get("temp") if isinstance(out_data, dict) else None,
-                "outdoor_pressure": out_data.get("press") if isinstance(out_data, dict) else None
-            })
-    
-    return analysis.analyze_room_data(history)
 
 # Serve Next.js static export (frontend/out)
 frontend_dist = os.path.join(os.path.dirname(__file__), "../frontend/out")

@@ -6,6 +6,7 @@ export type ChartViewRange = "day" | "week" | "month" | "year";
 export type ChartMetric = "temperature" | "humidity" | "pressure";
 
 export interface LatestData {
+  device_id?: number;
   datetime?: string;
   temperature?: number;
   humidity?: number;
@@ -48,15 +49,19 @@ export interface DailyStat {
   co2_max?: number;
 }
 
-export interface AnalysisData {
-  ac_status?: string;
-}
-
 export interface OutdoorLocation {
   latitude: number;
   longitude: number;
   name: string;
 }
+
+export interface DeviceInfo {
+  id: number;
+  name: string;
+}
+
+/** 環境センサーカードに表示する屋内デバイス */
+export const PRIMARY_SENSOR_DEVICE_ID = 1;
 
 export interface OutdoorLocationSearchResult {
   name: string;

@@ -107,7 +107,7 @@
     @apply flex min-h-[120px] flex-col rounded-[18px] bg-white p-4;
   }
   .device-card-title {
-    @apply mt-auto text-[15px] font-bold text-foreground;
+    @apply text-[15px] font-bold leading-snug text-foreground;
   }
   .device-card-status {
     @apply text-sm text-muted-foreground;

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Area,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -53,14 +52,15 @@ interface EnvironmentChartProps {
   viewRange: ChartViewRange;
   onViewRangeChange: (range: ChartViewRange) => void;
   loading: boolean;
+  historyLoading?: boolean;
+  historyEpoch?: number;
+  noMoreOlderData?: boolean;
+  onVisibleDomainChange?: (visibleMin: number, visibleMax: number) => void;
 }
 
 function getMetricKeys(metric: ChartMetric) {
   return {
     dataKey: metric,
-    rangeKey: `${metric}Range` as const,
-    maxKey: `${metric}_max` as const,
-    minKey: `${metric}_min` as const,
     outdoorKey: `outdoor_${metric}` as keyof HistoryPoint,
   };
 }
@@ -113,10 +113,13 @@ export function EnvironmentChart({
   viewRange,
   onViewRangeChange,
   loading,
+  historyLoading = false,
+  historyEpoch = 0,
+  noMoreOlderData = false,
+  onVisibleDomainChange,
 }: EnvironmentChartProps) {
   const color = METRIC_COLORS[chartMetric];
-  const { dataKey, rangeKey, maxKey, minKey, outdoorKey } = getMetricKeys(chartMetric);
-  const chartTabIndex = chartMetric === "temperature" ? 0 : chartMetric === "humidity" ? 1 : 2;
+  const { dataKey, outdoorKey } = getMetricKeys(chartMetric);
   const aggregated = isAggregatedRange(viewRange);
 
   const [dragStartX, setDragStartX] = useState<number | null>(null);
@@ -131,7 +134,7 @@ export function EnvironmentChart({
 
   useEffect(() => {
     setDomainOffset(0);
-  }, [historyData, viewRange]);
+  }, [viewRange, historyEpoch]);
 
   useEffect(
     () => () => {
@@ -153,6 +156,16 @@ export function EnvironmentChart({
     () => computeChartDomain(historyData, viewRange, domainOffset),
     [historyData, viewRange, domainOffset]
   );
+
+  useEffect(() => {
+    if (currentDomain[0] === "dataMin" || !onVisibleDomainChange) return;
+
+    const timer = window.setTimeout(() => {
+      onVisibleDomainChange(currentDomain[0] as number, currentDomain[1] as number);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [currentDomain, onVisibleDomainChange]);
 
   const activePoint = useMemo(
     () => findActivePoint(historyData, currentDomain),
@@ -235,13 +248,17 @@ export function EnvironmentChart({
           historyData,
           viewRange,
           dragDomainRef.current,
-          timeShift
+          timeShift,
+          {
+            allowPastExtension: !noMoreOlderData,
+            noMoreOlderData,
+          }
         );
         scheduleDomainOffset(next);
         setDragStartX(clientX);
       }
     },
-    [dragStartX, historyData, currentDomain, viewRange, scheduleDomainOffset]
+    [dragStartX, historyData, currentDomain, viewRange, scheduleDomainOffset, noMoreOlderData]
   );
 
   const handleMouseUp = () => {
@@ -329,6 +346,13 @@ export function EnvironmentChart({
           </div>
         )}
 
+        {historyLoading && !loading && (
+          <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm">
+            <div className="size-3 animate-spin rounded-full border border-muted-foreground/30 border-t-muted-foreground" />
+            読み込み中
+          </div>
+        )}
+
         {!historyData.length ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
             <p>データがありません</p>
@@ -345,12 +369,6 @@ export function EnvironmentChart({
               data={chartData}
               margin={{ top: PLOT_INSET.top, right: PLOT_INSET.right - 8, left: 0, bottom: 0 }}
             >
-              <defs>
-                <linearGradient id={`color-${chartTabIndex}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={color} stopOpacity={0} />
-                </linearGradient>
-              </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
               <XAxis
                 dataKey="datetimeObj"
@@ -386,51 +404,16 @@ export function EnvironmentChart({
                 isAnimationActive={false}
               />
               {referenceLines}
-              <Area
+              <Line
                 type="monotone"
-                dataKey={rangeKey}
-                stroke="none"
-                fill={color}
-                fillOpacity={0.1}
+                dataKey={dataKey}
+                stroke={color}
+                strokeWidth={3}
+                dot={false}
+                name="屋内"
                 isAnimationActive={false}
                 connectNulls
-                name="範囲"
               />
-              {aggregated && (
-                <>
-                  <Line
-                    type="monotone"
-                    dataKey={maxKey}
-                    stroke={color}
-                    strokeWidth={2}
-                    dot={false}
-                    name="最高"
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey={minKey}
-                    stroke={color}
-                    strokeWidth={2}
-                    dot={false}
-                    name="最低"
-                    isAnimationActive={false}
-                    opacity={0.5}
-                  />
-                </>
-              )}
-              {!aggregated && (
-                <Area
-                  type="monotone"
-                  dataKey={dataKey}
-                  stroke={color}
-                  strokeWidth={3}
-                  fillOpacity={1}
-                  fill={`url(#color-${chartTabIndex})`}
-                  name="現在"
-                  isAnimationActive={false}
-                />
-              )}
             </ComposedChart>
           </ResponsiveContainer>
         )}

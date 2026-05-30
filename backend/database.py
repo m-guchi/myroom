@@ -34,12 +34,18 @@ class DHTRecord(Base):
 # DHTDaily model removed as we aggregate from dht table directly
 
 # Mock Data Generator
-def generate_mock_history():
+def generate_mock_history_for_range(
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+) -> list:
+    """指定期間のモック履歴のみ生成（全件フィルタより高速）。"""
     data = []
-    now = datetime.datetime.now()
-    for i in range(30 * 24 * 6):  # 30 days, 10 min interval
-        t = now - datetime.timedelta(minutes=10 * i)
-        # Generate somewhat realistic sine wave data
+    start_naive = start_time.replace(tzinfo=None) if start_time.tzinfo else start_time
+    end_naive = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
+    t = end_naive
+    interval = datetime.timedelta(minutes=10)
+
+    while t >= start_naive:
         temp = 20 + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-1, 1)
         humid = 50 + 10 * (1 + math.cos(t.hour / 24 * 2 * math.pi)) + random.uniform(-2, 2)
         pressure = 1013 + random.uniform(-5, 5)
@@ -47,9 +53,19 @@ def generate_mock_history():
             "datetime": t,
             "temperature": round(temp, 1),
             "humidity": round(humid, 1),
-            "pressure": round(pressure, 1)
+            "pressure": round(pressure, 1),
         })
+        t -= interval
+
+    data.reverse()
     return data
+
+
+def generate_mock_history():
+    """直近2年分（後方互換）。"""
+    end = datetime.datetime.now()
+    start = end - datetime.timedelta(days=730)
+    return generate_mock_history_for_range(start, end)
 
 def generate_mock_daily():
     data = []
