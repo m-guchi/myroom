@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ChevronRight,
   Droplets,
@@ -19,6 +19,7 @@ import { fetchDashboardData, fetchDevices, fetchOutdoorLocation } from "@/lib/ap
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
   DASHBOARD_SENSOR_DEVICE_IDS,
+  getDeviceLineColor,
   PRIMARY_SENSOR_DEVICE_ID,
   type ChartMetric,
   type ChartViewRange,
@@ -39,40 +40,47 @@ interface DeviceMetric {
 interface DeviceCardProps {
   title: string;
   metrics: DeviceMetric[];
+  accentColor?: string;
   action?: React.ReactNode;
   onClick?: () => void;
 }
 
-function buildIndoorMetrics(data: LatestData | null | undefined): DeviceMetric[] {
+function buildIndoorMetrics(
+  data: LatestData | null | undefined,
+  accentColor?: string
+): DeviceMetric[] {
   if (!data) return [];
 
+  const iconStyle = accentColor ? { color: accentColor } : undefined;
   const metrics: DeviceMetric[] = [];
 
   if (data.temperature != null) {
     metrics.push({
       key: "temperature",
-      icon: <Thermometer className="size-5 text-[#6fcf97]" strokeWidth={1.75} />,
+      icon: (
+        <Thermometer className="size-5" strokeWidth={1.75} style={iconStyle} />
+      ),
       value: `${data.temperature.toFixed(1)}°C`,
     });
   }
   if (data.humidity != null) {
     metrics.push({
       key: "humidity",
-      icon: <Droplets className="size-5 text-[#56ccf2]" strokeWidth={1.75} />,
+      icon: <Droplets className="size-5" strokeWidth={1.75} style={iconStyle} />,
       value: `${data.humidity}%`,
     });
   }
   if (data.pressure != null) {
     metrics.push({
       key: "pressure",
-      icon: <Gauge className="size-5 text-[#bb86fc]" strokeWidth={1.75} />,
+      icon: <Gauge className="size-5" strokeWidth={1.75} style={iconStyle} />,
       value: `${Math.round(data.pressure)} hPa`,
     });
   }
   if (data.co2 != null) {
     metrics.push({
       key: "co2",
-      icon: <Wind className="size-5 text-[#95a5a6]" strokeWidth={1.75} />,
+      icon: <Wind className="size-5" strokeWidth={1.75} style={iconStyle} />,
       value: `${data.co2} ppm`,
     });
   }
@@ -110,14 +118,22 @@ function buildOutdoorMetrics(data: LatestData | null | undefined): DeviceMetric[
   return metrics;
 }
 
-function DeviceCard({ title, metrics, action, onClick }: DeviceCardProps) {
+function DeviceCard({ title, metrics, accentColor, action, onClick }: DeviceCardProps) {
   const className = onClick
     ? "device-card cursor-pointer text-left transition-transform active:scale-[0.98]"
     : "device-card text-left";
+  const cardStyle = accentColor
+    ? ({ borderLeft: `4px solid ${accentColor}` } satisfies CSSProperties)
+    : undefined;
   const content = (
     <>
       <div className="mb-3 flex items-start justify-between gap-2">
-        <p className="device-card-title min-w-0 flex-1">{title}</p>
+        <p
+          className="device-card-title min-w-0 flex-1"
+          style={accentColor ? { color: accentColor } : undefined}
+        >
+          {title}
+        </p>
         {action}
       </div>
       {metrics.length > 0 ? (
@@ -139,13 +155,17 @@ function DeviceCard({ title, metrics, action, onClick }: DeviceCardProps) {
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={className}>
+      <button type="button" onClick={onClick} className={className} style={cardStyle}>
         {content}
       </button>
     );
   }
 
-  return <div className={className}>{content}</div>;
+  return (
+    <div className={className} style={cardStyle}>
+      {content}
+    </div>
+  );
 }
 
 export function MyRoomDashboard() {
@@ -173,7 +193,18 @@ export function MyRoomDashboard() {
     noMoreOlderData,
     resetAndLoad,
     ensureVisibleRangeLoaded,
-  } = useChartHistory(PRIMARY_SENSOR_DEVICE_ID, viewRange);
+  } = useChartHistory(DASHBOARD_SENSOR_DEVICE_IDS, viewRange);
+
+  const deviceNames = useMemo(() => {
+    const names: Record<number, string> = {};
+    for (const deviceId of DASHBOARD_SENSOR_DEVICE_IDS) {
+      const device = devices.find((item) => item.id === deviceId);
+      names[deviceId] =
+        device?.name ??
+        (deviceId === 1 ? "リビング" : deviceId === 2 ? "寝室" : `デバイス ${deviceId}`);
+    }
+    return names;
+  }, [devices]);
 
   useEffect(() => {
     if (localStorage.getItem(AUTH_KEY) === "true") {
@@ -244,7 +275,7 @@ export function MyRoomDashboard() {
   const getDeviceInfo = (deviceId: number): DeviceInfo =>
     devices.find((device) => device.id === deviceId) ?? {
       id: deviceId,
-      name: deviceId === 1 ? "リビング" : deviceId === 2 ? "寝室" : `デバイス ${deviceId}`,
+      name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
     };
 
   const sensorLatest = latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? latestData;
@@ -280,6 +311,8 @@ export function MyRoomDashboard() {
 
           <EnvironmentChart
             historyData={historyData}
+            deviceIds={DASHBOARD_SENSOR_DEVICE_IDS}
+            deviceNames={deviceNames}
             chartMetric={chartMetric}
             onChartMetricChange={setChartMetric}
             viewRange={viewRange}
@@ -296,10 +329,12 @@ export function MyRoomDashboard() {
           <div className="grid grid-cols-2 gap-3">
             {DASHBOARD_SENSOR_DEVICE_IDS.map((deviceId) => {
               const device = getDeviceInfo(deviceId);
+              const accentColor = getDeviceLineColor(deviceId);
               return (
                 <DeviceCard
                   key={deviceId}
                   title={device.name}
+                  accentColor={accentColor}
                   action={
                     <ChevronRight
                       className="size-5 shrink-0 text-muted-foreground/60"
@@ -310,7 +345,7 @@ export function MyRoomDashboard() {
                     setDeviceSettingsId(deviceId);
                     setDeviceSettingsOpen(true);
                   }}
-                  metrics={buildIndoorMetrics(latestByDevice[deviceId])}
+                  metrics={buildIndoorMetrics(latestByDevice[deviceId], accentColor)}
                 />
               );
             })}

@@ -8,11 +8,15 @@ import {
   getHistoryInitialSpanMs,
   getLoadedRange,
   mergeHistoryPoints,
+  mergeMultiDeviceHistory,
   toApiDateTime,
 } from "@/lib/history-loader";
 import type { ChartViewRange, HistoryPoint } from "@/lib/types";
 
-export function useChartHistory(deviceId: number, viewRange: ChartViewRange) {
+export function useChartHistory(
+  deviceIds: readonly number[],
+  viewRange: ChartViewRange
+) {
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyEpoch, setHistoryEpoch] = useState(0);
@@ -21,6 +25,22 @@ export function useChartHistory(deviceId: number, viewRange: ChartViewRange) {
   const loadedRangeRef = useRef<{ min: number; max: number } | null>(null);
   const loadingOlderRef = useRef(false);
   const loadingNewerRef = useRef(false);
+  const deviceIdsKey = deviceIds.join(",");
+
+  const fetchMergedWindow = useCallback(
+    async (start: Date, end: Date) => {
+      const chunks = await Promise.all(
+        deviceIds.map((deviceId) =>
+          fetchHistoryWindow(start, end, viewRange, deviceId)
+        )
+      );
+      const byDevice = Object.fromEntries(
+        deviceIds.map((deviceId, index) => [deviceId, chunks[index]])
+      ) as Record<number, HistoryPoint[]>;
+      return mergeMultiDeviceHistory(byDevice);
+    },
+    [deviceIds, viewRange]
+  );
 
   const resetAndLoad = useCallback(async () => {
     setHistoryLoading(true);
@@ -31,7 +51,7 @@ export function useChartHistory(deviceId: number, viewRange: ChartViewRange) {
     const start = new Date(end.getTime() - getHistoryInitialSpanMs(viewRange));
 
     try {
-      const chunk = await fetchHistoryWindow(start, end, viewRange, deviceId);
+      const chunk = await fetchMergedWindow(start, end);
       setHistoryData(chunk);
       loadedRangeRef.current = getLoadedRange(chunk);
       setHistoryEpoch((epoch) => epoch + 1);
@@ -42,11 +62,11 @@ export function useChartHistory(deviceId: number, viewRange: ChartViewRange) {
     } finally {
       setHistoryLoading(false);
     }
-  }, [deviceId, viewRange]);
+  }, [fetchMergedWindow, viewRange]);
 
   useEffect(() => {
     resetAndLoad();
-  }, [resetAndLoad]);
+  }, [resetAndLoad, deviceIdsKey]);
 
   const ensureVisibleRangeLoaded = useCallback(
     async (visibleMin: number, visibleMax: number) => {
@@ -66,12 +86,7 @@ export function useChartHistory(deviceId: number, viewRange: ChartViewRange) {
         const chunkStart = new Date(chunkEnd.getTime() - chunkMs);
 
         try {
-          const chunk = await fetchHistoryWindow(
-            chunkStart,
-            chunkEnd,
-            viewRange,
-            deviceId
-          );
+          const chunk = await fetchMergedWindow(chunkStart, chunkEnd);
           if (!chunk.length) {
             setNoMoreOlderData(true);
           } else {
@@ -102,12 +117,7 @@ export function useChartHistory(deviceId: number, viewRange: ChartViewRange) {
         }
 
         try {
-          const chunk = await fetchHistoryWindow(
-            chunkStart,
-            chunkEnd,
-            viewRange,
-            deviceId
-          );
+          const chunk = await fetchMergedWindow(chunkStart, chunkEnd);
           if (chunk.length) {
             setHistoryData((prev) => {
               const merged = mergeHistoryPoints(prev, chunk);
@@ -122,7 +132,7 @@ export function useChartHistory(deviceId: number, viewRange: ChartViewRange) {
         }
       }
     },
-    [deviceId, viewRange, noMoreOlderData]
+    [fetchMergedWindow, viewRange, noMoreOlderData]
   );
 
   return {

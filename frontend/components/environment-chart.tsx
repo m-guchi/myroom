@@ -16,6 +16,8 @@ import {
   ChartMetric,
   CHART_VIEW_RANGE_LABELS,
   ChartViewRange,
+  deviceMetricKey,
+  getDeviceLineColor,
   HistoryPoint,
   METRIC_COLORS,
   METRIC_LABELS,
@@ -27,10 +29,16 @@ import {
   computeVisibleYDomain,
   downsampleHistoryForChart,
   filterHistoryForDomain,
-  findActivePoint,
   formatActivePointLabel,
   formatChartAxisDate,
+  getAvailableChartMetrics,
   getChartTicksForDomain,
+  getDeviceMetricValueAtTime,
+  getDevicesWithMetricData,
+  getMaxPositiveDomainOffset,
+  getOutdoorMetricValueAtTime,
+  getSelectionTime,
+  hasOutdoorMetricData,
   isAggregatedRange,
 } from "@/lib/chart-utils";
 import { cn } from "@/lib/utils";
@@ -44,11 +52,14 @@ const METRIC_ICONS = {
 
 const VIEW_RANGES: ChartViewRange[] = ["day", "week", "month", "year"];
 
-/** ComposedChart margin + YAxis width + container px-2 padding */
-const PLOT_INSET = { left: 48, right: 28, top: 28, bottom: 0 };
+/** ComposedChart margin + YAxis width + container padding（オーバーレイ位置合わせ用） */
+const PLOT_INSET = { left: 36, right: 6, top: 28, bottom: 22 };
+const Y_AXIS_WIDTH = 32;
 
 interface EnvironmentChartProps {
   historyData: HistoryPoint[];
+  deviceIds: readonly number[];
+  deviceNames: Record<number, string>;
   chartMetric: ChartMetric;
   onChartMetricChange: (metric: ChartMetric) => void;
   viewRange: ChartViewRange;
@@ -62,14 +73,8 @@ interface EnvironmentChartProps {
 
 function getMetricKeys(metric: ChartMetric) {
   return {
-    dataKey: metric,
     outdoorKey: `outdoor_${metric}` as keyof HistoryPoint,
   };
-}
-
-function getMetricValue(point: HistoryPoint, metric: ChartMetric): number | undefined {
-  const value = point[metric as keyof HistoryPoint];
-  return typeof value === "number" && !Number.isNaN(value) ? value : undefined;
 }
 
 function formatMetricValue(value: number | undefined, metric: ChartMetric): string {
@@ -78,39 +83,65 @@ function formatMetricValue(value: number | undefined, metric: ChartMetric): stri
   return value.toFixed(1);
 }
 
+function computeSelectionXRatio(
+  currentDomain: ReturnType<typeof computeChartDomain>,
+  selectionTime: number | null
+): number | null {
+  if (selectionTime == null || currentDomain[0] === "dataMin") return null;
+
+  const [minT, maxT] = currentDomain;
+  const timeSpan = maxT - minT;
+  if (timeSpan <= 0) return null;
+
+  return Math.max(0, Math.min(1, (selectionTime - minT) / timeSpan));
+}
+
+function computePlotYRatio(
+  visibleYDomain: ReturnType<typeof computeVisibleYDomain>,
+  activeValue: number | undefined
+): number | null {
+  if (
+    activeValue == null ||
+    typeof visibleYDomain[0] !== "number" ||
+    typeof visibleYDomain[1] !== "number"
+  ) {
+    return null;
+  }
+
+  const ymin = visibleYDomain[0];
+  const ymax = visibleYDomain[1];
+  const valueSpan = ymax - ymin;
+  if (valueSpan <= 0) return null;
+
+  return 1 - (activeValue - ymin) / valueSpan;
+}
+
 function computePlotPosition(
   currentDomain: ReturnType<typeof computeChartDomain>,
   visibleYDomain: ReturnType<typeof computeVisibleYDomain>,
   selectionLineX: number | undefined,
   activeValue: number | undefined
 ) {
-  if (currentDomain[0] === "dataMin" || selectionLineX == null) return null;
+  const xRatio = computeSelectionXRatio(
+    currentDomain,
+    selectionLineX ?? null
+  );
+  if (xRatio == null || activeValue == null) return null;
 
-  const [minT, maxT] = currentDomain;
-  const timeSpan = maxT - minT;
-  if (timeSpan <= 0) return null;
-
-  const xRatio = Math.max(0, Math.min(1, (selectionLineX - minT) / timeSpan));
-
-  let yRatio: number | null = null;
-  if (
-    activeValue != null &&
-    typeof visibleYDomain[0] === "number" &&
-    typeof visibleYDomain[1] === "number"
-  ) {
-    const ymin = visibleYDomain[0];
-    const ymax = visibleYDomain[1];
-    const valueSpan = ymax - ymin;
-    if (valueSpan > 0) {
-      yRatio = 1 - (activeValue - ymin) / valueSpan;
-    }
-  }
+  const yRatio = computePlotYRatio(visibleYDomain, activeValue);
+  if (yRatio == null) return null;
 
   return { xRatio, yRatio };
 }
 
+function plotHeightExpr(): string {
+  return `(100% - ${PLOT_INSET.top + PLOT_INSET.bottom}px)`;
+}
+
 export function EnvironmentChart({
   historyData,
+  deviceIds,
+  deviceNames,
   chartMetric,
   onChartMetricChange,
   viewRange,
@@ -121,9 +152,22 @@ export function EnvironmentChart({
   noMoreOlderData = false,
   onVisibleDomainChange,
 }: EnvironmentChartProps) {
-  const color = METRIC_COLORS[chartMetric];
-  const { dataKey, outdoorKey } = getMetricKeys(chartMetric);
+  const { outdoorKey } = getMetricKeys(chartMetric);
   const aggregated = isAggregatedRange(viewRange);
+
+  const availableMetrics = useMemo(
+    () => getAvailableChartMetrics(historyData, deviceIds),
+    [historyData, deviceIds]
+  );
+
+  const visibleDeviceIds = useMemo(
+    () => getDevicesWithMetricData(historyData, deviceIds, chartMetric),
+    [historyData, deviceIds, chartMetric]
+  );
+
+  const canShowOutdoor = hasOutdoorMetricData(historyData, chartMetric);
+  const [outdoorVisible, setOutdoorVisible] = useState(false);
+  const showOutdoorLine = canShowOutdoor && outdoorVisible;
 
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [domainOffset, setDomainOffset] = useState(0);
@@ -132,12 +176,25 @@ export function EnvironmentChart({
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
+    setOutdoorVisible(false);
+  }, [chartMetric]);
+
+  useEffect(() => {
     dragDomainRef.current = domainOffset;
   }, [domainOffset]);
 
   useEffect(() => {
-    setDomainOffset(0);
+    const nextOffset = getMaxPositiveDomainOffset(viewRange);
+    dragDomainRef.current = nextOffset;
+    setDomainOffset(nextOffset);
   }, [viewRange, historyEpoch]);
+
+  useEffect(() => {
+    if (!availableMetrics.length) return;
+    if (!availableMetrics.includes(chartMetric)) {
+      onChartMetricChange(availableMetrics[0]);
+    }
+  }, [availableMetrics, chartMetric, onChartMetricChange]);
 
   useEffect(
     () => () => {
@@ -170,8 +227,8 @@ export function EnvironmentChart({
     return () => window.clearTimeout(timer);
   }, [currentDomain, onVisibleDomainChange]);
 
-  const activePoint = useMemo(
-    () => findActivePoint(historyData, currentDomain),
+  const selectionTime = useMemo(
+    () => getSelectionTime(historyData, currentDomain),
     [historyData, currentDomain]
   );
 
@@ -182,19 +239,27 @@ export function EnvironmentChart({
   }, [currentDomain, viewRange]);
 
   const visibleYDomain = useMemo(
-    () => computeVisibleYDomain(historyData, currentDomain, chartMetric, aggregated),
-    [historyData, currentDomain, chartMetric, aggregated]
+    () =>
+      computeVisibleYDomain(
+        historyData,
+        currentDomain,
+        chartMetric,
+        aggregated,
+        visibleDeviceIds,
+        showOutdoorLine
+      ),
+    [historyData, currentDomain, chartMetric, aggregated, visibleDeviceIds, showOutdoorLine]
   );
 
-  const chartData = useMemo(() => {
+  const chartPlotData = useMemo(() => {
     if (!historyData.length) return [];
 
     const visible = filterHistoryForDomain(historyData, currentDomain);
     const source = visible.length > 0 ? visible : historyData;
     return aggregated
       ? source
-      : downsampleHistoryForChart(source, chartMetric);
-  }, [historyData, currentDomain, chartMetric, aggregated]);
+      : downsampleHistoryForChart(source, chartMetric, 320, visibleDeviceIds);
+  }, [historyData, currentDomain, chartMetric, aggregated, visibleDeviceIds]);
 
   const referenceLines = ticks?.map((t) => (
     <ReferenceLine
@@ -205,27 +270,54 @@ export function EnvironmentChart({
     />
   ));
 
-  const activeValue = activePoint ? getMetricValue(activePoint, chartMetric) : undefined;
-  const activeOutdoor = activePoint
-    ? (activePoint[outdoorKey as keyof HistoryPoint] as number | undefined)
-    : undefined;
+  const activeDeviceValues = useMemo(() => {
+    if (selectionTime == null) return [];
+    return visibleDeviceIds
+      .map((deviceId) => ({
+        deviceId,
+        name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
+        value: getDeviceMetricValueAtTime(
+          chartPlotData,
+          deviceId,
+          chartMetric,
+          selectionTime
+        ),
+        color: getDeviceLineColor(deviceId),
+      }))
+      .filter((entry) => entry.value != null);
+  }, [selectionTime, visibleDeviceIds, deviceNames, chartMetric, chartPlotData]);
 
-  const selectionLineX = activePoint?.datetimeObj;
-  const selectionLabel = activePoint
-    ? formatActivePointLabel(activePoint.datetimeObj, viewRange)
-    : "";
+  const activeOutdoor = useMemo(() => {
+    if (selectionTime == null) return undefined;
+    return getOutdoorMetricValueAtTime(chartPlotData, chartMetric, selectionTime);
+  }, [selectionTime, chartPlotData, chartMetric]);
 
-  const plotPosition = useMemo(
-    () =>
-      computePlotPosition(currentDomain, visibleYDomain, selectionLineX, activeValue),
-    [currentDomain, visibleYDomain, selectionLineX, activeValue]
-  );
+  const selectionLabel =
+    selectionTime != null
+      ? formatActivePointLabel(selectionTime, viewRange)
+      : "";
+
+  const activeDots = useMemo(() => {
+    if (selectionTime == null) return [];
+    return activeDeviceValues
+      .map((entry) => {
+        const plotPosition = computePlotPosition(
+          currentDomain,
+          visibleYDomain,
+          selectionTime,
+          entry.value
+        );
+        return plotPosition?.yRatio != null ? { ...entry, plotPosition } : null;
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry != null);
+  }, [activeDeviceValues, currentDomain, selectionTime, visibleYDomain]);
 
   const unit = METRIC_UNITS[chartMetric];
-  const showOutdoorLine = chartMetric !== "co2";
 
   const handleViewRangeChange = (range: ChartViewRange) => {
-    setDomainOffset(0);
+    const nextOffset = getMaxPositiveDomainOffset(range);
+    dragDomainRef.current = nextOffset;
+    setDomainOffset(nextOffset);
     onViewRangeChange(range);
   };
 
@@ -268,25 +360,31 @@ export function EnvironmentChart({
     setDragStartX(null);
   };
 
+  const selectionXRatio = useMemo(
+    () => computeSelectionXRatio(currentDomain, selectionTime),
+    [currentDomain, selectionTime]
+  );
+
   const plotWidthExpr = `(100% - ${PLOT_INSET.left + PLOT_INSET.right}px)`;
   const lineLeft =
-    plotPosition != null
-      ? `calc(${PLOT_INSET.left}px + ${plotWidthExpr} * ${plotPosition.xRatio})`
+    selectionXRatio != null
+      ? `calc(${PLOT_INSET.left}px + ${plotWidthExpr} * ${selectionXRatio})`
       : undefined;
-  const dotTop =
-    plotPosition?.yRatio != null
-      ? `calc(${PLOT_INSET.top}px + (100% - ${PLOT_INSET.top}px) * ${plotPosition.yRatio})`
-      : undefined;
+
+  const showSelectionOverlay =
+    lineLeft != null &&
+    chartPlotData.length > 0 &&
+    (visibleDeviceIds.length > 0 || (showOutdoorLine && activeOutdoor != null));
 
   return (
     <div className="climate-card flex flex-col gap-0 overflow-hidden p-0">
-      <div className="px-4 pt-4">
+      <div className="px-2 pt-4">
         <Tabs
           value={chartMetric}
           onValueChange={(v) => onChartMetricChange(v as ChartMetric)}
         >
           <TabsList className="h-10 w-full bg-[#f0f0f0]">
-            {(Object.keys(METRIC_LABELS) as ChartMetric[]).map((metric) => {
+            {availableMetrics.map((metric) => {
               const Icon = METRIC_ICONS[metric];
               const active = chartMetric === metric;
               return (
@@ -312,13 +410,19 @@ export function EnvironmentChart({
         </Tabs>
       </div>
 
-      {activePoint && (
-        <div className="px-4 pt-3 text-center">
+      {selectionTime != null && showSelectionOverlay && (
+        <div className="px-2 pt-3 text-center">
           <p className="text-xs text-muted-foreground">{selectionLabel}</p>
-          <p className="text-2xl font-bold" style={{ color }}>
-            {formatMetricValue(activeValue, chartMetric)}
-            {unit}
-          </p>
+          {activeDeviceValues.length > 0 && (
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+              {activeDeviceValues.map((entry) => (
+                <p key={entry.deviceId} className="text-lg font-bold" style={{ color: entry.color }}>
+                  {entry.name}: {formatMetricValue(entry.value, chartMetric)}
+                  {unit}
+                </p>
+              ))}
+            </div>
+          )}
           {showOutdoorLine && activeOutdoor != null && (
             <p className="text-xs text-muted-foreground">
               屋外: {formatMetricValue(activeOutdoor, chartMetric)}
@@ -328,9 +432,44 @@ export function EnvironmentChart({
         </div>
       )}
 
+      {(visibleDeviceIds.length > 0 || canShowOutdoor) && (
+        <div className="flex flex-wrap items-center justify-center gap-3 px-2 pt-2">
+          {visibleDeviceIds.map((deviceId) => (
+            <div key={deviceId} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span
+                className="inline-block h-0.5 w-4 rounded-full"
+                style={{ backgroundColor: getDeviceLineColor(deviceId) }}
+              />
+              {deviceNames[deviceId] ?? `デバイス ${deviceId}`}
+            </div>
+          ))}
+          {canShowOutdoor && (
+            <button
+              type="button"
+              onClick={() => setOutdoorVisible((visible) => !visible)}
+              aria-pressed={outdoorVisible}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] transition-colors",
+                outdoorVisible
+                  ? "bg-[#f0f0f0] text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-0 w-4 border-t-2 border-dashed",
+                  outdoorVisible ? "border-[#adb5bd]" : "border-muted-foreground/40"
+                )}
+              />
+              屋外
+            </button>
+          )}
+        </div>
+      )}
+
       <div
         ref={chartRef}
-        className="relative h-[240px] w-full select-none px-2 pt-2"
+        className="relative h-[240px] w-full select-none px-0 pt-1"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -361,16 +500,16 @@ export function EnvironmentChart({
             <p>データがありません</p>
             <p className="text-[10px] opacity-70">バックエンドが起動しているか確認してください</p>
           </div>
-        ) : !chartData.length ? (
+        ) : !chartPlotData.length || (!visibleDeviceIds.length && !showOutdoorLine) ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             表示範囲内にデータがありません
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%" className="pointer-events-none">
             <ComposedChart
-              key={`${chartMetric}-${viewRange}`}
-              data={chartData}
-              margin={{ top: PLOT_INSET.top, right: PLOT_INSET.right - 8, left: 0, bottom: 0 }}
+              key={`${chartMetric}-${viewRange}-${visibleDeviceIds.join("-")}-${outdoorVisible}`}
+              data={chartPlotData}
+              margin={{ top: PLOT_INSET.top, right: PLOT_INSET.right, left: 0, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
               <XAxis
@@ -388,10 +527,10 @@ export function EnvironmentChart({
               <YAxis
                 domain={visibleYDomain}
                 allowDataOverflow
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
                 axisLine={false}
                 tickLine={false}
-                width={40}
+                width={Y_AXIS_WIDTH}
                 tickFormatter={(val) =>
                   chartMetric === "pressure" || chartMetric === "co2"
                     ? String(Math.round(val))
@@ -400,7 +539,7 @@ export function EnvironmentChart({
               />
               {showOutdoorLine && (
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey={outdoorKey as string}
                   stroke="#adb5bd"
                   strokeWidth={2}
@@ -411,21 +550,24 @@ export function EnvironmentChart({
                 />
               )}
               {referenceLines}
-              <Line
-                type="monotone"
-                dataKey={dataKey}
-                stroke={color}
-                strokeWidth={3}
-                dot={false}
-                name="屋内"
-                isAnimationActive={false}
-                connectNulls
-              />
+              {visibleDeviceIds.map((deviceId) => (
+                <Line
+                  key={deviceId}
+                  type="linear"
+                  dataKey={deviceMetricKey(deviceId, chartMetric)}
+                  stroke={getDeviceLineColor(deviceId)}
+                  strokeWidth={3}
+                  dot={false}
+                  name={deviceNames[deviceId] ?? `デバイス ${deviceId}`}
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
+              ))}
             </ComposedChart>
           </ResponsiveContainer>
         )}
 
-        {plotPosition && lineLeft && (
+        {showSelectionOverlay && (
           <div className="pointer-events-none absolute inset-0 z-20">
             <p
               className="absolute -translate-x-1/2 text-[10px] font-bold text-[#888888]"
@@ -434,20 +576,32 @@ export function EnvironmentChart({
               {selectionLabel}
             </p>
             <div
-              className="absolute bottom-0 top-6 w-0 -translate-x-1/2 border-l border-dashed border-[#888888]"
-              style={{ left: lineLeft }}
+              className="absolute w-0 -translate-x-1/2 border-l border-dashed border-[#888888]"
+              style={{
+                left: lineLeft,
+                top: PLOT_INSET.top,
+                bottom: PLOT_INSET.bottom,
+              }}
             />
-            {dotTop && activeValue != null && (
-              <div
-                className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
-                style={{ left: lineLeft, top: dotTop, backgroundColor: color }}
-              />
-            )}
+            {activeDots.map((entry) => {
+              const dotTop =
+                entry.plotPosition?.yRatio != null
+                  ? `calc(${PLOT_INSET.top}px + ${plotHeightExpr()} * ${entry.plotPosition.yRatio})`
+                  : undefined;
+              if (!dotTop) return null;
+              return (
+                <div
+                  key={entry.deviceId}
+                  className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
+                  style={{ left: lineLeft, top: dotTop, backgroundColor: entry.color }}
+                />
+              );
+            })}
           </div>
         )}
       </div>
 
-      <div className="px-4 pb-4 pt-2">
+      <div className="px-2 pb-4 pt-2">
         <div className="flex rounded-lg border bg-[#f0f0f0] p-0.5">
           {VIEW_RANGES.map((range) => (
             <button

@@ -20,9 +20,9 @@ export interface LatestData {
 export interface HistoryPoint {
   datetime?: string;
   datetimeObj: number;
-  temperature: number;
-  humidity: number;
-  pressure: number;
+  temperature?: number;
+  humidity?: number;
+  pressure?: number;
   co2?: number;
   outdoor_temperature?: number;
   outdoor_humidity?: number;
@@ -69,6 +69,48 @@ export const PRIMARY_SENSOR_DEVICE_ID = 1;
 
 /** ダッシュボードカードに表示する屋内デバイス */
 export const DASHBOARD_SENSOR_DEVICE_IDS = [1, 2] as const;
+
+export const CHART_METRICS: ChartMetric[] = ["temperature", "humidity", "pressure", "co2"];
+
+export function deviceMetricKey(deviceId: number, metric: ChartMetric): string {
+  return `d${deviceId}_${metric}`;
+}
+
+export function deviceMetricMinKey(deviceId: number, metric: ChartMetric): string {
+  return `d${deviceId}_${metric}_min`;
+}
+
+export function deviceMetricMaxKey(deviceId: number, metric: ChartMetric): string {
+  return `d${deviceId}_${metric}_max`;
+}
+
+export function getDeviceMetricValue(
+  point: HistoryPoint,
+  deviceId: number,
+  metric: ChartMetric
+): number | undefined {
+  const key = deviceMetricKey(deviceId, metric);
+  const row = point as unknown as Record<string, unknown>;
+  if (key in row) {
+    const value = row[key];
+    return typeof value === "number" && !Number.isNaN(value) ? value : undefined;
+  }
+  if (deviceId === PRIMARY_SENSOR_DEVICE_ID) {
+    const legacy = point[metric as keyof HistoryPoint];
+    return typeof legacy === "number" && !Number.isNaN(legacy) ? legacy : undefined;
+  }
+  return undefined;
+}
+
+/** グラフのデバイスライン色（指標に関係なくデバイス固定） */
+export const DEVICE_LINE_COLORS: Record<number, string> = {
+  1: "#3498db",
+  2: "#e67e22",
+};
+
+export function getDeviceLineColor(deviceId: number): string {
+  return DEVICE_LINE_COLORS[deviceId] ?? "#95a5a6";
+}
 
 export interface OutdoorLocationSearchResult {
   name: string;

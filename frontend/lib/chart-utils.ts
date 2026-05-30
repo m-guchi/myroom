@@ -1,4 +1,11 @@
 import type { ChartMetric, ChartViewRange, HistoryPoint, TimeRange } from "@/lib/types";
+import {
+  CHART_METRICS,
+  deviceMetricKey,
+  deviceMetricMaxKey,
+  deviceMetricMinKey,
+  getDeviceMetricValue,
+} from "@/lib/types";
 
 export const VIEW_RANGE_MS: Record<ChartViewRange, number> = {
   day: 86400000,
@@ -13,6 +20,15 @@ export function getViewRangeMs(viewRange: ChartViewRange): number {
 
 export type ChartDomain = [number, number];
 
+/** 選択カーソルの位置（表示域の右から 10% = 90% 地点） */
+export const SELECTION_TIME_RATIO = 0.9;
+
+export function getMaxPositiveDomainOffset(viewRange: ChartViewRange): number {
+  const windowMs = getViewRangeMs(viewRange);
+  const rightPadding = windowMs * 0.03;
+  return Math.max(0, windowMs * (1 - SELECTION_TIME_RATIO) - rightPadding);
+}
+
 export function computeChartDomain(
   historyData: HistoryPoint[],
   viewRange: ChartViewRange,
@@ -23,7 +39,7 @@ export function computeChartDomain(
   const dataMinTime = historyData[0].datetimeObj;
   const dataMaxTime = historyData[historyData.length - 1].datetimeObj;
   const windowMs = getViewRangeMs(viewRange);
-  const rightPadding = windowMs * 0.1;
+  const rightPadding = windowMs * 0.03;
   const maxT = dataMaxTime + rightPadding + domainOffset;
   const minT = maxT - windowMs;
 
@@ -73,7 +89,8 @@ export function filterHistoryForDomain(
 export function downsampleHistoryForChart(
   historyData: HistoryPoint[],
   metric: ChartMetric,
-  maxPoints = 320
+  maxPoints = 320,
+  deviceIds?: readonly number[]
 ): HistoryPoint[] {
   if (historyData.length <= maxPoints) return historyData;
 
@@ -88,15 +105,40 @@ export function downsampleHistoryForChart(
 
     let minPoint = historyData[from];
     let maxPoint = historyData[from];
-    for (let j = from + 1; j < to; j++) {
+    let minVal: number | undefined;
+    let maxVal: number | undefined;
+
+    for (let j = from; j < to; j++) {
       const point = historyData[j];
+      if (deviceIds?.length) {
+        for (const deviceId of deviceIds) {
+          const value = getDeviceMetricValue(point, deviceId, metric);
+          if (value == null) continue;
+          if (minVal == null || value < minVal) {
+            minVal = value;
+            minPoint = point;
+          }
+          if (maxVal == null || value > maxVal) {
+            maxVal = value;
+            maxPoint = point;
+          }
+        }
+        continue;
+      }
+
       const value = point[metric];
       if (typeof value !== "number") continue;
-      const minVal = minPoint[metric];
-      const maxVal = maxPoint[metric];
-      if (typeof minVal !== "number" || value < minVal) minPoint = point;
-      if (typeof maxVal !== "number" || value > maxVal) maxPoint = point;
+      if (minVal == null || value < minVal) {
+        minVal = value;
+        minPoint = point;
+      }
+      if (maxVal == null || value > maxVal) {
+        maxVal = value;
+        maxPoint = point;
+      }
     }
+
+    if (minVal == null && maxVal == null) continue;
 
     if (minPoint.datetimeObj <= maxPoint.datetimeObj) {
       result.push(minPoint);
@@ -108,6 +150,51 @@ export function downsampleHistoryForChart(
   }
 
   return result.sort((a, b) => a.datetimeObj - b.datetimeObj);
+}
+
+export function hasDeviceMetricData(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  metric: ChartMetric
+): boolean {
+  const key = deviceMetricKey(deviceId, metric);
+  return historyData.some((point) => {
+    const value = (point as unknown as Record<string, unknown>)[key];
+    return typeof value === "number" && !Number.isNaN(value);
+  });
+}
+
+export function hasOutdoorMetricData(
+  historyData: HistoryPoint[],
+  metric: ChartMetric
+): boolean {
+  if (metric === "co2") return false;
+  const key = `outdoor_${metric}` as keyof HistoryPoint;
+  return historyData.some((point) => {
+    const value = point[key];
+    return typeof value === "number" && !Number.isNaN(value);
+  });
+}
+
+export function getDevicesWithMetricData(
+  historyData: HistoryPoint[],
+  deviceIds: readonly number[],
+  metric: ChartMetric
+): number[] {
+  return deviceIds.filter((deviceId) =>
+    hasDeviceMetricData(historyData, deviceId, metric)
+  );
+}
+
+export function getAvailableChartMetrics(
+  historyData: HistoryPoint[],
+  deviceIds: readonly number[]
+): ChartMetric[] {
+  return CHART_METRICS.filter(
+    (metric) =>
+      getDevicesWithMetricData(historyData, deviceIds, metric).length > 0 ||
+      hasOutdoorMetricData(historyData, metric)
+  );
 }
 
 export function findActivePoint(
@@ -144,7 +231,131 @@ export function getSelectionTime(
   if (!historyData.length || domain[0] === "dataMin") return null;
 
   const [minT, maxT] = domain;
-  return maxT - (maxT - minT) * 0.1;
+  return minT + (maxT - minT) * SELECTION_TIME_RATIO;
+}
+
+function findPrevNextDeviceValues(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  metric: ChartMetric,
+  targetTime: number
+): {
+  prev?: { t: number; v: number };
+  next?: { t: number; v: number };
+} {
+  let prev: { t: number; v: number } | undefined;
+  let next: { t: number; v: number } | undefined;
+
+  for (const point of historyData) {
+    const value = getDeviceMetricValue(point, deviceId, metric);
+    if (value == null) continue;
+
+    if (point.datetimeObj <= targetTime) {
+      prev = { t: point.datetimeObj, v: value };
+      continue;
+    }
+
+    if (!next) {
+      next = { t: point.datetimeObj, v: value };
+      break;
+    }
+  }
+
+  return { prev, next };
+}
+
+function interpolateBetween(
+  prev: { t: number; v: number },
+  next: { t: number; v: number },
+  targetTime: number
+): number {
+  if (prev.t === next.t) return prev.v;
+  const ratio = (targetTime - prev.t) / (next.t - prev.t);
+  return prev.v + (next.v - prev.v) * ratio;
+}
+
+/** 指定時刻のデバイス指標値（線形補間。開始前は undefined、終了後は直前の値） */
+export function interpolateDeviceMetricAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  metric: ChartMetric,
+  targetTime: number
+): number | undefined {
+  const { prev, next } = findPrevNextDeviceValues(
+    historyData,
+    deviceId,
+    metric,
+    targetTime
+  );
+
+  if (prev && next) {
+    if (targetTime === prev.t) return prev.v;
+    if (targetTime === next.t) return next.v;
+    if (targetTime > prev.t && targetTime < next.t) {
+      return interpolateBetween(prev, next, targetTime);
+    }
+  }
+
+  if (prev) return prev.v;
+  return undefined;
+}
+
+/** @deprecated alias */
+export function getDeviceMetricValueAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  metric: ChartMetric,
+  targetTime: number
+): number | undefined {
+  return interpolateDeviceMetricAtTime(historyData, deviceId, metric, targetTime);
+}
+
+/** 指定時刻の屋外指標値（線形補間。データがなければ直前の値） */
+export function interpolateOutdoorMetricAtTime(
+  historyData: HistoryPoint[],
+  metric: ChartMetric,
+  targetTime: number
+): number | undefined {
+  if (metric === "co2") return undefined;
+
+  const key = `outdoor_${metric}` as keyof HistoryPoint;
+  let prev: { t: number; v: number } | undefined;
+  let next: { t: number; v: number } | undefined;
+
+  for (const point of historyData) {
+    const value = point[key];
+    if (typeof value !== "number" || Number.isNaN(value)) continue;
+
+    if (point.datetimeObj <= targetTime) {
+      prev = { t: point.datetimeObj, v: value };
+      continue;
+    }
+
+    if (!next) {
+      next = { t: point.datetimeObj, v: value };
+      break;
+    }
+  }
+
+  if (prev && next) {
+    if (targetTime === prev.t) return prev.v;
+    if (targetTime === next.t) return next.v;
+    if (targetTime > prev.t && targetTime < next.t) {
+      return interpolateBetween(prev, next, targetTime);
+    }
+  }
+
+  if (prev) return prev.v;
+  return undefined;
+}
+
+/** @deprecated alias */
+export function getOutdoorMetricValueAtTime(
+  historyData: HistoryPoint[],
+  metric: ChartMetric,
+  targetTime: number
+): number | undefined {
+  return interpolateOutdoorMetricAtTime(historyData, metric, targetTime);
 }
 
 export function clampDomainOffset(
@@ -158,8 +369,9 @@ export function clampDomainOffset(
 
   const dataMaxTime = historyData[historyData.length - 1].datetimeObj;
   let newOffset = domainOffset + timeShift;
+  const maxPositiveOffset = getMaxPositiveDomainOffset(viewRange);
 
-  if (newOffset > 0) newOffset = 0;
+  if (newOffset > maxPositiveOffset) newOffset = maxPositiveOffset;
 
   if (!options?.allowPastExtension || options?.noMoreOlderData) {
     const dataMinTime = historyData[0].datetimeObj;
@@ -253,7 +465,9 @@ export function computeVisibleYDomain(
   historyData: HistoryPoint[],
   domain: ChartDomain | ["dataMin", "dataMax"],
   metric: ChartMetric,
-  aggregated: boolean
+  aggregated: boolean,
+  deviceIds?: readonly number[],
+  includeOutdoor = false
 ): [number, number] | ["auto", "auto"] {
   if (!historyData.length) return ["auto", "auto"];
 
@@ -276,17 +490,30 @@ export function computeVisibleYDomain(
 
   const values: number[] = [];
   const outdoorKey = `outdoor_${metric}` as keyof HistoryPoint;
-  const maxKey = `${metric}_max` as keyof HistoryPoint;
-  const minKey = `${metric}_min` as keyof HistoryPoint;
   const rangeKey = `${metric}Range` as keyof HistoryPoint;
 
   for (const point of visiblePoints) {
-    collectNumericValues(values, point[metric]);
-    collectNumericValues(values, point[outdoorKey]);
+    if (deviceIds?.length) {
+      for (const deviceId of deviceIds) {
+        collectNumericValues(values, getDeviceMetricValue(point, deviceId, metric));
+        if (aggregated) {
+          const row = point as unknown as Record<string, unknown>;
+          collectNumericValues(values, row[deviceMetricMinKey(deviceId, metric)]);
+          collectNumericValues(values, row[deviceMetricMaxKey(deviceId, metric)]);
+        }
+      }
+    } else {
+      collectNumericValues(values, point[metric]);
+      if (aggregated) {
+        const maxKey = `${metric}_max` as keyof HistoryPoint;
+        const minKey = `${metric}_min` as keyof HistoryPoint;
+        collectNumericValues(values, point[maxKey]);
+        collectNumericValues(values, point[minKey]);
+      }
+    }
 
-    if (aggregated) {
-      collectNumericValues(values, point[maxKey]);
-      collectNumericValues(values, point[minKey]);
+    if (includeOutdoor) {
+      collectNumericValues(values, point[outdoorKey]);
     }
 
     const range = point[rangeKey];
@@ -329,9 +556,18 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
     .map((item) => ({
       ...item,
       datetimeObj: item.datetime ? new Date(String(item.datetime)).getTime() : 0,
-      temperature: Number(item.temperature) || 0,
-      humidity: Number(item.humidity) || 0,
-      pressure: item.pressure ? Math.round(Number(item.pressure)) : 0,
+      temperature:
+        item.temperature != null && item.temperature !== ""
+          ? Number(item.temperature)
+          : undefined,
+      humidity:
+        item.humidity != null && item.humidity !== ""
+          ? Number(item.humidity)
+          : undefined,
+      pressure:
+        item.pressure != null && item.pressure !== ""
+          ? Math.round(Number(item.pressure))
+          : undefined,
       co2: item.co2 != null ? Math.round(Number(item.co2)) : undefined,
       temperatureRange:
         item.temperature_min !== undefined && item.temperature_max !== undefined

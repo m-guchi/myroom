@@ -1,7 +1,6 @@
 import os
 from sqlalchemy import create_engine, Column, Integer, Float, DateTime, Date, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 import datetime
 import random
 from dotenv import load_dotenv
@@ -37,6 +36,7 @@ class DHTRecord(Base):
 def generate_mock_history_for_range(
     start_time: datetime.datetime,
     end_time: datetime.datetime,
+    device_id: int = 1,
 ) -> list:
     """指定期間のモック履歴のみ生成（全件フィルタより高速）。"""
     data = []
@@ -44,19 +44,23 @@ def generate_mock_history_for_range(
     end_naive = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
     t = end_naive
     interval = datetime.timedelta(minutes=10)
+    temp_offset = 0 if device_id == 1 else -2.5
+    humid_offset = 0 if device_id == 1 else 5
+    co2_offset = 0 if device_id == 1 else 80
 
     while t >= start_naive:
-        temp = 20 + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-1, 1)
-        humid = 50 + 10 * (1 + math.cos(t.hour / 24 * 2 * math.pi)) + random.uniform(-2, 2)
-        pressure = 1013 + random.uniform(-5, 5)
-        co2 = 450 + 150 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-30, 30)
-        data.append({
+        temp = 20 + temp_offset + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-1, 1)
+        humid = 50 + humid_offset + 10 * (1 + math.cos(t.hour / 24 * 2 * math.pi)) + random.uniform(-2, 2)
+        co2 = 450 + co2_offset + 150 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-30, 30)
+        entry = {
             "datetime": t,
             "temperature": round(temp, 1),
             "humidity": round(humid, 1),
-            "pressure": round(pressure, 1),
             "co2": round(co2),
-        })
+        }
+        if device_id == 1:
+            entry["pressure"] = round(1013 + random.uniform(-5, 5), 1)
+        data.append(entry)
         t -= interval
 
     data.reverse()

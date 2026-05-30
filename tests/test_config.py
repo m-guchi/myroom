@@ -8,7 +8,14 @@ def test_device_config_save_and_list(data_dir):
     devices = device_config.list_devices(discovered_ids=[2])
     assert devices == [
         {"id": 1, "name": "リビング"},
-        {"id": 2, "name": "デバイス 2"},
+        {"id": 2, "name": "寝室"},
+    ]
+
+    devices_with_new = device_config.list_devices(discovered_ids=[3])
+    assert devices_with_new == [
+        {"id": 1, "name": "リビング"},
+        {"id": 2, "name": "寝室"},
+        {"id": 3, "name": "デバイス 3"},
     ]
 
 
