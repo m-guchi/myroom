@@ -27,7 +27,7 @@ import {
   clampDomainOffset,
   computeChartDomain,
   computeVisibleYDomain,
-  downsampleHistoryForChart,
+  downsampleMultiDeviceHistoryForChart,
   filterHistoryForDomain,
   formatActivePointLabel,
   formatChartAxisDate,
@@ -40,6 +40,7 @@ import {
   getSelectionTime,
   hasOutdoorMetricData,
   isAggregatedRange,
+  withSelectionEndPoints,
 } from "@/lib/chart-utils";
 import { cn } from "@/lib/utils";
 
@@ -256,10 +257,31 @@ export function EnvironmentChart({
 
     const visible = filterHistoryForDomain(historyData, currentDomain);
     const source = visible.length > 0 ? visible : historyData;
-    return aggregated
+    const base = aggregated
       ? source
-      : downsampleHistoryForChart(source, chartMetric, 320, visibleDeviceIds);
-  }, [historyData, currentDomain, chartMetric, aggregated, visibleDeviceIds]);
+      : downsampleMultiDeviceHistoryForChart(
+          source,
+          chartMetric,
+          320,
+          visibleDeviceIds
+        );
+
+    return withSelectionEndPoints(
+      base,
+      selectionTime,
+      visibleDeviceIds,
+      chartMetric,
+      showOutdoorLine
+    );
+  }, [
+    historyData,
+    currentDomain,
+    chartMetric,
+    aggregated,
+    visibleDeviceIds,
+    selectionTime,
+    showOutdoorLine,
+  ]);
 
   const referenceLines = ticks?.map((t) => (
     <ReferenceLine
@@ -412,7 +434,7 @@ export function EnvironmentChart({
 
       {selectionTime != null && showSelectionOverlay && (
         <div className="px-2 pt-3 text-center">
-          <p className="text-xs text-muted-foreground">{selectionLabel}</p>
+          <p className="text-xs whitespace-nowrap text-muted-foreground">{selectionLabel}</p>
           {activeDeviceValues.length > 0 && (
             <div className="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
               {activeDeviceValues.map((entry) => (
@@ -547,6 +569,7 @@ export function EnvironmentChart({
                   dot={false}
                   name="屋外"
                   isAnimationActive={false}
+                  connectNulls
                 />
               )}
               {referenceLines}
@@ -560,7 +583,7 @@ export function EnvironmentChart({
                   dot={false}
                   name={deviceNames[deviceId] ?? `デバイス ${deviceId}`}
                   isAnimationActive={false}
-                  connectNulls={false}
+                  connectNulls
                 />
               ))}
             </ComposedChart>
@@ -570,7 +593,7 @@ export function EnvironmentChart({
         {showSelectionOverlay && (
           <div className="pointer-events-none absolute inset-0 z-20">
             <p
-              className="absolute -translate-x-1/2 text-[10px] font-bold text-[#888888]"
+              className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold text-[#888888]"
               style={{ left: lineLeft, top: 4 }}
             >
               {selectionLabel}

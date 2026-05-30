@@ -4,6 +4,7 @@ import {
   clampDomainOffset,
   computeChartDomain,
   downsampleHistoryForChart,
+  downsampleMultiDeviceHistoryForChart,
   filterHistoryForDomain,
   getComfortAdvice,
   getDeviceMetricValueAtTime,
@@ -101,6 +102,26 @@ describe("downsampleHistoryForChart", () => {
     const downsampled = downsampleHistoryForChart(history, "temperature", 40);
     expect(downsampled.length).toBeLessThanOrEqual(80);
     expect(downsampled.length).toBeGreaterThan(0);
+  });
+});
+
+describe("downsampleMultiDeviceHistoryForChart", () => {
+  it("keeps outdoor values when downsampling device series", () => {
+    const history: HistoryPoint[] = Array.from({ length: 500 }, (_, index) => ({
+      datetimeObj: index * 60_000,
+      d1_temperature: 20 + (index % 10),
+      outdoor_temperature: 10 + (index % 8),
+    })) as HistoryPoint[];
+
+    const downsampled = downsampleMultiDeviceHistoryForChart(
+      history,
+      "temperature",
+      40,
+      [1]
+    );
+
+    expect(downsampled.length).toBeLessThan(history.length);
+    expect(downsampled.some((point) => point.outdoor_temperature != null)).toBe(true);
   });
 });
 
