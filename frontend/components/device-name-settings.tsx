@@ -71,7 +71,7 @@ export function DeviceNameSettings({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-[20px] bg-white p-5 shadow-lg">
+      <div className="w-full max-w-md rounded-[20px] bg-card p-5 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Thermometer className="size-5 text-muted-foreground" />
@@ -80,7 +80,7 @@ export function DeviceNameSettings({
           <button
             type="button"
             onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-full hover:bg-black/5"
+            className="flex size-8 items-center justify-center rounded-full hover:bg-accent"
             aria-label="閉じる"
           >
             <X className="size-5" />
@@ -101,7 +101,7 @@ export function DeviceNameSettings({
                 id="device-id"
                 value={String(deviceId)}
                 readOnly
-                className="rounded-xl bg-[#fafafa] text-muted-foreground"
+                className="rounded-xl bg-muted text-muted-foreground"
               />
             </div>
 
@@ -123,7 +123,7 @@ export function DeviceNameSettings({
             )}
 
             <Button
-              className="h-11 w-full rounded-xl bg-foreground text-white hover:bg-foreground/90"
+              className="h-11 w-full rounded-xl bg-foreground text-background hover:bg-foreground/90"
               onClick={handleSave}
               disabled={saving}
             >

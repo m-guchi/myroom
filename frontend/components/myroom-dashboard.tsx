@@ -302,7 +302,7 @@ export function MyRoomDashboard() {
             <button
               type="button"
               onClick={() => fetchData({ showChartLoading: true, reloadHistory: true })}
-              className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5"
+              className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent"
               aria-label="更新"
             >
               <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} />

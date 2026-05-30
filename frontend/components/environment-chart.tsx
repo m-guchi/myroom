@@ -405,7 +405,7 @@ export function EnvironmentChart({
           value={chartMetric}
           onValueChange={(v) => onChartMetricChange(v as ChartMetric)}
         >
-          <TabsList className="h-10 w-full bg-[#f0f0f0]">
+          <TabsList className="h-10 w-full">
             {availableMetrics.map((metric) => {
               const Icon = METRIC_ICONS[metric];
               const active = chartMetric === metric;
@@ -473,7 +473,7 @@ export function EnvironmentChart({
               className={cn(
                 "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] transition-colors",
                 outdoorVisible
-                  ? "bg-[#f0f0f0] text-foreground"
+                  ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -511,7 +511,7 @@ export function EnvironmentChart({
         )}
 
         {historyLoading && !loading && (
-          <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm">
+          <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-card/90 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm">
             <div className="size-3 animate-spin rounded-full border border-muted-foreground/30 border-t-muted-foreground" />
             読み込み中
           </div>
@@ -593,13 +593,13 @@ export function EnvironmentChart({
         {showSelectionOverlay && (
           <div className="pointer-events-none absolute inset-0 z-20">
             <p
-              className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold text-[#888888]"
+              className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold text-muted-foreground"
               style={{ left: lineLeft, top: 4 }}
             >
               {selectionLabel}
             </p>
             <div
-              className="absolute w-0 -translate-x-1/2 border-l border-dashed border-[#888888]"
+              className="absolute w-0 -translate-x-1/2 border-l border-dashed border-muted-foreground"
               style={{
                 left: lineLeft,
                 top: PLOT_INSET.top,
@@ -615,7 +615,7 @@ export function EnvironmentChart({
               return (
                 <div
                   key={entry.deviceId}
-                  className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
+                  className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background"
                   style={{ left: lineLeft, top: dotTop, backgroundColor: entry.color }}
                 />
               );
@@ -625,7 +625,7 @@ export function EnvironmentChart({
       </div>
 
       <div className="px-2 pb-4 pt-2">
-        <div className="flex rounded-lg border bg-[#f0f0f0] p-0.5">
+        <div className="flex rounded-lg border bg-muted p-0.5">
           {VIEW_RANGES.map((range) => (
             <button
               key={range}
@@ -634,7 +634,7 @@ export function EnvironmentChart({
               className={cn(
                 "flex-1 rounded-md px-3 py-1.5 text-xs font-bold transition-all",
                 viewRange === range
-                  ? "bg-white text-foreground shadow-sm"
+                  ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

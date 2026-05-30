@@ -127,7 +127,7 @@ export function OutdoorLocationSettings({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[20px] bg-white p-5 shadow-lg">
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[20px] bg-card p-5 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MapPin className="size-5 text-muted-foreground" />
@@ -136,7 +136,7 @@ export function OutdoorLocationSettings({
           <button
             type="button"
             onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-full hover:bg-black/5"
+            className="flex size-8 items-center justify-center rounded-full hover:bg-accent"
             aria-label="閉じる"
           >
             <X className="size-5" />
@@ -167,13 +167,13 @@ export function OutdoorLocationSettings({
                 <p className="text-xs text-muted-foreground">検索中...</p>
               )}
               {searchResults.length > 0 && (
-                <ul className="max-h-40 overflow-y-auto rounded-xl border bg-[#fafafa]">
+                <ul className="max-h-40 overflow-y-auto rounded-xl border bg-muted">
                   {searchResults.map((result) => (
                     <li key={`${result.latitude}-${result.longitude}-${result.label}`}>
                       <button
                         type="button"
                         onClick={() => selectResult(result)}
-                        className="w-full px-3 py-2.5 text-left text-sm hover:bg-white"
+                        className="w-full px-3 py-2.5 text-left text-sm hover:bg-accent"
                       >
                         <span className="font-medium">{result.label}</span>
                         <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -226,7 +226,7 @@ export function OutdoorLocationSettings({
             )}
 
             <Button
-              className="h-11 w-full rounded-xl bg-foreground text-white hover:bg-foreground/90"
+              className="h-11 w-full rounded-xl bg-foreground text-background hover:bg-foreground/90"
               onClick={handleSave}
               disabled={saving}
             >

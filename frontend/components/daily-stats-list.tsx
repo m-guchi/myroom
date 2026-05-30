@@ -98,7 +98,7 @@ export function DailyStatsList({
         return (
           <div
             key={`${day.date}-${index}`}
-            className="flex items-center justify-between rounded-[18px] bg-white px-4 py-4"
+            className="flex items-center justify-between rounded-[18px] bg-card px-4 py-4"
           >
             <span className="text-[15px] font-bold">{dateLabel}</span>
             <div className="flex items-center gap-4">
@@ -106,7 +106,7 @@ export function DailyStatsList({
                 {formatValue(dayMin)}
                 {unit}
               </span>
-              <div className="relative h-1.5 w-20 overflow-visible rounded-full bg-black/5">
+              <div className="relative h-1.5 w-20 overflow-visible rounded-full bg-black/5 dark:bg-white/10">
                 <div
                   className="absolute h-full rounded-full transition-all duration-300"
                   style={{
@@ -134,7 +134,7 @@ export function DailyStatsList({
       {dailyStats.length > dailyLimit && (
         <Button
           variant="outline"
-          className="mt-1 rounded-[18px] border-border bg-white text-muted-foreground"
+          className="mt-1 rounded-[18px] border-border bg-card text-muted-foreground"
           onClick={onLoadMore}
         >
           さらに表示する
