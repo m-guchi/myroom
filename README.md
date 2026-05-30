@@ -208,20 +208,31 @@ SwitchBot 風のスマートホーム UI をベースに、モバイル向け（
 - **保存先**: `data/outdoor_location.json`（gitignore 対象）
 - **初期値**: `.env` の `OUTDOOR_LAT` / `OUTDOOR_LON` / `OUTDOOR_LOCATION_NAME`（未設定時: 茨木市付近）
 
-### CO2 センサー（SwitchBot）
+### CO2 センサー（SwitchBot + Raspberry Pi）
 
-SwitchBot Meter Pro (CO2) 等から Raspberry Pi 経由でデータを送信できます。
+SwitchBot Meter Pro (CO2) 等から **Raspberry Pi Zero W** 経由でデータを送信できます。
+
+**本番 URL**
+
+| 用途 | URL |
+|------|-----|
+| アプリ | https://myroom.gucchii.com/ |
+| API（センサー POST） | https://myroom.gucchii.com/api/sensor |
+| 死活監視 | https://myroom.gucchii.com/api/health |
 
 ```bash
-# POST 例
-curl -X POST "http://localhost:8000/api/sensor?device=2" \
+# POST 例（温度・湿度・CO2 のみ。気圧は CO2 センサーでは省略可）
+curl -X POST "https://myroom.gucchii.com/api/sensor?device=2" \
   -H "Content-Type: application/json" \
-  -d '{"datetime":"2026-05-30 12:00:00","co2":400,"temperature":23.5,"humidity":45}'
+  -d '{"datetime":"2026-05-30 12:00:00","co2":600,"temperature":30.8,"humidity":31}'
 ```
 
-- `temperature` / `humidity` / `pressure` / `co2` のいずれか1つ以上が必須
-- CO2 値はセンサーカードに ppm として表示
-- Raspberry Pi での BLE 読み取り・定期送信の手順は [`raspberry-pi/README.md`](raspberry-pi/README.md) を参照
+- `temperature` / `humidity` / `pressure` / `co2` の **いずれか1つ以上** が必須
+- 複数デバイスは `device` クエリで区別（例: DHT=`1`、SwitchBot CO2=`2`）
+- CO2 値は UI のセンサーカードに ppm として表示
+
+**Raspberry Pi のセットアップ**（WinSCP、SSH、BLE/`btmon`、systemd、トラブルシューティング）は  
+**[`raspberry-pi/README.md`](raspberry-pi/README.md)** に手順をまとめています。
 
 ### その他
 

@@ -1,4 +1,5 @@
 import {
+  DASHBOARD_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
   type DailyStat,
   type DeviceInfo,
@@ -112,14 +113,35 @@ export async function searchOutdoorLocations(
   return data.results;
 }
 
+export async function fetchLatestBatch(
+  deviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
+): Promise<Record<number, LatestData | null>> {
+  const results = await Promise.allSettled(
+    deviceIds.map((deviceId) => fetchLatest(deviceId))
+  );
+
+  const latestByDevice: Record<number, LatestData | null> = {};
+  deviceIds.forEach((deviceId, index) => {
+    const result = results[index];
+    latestByDevice[deviceId] =
+      result.status === "fulfilled" ? result.value : null;
+  });
+  return latestByDevice;
+}
+
 export async function fetchDashboardData(deviceId = PRIMARY_SENSOR_DEVICE_ID) {
-  const [latest, dailyStats] = await Promise.allSettled([
-    fetchLatest(deviceId),
+  const [latestByDevice, dailyStats] = await Promise.allSettled([
+    fetchLatestBatch(DASHBOARD_SENSOR_DEVICE_IDS),
     fetchDailyStats(deviceId),
   ]);
 
   return {
-    latest: latest.status === "fulfilled" ? latest.value : null,
+    latestByDevice:
+      latestByDevice.status === "fulfilled" ? latestByDevice.value : {},
+    latest:
+      latestByDevice.status === "fulfilled"
+        ? latestByDevice.value[PRIMARY_SENSOR_DEVICE_ID] ?? null
+        : null,
     dailyStats: dailyStats.status === "fulfilled" ? dailyStats.value : [],
   };
 }

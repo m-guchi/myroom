@@ -1,4 +1,11 @@
-import type { ChartViewRange, HistoryPoint } from "@/lib/types";
+import type { ChartMetric, ChartViewRange, HistoryPoint } from "@/lib/types";
+import {
+  CHART_METRICS,
+  deviceMetricKey,
+  deviceMetricMaxKey,
+  deviceMetricMinKey,
+  getDeviceMetricValue,
+} from "@/lib/types";
 import { getViewRangeMs } from "@/lib/chart-utils";
 
 const DAY_MS = 86400000;
@@ -40,7 +47,62 @@ export function mergeHistoryPoints(
 
   const byTime = new Map<number, HistoryPoint>();
   for (const point of existing) byTime.set(point.datetimeObj, point);
-  for (const point of incoming) byTime.set(point.datetimeObj, point);
+  for (const point of incoming) {
+    const prev = byTime.get(point.datetimeObj);
+    byTime.set(point.datetimeObj, prev ? { ...prev, ...point } : point);
+  }
+
+  return Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
+}
+
+/** 複数デバイスの履歴を時刻軸で1本にマージ */
+export function mergeMultiDeviceHistory(
+  byDevice: Record<number, HistoryPoint[]>
+): HistoryPoint[] {
+  const byTime = new Map<number, HistoryPoint>();
+
+  for (const [deviceIdStr, points] of Object.entries(byDevice)) {
+    const deviceId = Number(deviceIdStr);
+    for (const point of points) {
+      let row = byTime.get(point.datetimeObj);
+      if (!row) {
+        row = {
+          datetime: point.datetime,
+          datetimeObj: point.datetimeObj,
+          outdoor_temperature: point.outdoor_temperature,
+          outdoor_humidity: point.outdoor_humidity,
+          outdoor_pressure: point.outdoor_pressure,
+        };
+        byTime.set(point.datetimeObj, row);
+      } else if (point.outdoor_temperature != null) {
+        row.outdoor_temperature = point.outdoor_temperature;
+        row.outdoor_humidity = point.outdoor_humidity;
+        row.outdoor_pressure = point.outdoor_pressure;
+      }
+
+      const rowRecord = row as unknown as Record<string, unknown>;
+      for (const metric of CHART_METRICS) {
+        const value = point[metric as keyof HistoryPoint];
+        if (typeof value === "number" && !Number.isNaN(value)) {
+          rowRecord[deviceMetricKey(deviceId, metric)] = value;
+        }
+
+        const minVal = point[`${metric}_min` as keyof HistoryPoint];
+        const maxVal = point[`${metric}_max` as keyof HistoryPoint];
+        if (typeof minVal === "number" && !Number.isNaN(minVal)) {
+          rowRecord[deviceMetricMinKey(deviceId, metric)] = minVal;
+        }
+        if (typeof maxVal === "number" && !Number.isNaN(maxVal)) {
+          rowRecord[deviceMetricMaxKey(deviceId, metric)] = maxVal;
+        }
+
+        const range = point[`${metric}Range` as keyof HistoryPoint];
+        if (Array.isArray(range) && range.length === 2) {
+          rowRecord[`d${deviceId}_${metric}Range`] = range;
+        }
+      }
+    }
+  }
 
   return Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
 }

@@ -31,6 +31,13 @@ JST = timezone(timedelta(hours=9))
 HEX_BYTE_RE = re.compile(r"^[0-9a-fA-F]{2}$")
 
 
+def _privileged_cmd(cmd: list[str]) -> list[str]:
+    """btmon / hcitool need root; skip sudo when already running as root."""
+    if os.geteuid() == 0:
+        return cmd
+    return ["sudo", *cmd]
+
+
 @dataclass
 class SensorReading:
     temperature: float
@@ -103,7 +110,9 @@ def _start_ble_scan(scan_timeout: int, debug: bool) -> Optional[subprocess.Popen
             print("warning: hcitool not found; scan may not receive advertisements")
         return None
 
-    cmd = ["sudo", "timeout", str(int(scan_timeout)), "hcitool", "lescan", "--duplicates"]
+    cmd = _privileged_cmd(
+        ["timeout", str(int(scan_timeout)), "hcitool", "lescan", "--duplicates"]
+    )
     if debug:
         print("running:", " ".join(cmd))
 
@@ -140,7 +149,7 @@ def scan_switchbot_co2_btmon(
     target_mac = normalize_mac(target_mac)
     timeout_sec = int(scan_timeout)
 
-    btmon_cmd = ["sudo", "timeout", str(timeout_sec), "btmon"]
+    btmon_cmd = _privileged_cmd(["timeout", str(timeout_sec), "btmon"])
     if debug:
         print("running:", " ".join(btmon_cmd))
 
@@ -148,7 +157,8 @@ def scan_switchbot_co2_btmon(
         btmon_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
     time.sleep(0.5)

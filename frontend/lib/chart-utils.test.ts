@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   calcDiscomfortIndex,
+  clampDomainOffset,
   computeChartDomain,
   downsampleHistoryForChart,
   filterHistoryForDomain,
   getComfortAdvice,
+  getDeviceMetricValueAtTime,
+  getMaxPositiveDomainOffset,
+  getOutdoorMetricValueAtTime,
+  getSelectionTime,
   getViewRangeMs,
   isAggregatedRange,
 } from "@/lib/chart-utils";
@@ -47,6 +52,31 @@ describe("computeChartDomain", () => {
     const domain = computeChartDomain(history, "day", 0);
     expect(domain[0]).not.toBe("dataMin");
     expect(domain[1]).toBeGreaterThan(domain[0] as number);
+  });
+
+  it("aligns the latest point with the selection cursor at max positive offset", () => {
+    const history = [makePoint(1000, 20), makePoint(3000, 22)];
+    const viewRange = "day" as const;
+    const offset = getMaxPositiveDomainOffset(viewRange);
+    const domain = computeChartDomain(history, viewRange, offset) as [number, number];
+    const selectionTime = getSelectionTime(history, domain);
+
+    expect(selectionTime).toBe(3000);
+  });
+});
+
+describe("clampDomainOffset", () => {
+  it("allows positive offset up to the selection alignment limit", () => {
+    const history = [makePoint(1000, 20), makePoint(3000, 22)];
+    const viewRange = "day" as const;
+    const maxOffset = getMaxPositiveDomainOffset(viewRange);
+
+    expect(
+      clampDomainOffset(history, viewRange, 0, maxOffset + 1000)
+    ).toBeCloseTo(maxOffset);
+    expect(clampDomainOffset(history, viewRange, maxOffset, 1000)).toBeCloseTo(
+      maxOffset
+    );
   });
 });
 
@@ -106,6 +136,71 @@ describe("history-loader", () => {
       getHistoryInitialSpanMs("day")
     );
     expect(getHistoryChunkMs("year")).toBeGreaterThan(getHistoryChunkMs("day"));
+  });
+});
+
+describe("interpolateDeviceMetricAtTime", () => {
+  it("interpolates between bracketing points", () => {
+    const history: HistoryPoint[] = [
+      {
+        datetimeObj: 1000,
+        d1_temperature: 20,
+        d2_temperature: 18,
+      } as HistoryPoint,
+      {
+        datetimeObj: 3000,
+        d1_temperature: 24,
+        d2_temperature: 22,
+      } as HistoryPoint,
+    ];
+
+    expect(getDeviceMetricValueAtTime(history, 1, "temperature", 2000)).toBe(22);
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2000)).toBe(20);
+  });
+
+  it("returns the most recent value when the target is after the last point", () => {
+    const history: HistoryPoint[] = [
+      {
+        datetimeObj: 1000,
+        d1_temperature: 20,
+        d2_temperature: 18,
+      } as HistoryPoint,
+      {
+        datetimeObj: 2000,
+        d1_temperature: 22,
+      } as HistoryPoint,
+      {
+        datetimeObj: 3000,
+        d1_temperature: 24,
+        d2_temperature: 19,
+      } as HistoryPoint,
+    ];
+
+    expect(getDeviceMetricValueAtTime(history, 1, "temperature", 3500)).toBe(24);
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2500)).toBeCloseTo(18.75);
+  });
+  it("returns undefined before the first data point", () => {
+    const history: HistoryPoint[] = [
+      {
+        datetimeObj: 2358000,
+        d2_temperature: 22,
+      } as HistoryPoint,
+    ];
+
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2211000)).toBeUndefined();
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2358000)).toBe(22);
+  });
+});
+
+describe("getOutdoorMetricValueAtTime", () => {
+  it("returns the most recent outdoor value at or before the target time", () => {
+    const history: HistoryPoint[] = [
+      { datetimeObj: 1000, outdoor_temperature: 10 } as HistoryPoint,
+      { datetimeObj: 2000, outdoor_temperature: 12 } as HistoryPoint,
+    ];
+
+    expect(getOutdoorMetricValueAtTime(history, "temperature", 1500)).toBe(11);
+    expect(getOutdoorMetricValueAtTime(history, "temperature", 2000)).toBe(12);
   });
 });
 

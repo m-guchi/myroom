@@ -1,65 +1,304 @@
 # Raspberry Pi: SwitchBot CO2 → MyRoom
 
-SwitchBot CO2 センサーの BLE アドバタイズを読み取り、`POST /api/sensor` で MyRoom に送信します。
+SwitchBot CO2 センサー（Meter Pro CO2 等）の BLE アドバタイズを読み取り、[MyRoom](https://myroom.gucchii.com/) API へ POST します。
+
+```
+SwitchBot CO2 ──BLE──► Raspberry Pi Zero W ──HTTPS──► myroom.gucchii.com/api/sensor
+                                                          │
+                                                          ▼
+                                                       MySQL (device_id=2 等)
+```
 
 ## 前提
 
-- Raspberry Pi Zero W / Zero 2 W など（Bluetooth 内蔵）
-- SwitchBot Meter Pro (CO2) など CO2 対応機種
-- Pi から MyRoom API へ HTTPS で到達できること
+| 項目 | 内容 |
+|------|------|
+| ハードウェア | Raspberry Pi Zero W / Zero 2 W（Bluetooth 内蔵） |
+| センサー | SwitchBot Meter Pro (CO2) 等（Manufacturer ID `0x0969` / 2409） |
+| ネットワーク | Pi から `https://myroom.gucchii.com` へ HTTPS で到達できること |
+| 本番 API | 温度・湿度・気圧・CO2 は **いずれか1つ以上** で POST 可（気圧は CO2 センサーでは送信しない） |
 
-## 1. MAC アドレスの確認
+> **Pi Zero W 向け実装**: `bleak` / `dbus-fast` はビルドが重いため使わず、BlueZ の **`btmon` + `hcitool lescan`** で BLE を読み取ります。Python 依存は `requests` と `python-dotenv` のみです。
 
-SwitchBot アプリでデバイス情報を確認するか、Pi 上で:
+---
 
-```bash
-sudo apt install bluez
-sudo hcitool lescan
+## 1. ファイル配置（WinSCP 推奨）
+
+### WinSCP で接続
+
+| 項目 | 値 |
+|------|-----|
+| プロトコル | SFTP |
+| ホスト名 | `pi0w.local`（または IP `192.168.2.x`） |
+| ユーザー名 | `guchi`（Imager で設定した名前） |
+| 秘密鍵 | `C:\Users\<ユーザー>\.ssh\pi0w.ppk` |
+
+詳細設定 → SSH → 認証 → 秘密鍵ファイルで `.ppk` を指定。
+
+### アップロード先
+
+ラズパイ上に作業ディレクトリを作成（例: `/home/guchi/myroom-api/`）し、以下をコピー:
+
+| ファイル | 必須 |
+|---------|------|
+| `switchbot_to_myroom.py` | ✅ |
+| `requirements.txt` | ✅ |
+| `.env.example` | ✅ |
+| `install.sh` | 任意（systemd 自動化用） |
+
+### `.env` の作成
+
+`.env.example` を複製して `.env` にリネームし、編集:
+
+```env
+SWITCHBOT_MAC=B0:E9:FE:B3:5F:B5
+MYROOM_API_URL=https://myroom.gucchii.com/api/sensor
+MYROOM_DEVICE_ID=2
+SCAN_TIMEOUT=90
+HTTP_TIMEOUT=30
 ```
 
-## 2. 手動セットアップ
+- **SWITCHBOT_MAC**: SwitchBot アプリ → デバイス設定で確認
+- **MYROOM_DEVICE_ID**: 既存 DHT センサー（`device=1`）と区別するため `2` 推奨
+
+---
+
+## 2. SSH 接続
+
+### PuTTY / WinSCP（`.ppk` そのまま）
+
+- Host: `pi0w.local`
+- User: `guchi`
+- 秘密鍵: `pi0w.ppk`
+
+### PowerShell / WSL（OpenSSH 鍵が必要）
+
+PuTTYgen → Load (`pi0w.ppk`) → **Conversions → Export OpenSSH key** → `pi0w` として保存:
+
+```powershell
+ssh -i C:\Users\<ユーザー>\.ssh\pi0w guchi@pi0w.local
+```
+
+> **WSL から `pi0w.local` / `192.168.2.x` に届かない場合**  
+> WSL2 は仮想ネットワーク（`172.x.x.x`）のため、**Windows PowerShell** から SSH / WinSCP を使ってください。
+
+---
+
+## 3. ラズパイの IP アドレスを調べる
+
+再起動後に `pi0w.local` が解決できないことがあります。
+
+### 方法 A: ELECOM ルーター（WRC-1167GS2 等）
+
+1. ブラウザで `http://192.168.2.1`
+2. **WAN&LAN** → **LAN** → **接続端末の表示**
+3. `pi0w` / `raspberrypi`、または MAC **`B8:27:EB:...`** を探す
+
+Pi の電源 OFF → 30秒 → ON 後、一覧に **新しく増えた** `192.168.2.x` が Pi です。
+
+### 方法 B: Windows PowerShell
+
+```powershell
+ping -4 pi0w.local
+# または
+1..254 | ForEach-Object {
+  $ip = "192.168.2.$_"
+  if (Test-Connection -ComputerName $ip -Count 1 -Quiet -TimeoutSeconds 1) { $ip }
+}
+```
+
+### 方法 C: モニター接続
 
 ```bash
-cd raspberry-pi
+hostname -I
+iwgetid -r    # 接続中 Wi-Fi SSID（2.4GHz の elecom-xxxx 等）
+```
+
+### IP 固定（推奨）
+
+ELECOM 管理画面で **DHCP 予約**（Pi の MAC → 固定 IP）を設定すると、再起動後も SSH しやすくなります。
+
+---
+
+## 4. Python 環境セットアップ
+
+```bash
+cd ~/myroom-api
+
+# venv を作り直す場合（フォルダ名変更後は必須）
+rm -rf venv
 python3 -m venv venv
 source venv/bin/activate
+
+pip install --upgrade pip
 pip install -r requirements.txt
-cp .env.example .env
-# .env を編集（SWITCHBOT_MAC 必須）
-sudo apt install -y bluez   # btmon が必要
+
+sudo apt update
+sudo apt install -y bluez    # btmon, hcitool
 ```
 
-### 動作確認
+### Pi Zero W の注意点
+
+| 問題 | 対処 |
+|------|------|
+| `python3 -m venv` が終わらない | Zero W では 5〜15 分かかることがある。`sudo apt install python3-venv` を確認 |
+| venv パスエラー（誤ったインタプリタ） | フォルダ名変更後は **`rm -rf venv` して作り直し** |
+| `bleak` / `dbus-fast` ビルド | **使わない**（本リポジトリの `requirements.txt` は bleak 非含有） |
+| Python 3.7 + piwheels | `requests` / `python-dotenv` は `<2.32` / `<1.0` にピン留め済み |
+
+---
+
+## 5. 動作確認
+
+`btmon` は **root 権限** が必要です。
 
 ```bash
-python3 switchbot_to_myroom.py --dry-run --debug
-python3 switchbot_to_myroom.py
+cd ~/myroom-api
+source venv/bin/activate
+
+# BLE 読み取りのみ（API 送信なし）
+sudo ./venv/bin/python3 switchbot_to_myroom.py --dry-run --debug
+
+# 本番 POST
+sudo ./venv/bin/python3 switchbot_to_myroom.py
 ```
 
-## 3. systemd で定期実行（推奨）
+成功例:
+
+```text
+read: T=30.8C H=31% CO2=604ppm battery=None
+posted: {'status': 'ok'}
+```
+
+### API / DB 確認
 
 ```bash
-cd raspberry-pi
+curl "https://myroom.gucchii.com/api/latest?device=2"
+curl "https://myroom.gucchii.com/api/health"
+```
+
+ブラウザ: **https://myroom.gucchii.com/**
+
+---
+
+## 6. 定期実行（systemd・5分ごと）
+
+SwitchBot は約 **5分間隔** で BLE を送信するため、5分ごとの実行を推奨します。
+
+```bash
+cd ~/myroom-api
+chmod +x install.sh
 sudo ./install.sh
-sudo nano /opt/myroom-pi/.env
-sudo -u switchbot /opt/myroom-pi/venv/bin/python3 /opt/myroom-pi/switchbot_to_myroom.py --dry-run --debug
+
+sudo nano /opt/myroom-pi/.env          # MAC 等を確認
 sudo systemctl start switchbot-co2.timer
+sudo systemctl enable switchbot-co2.timer
 journalctl -u switchbot-co2.service -f
 ```
 
-## 環境変数
-
-| 変数 | 説明 | 例 |
-|------|------|-----|
-| `SWITCHBOT_MAC` | センサー MAC（必須） | `AA:BB:CC:DD:EE:FF` |
-| `MYROOM_API_URL` | POST 先 URL | `https://myroom.gucchii.com/api/sensor` |
-| `MYROOM_DEVICE_ID` | `device` クエリ | `2` |
-| `SCAN_TIMEOUT` | BLE 待ち秒数 | `90` |
-
-## API URL の確認
+手動テスト（btmon に root 権限が必要）:
 
 ```bash
-curl -X POST "${MYROOM_API_URL}?device=2" \
+sudo /opt/myroom-pi/venv/bin/python3 /opt/myroom-pi/switchbot_to_myroom.py --dry-run --debug
+```
+
+`install.sh` 更新後はサービス定義を再適用:
+
+```bash
+sudo ./install.sh
+sudo systemctl daemon-reload
+sudo systemctl restart switchbot-co2.timer
+```
+
+---
+
+## 7. ネットワーク（Pi の IPv4）
+
+ELECOM ルーター（`192.168.2.1`）環境で、Pi に **`192.168.0.x` の固定 IP** が残っていると外部 API に届きません（`No route to host`）。
+
+```bash
+grep static /etc/dhcpcd.conf
+hostname -I
+ping -4 -c 2 192.168.2.1
+curl -4 https://myroom.gucchii.com/api/health
+```
+
+`/etc/dhcpcd.conf` の `static ip_address=192.168.0.x` をコメントアウト → `sudo reboot`  
+再起動後、`hostname -I` が **`192.168.2.x`** になっていることを確認してください。
+
+---
+
+## 8. 本番 API について
+
+CO2 のみ / 温度・湿度・CO2 の部分送信には、本番 API が **任意フィールド対応版** である必要があります。
+
+```bash
+# 422 が返る場合 → 本番未デプロイ。main へ push 後 PM2 再起動
+curl -X POST "https://myroom.gucchii.com/api/sensor?device=2" \
   -H "Content-Type: application/json" \
   -d '{"datetime":"2026-05-30 12:00:00","co2":400}'
 ```
+
+CO2 センサーからは **気圧を送りません**（DB には `NULL`）。
+
+---
+
+## 環境変数一覧
+
+| 変数 | 説明 | 例 |
+|------|------|-----|
+| `SWITCHBOT_MAC` | センサー MAC（必須） | `B0:E9:FE:B3:5F:B5` |
+| `MYROOM_API_URL` | POST 先 URL | `https://myroom.gucchii.com/api/sensor` |
+| `MYROOM_DEVICE_ID` | `device` クエリ | `2` |
+| `SCAN_TIMEOUT` | BLE 待ち秒数（秒） | `90`（長い場合は `300`） |
+| `HTTP_TIMEOUT` | HTTP タイムアウト（秒） | `30` |
+| `MATCH_ANY_SWITCHBOT` | `1` で MAC フィルタ無効 | `0`（通常） |
+
+---
+
+## トラブルシューティング
+
+| 症状 | 原因 | 対処 |
+|------|------|------|
+| `pi0w.local` が解決できない | mDNS 未動作 / Wi-Fi 未接続 | ルーター「接続端末の表示」で IP 確認。Imager で Wi-Fi 再設定 |
+| WSL から SSH タイムアウト | WSL2 は LAN 外 | **Windows PowerShell** から接続 |
+| `btmon: unrecognized option '--timeout'` | BlueZ 5.50 | スクリプト最新版を使用（`timeout 90 btmon` 方式） |
+| `utf-8' codec can't decode`（journalctl） | btmon 出力に非 UTF-8 バイト | `switchbot_to_myroom.py` 最新版を `/opt/myroom-pi/` にコピー |
+| センサーが見つからない（90s） | アドバタイズ待ち / MAC 不一致 / btmon 未起動 | 上記 sudo エラーを解消。Pi を近づける、`SCAN_TIMEOUT=300` |
+| `LE Advertising Report` は出るが SwitchBot なし | 5分間隔のため | 最大5分待つか `SCAN_TIMEOUT` を延長 |
+| `No route to host`（API） | Pi の IPv4 設定ミス | `192.168.0.x` 固定 IP を解除、DHCP で `192.168.2.x` を取得 |
+| API 422 `pressure` required | 本番 API が旧版 | `main` デプロイ + `pm2 restart myroom-backend` |
+| venv `誤ったインタプリタ` | フォルダ移動後の venv | `rm -rf venv && python3 -m venv venv` |
+
+### btmon で SwitchBot が見えているか
+
+ログに次のような行があれば BLE 取得成功です:
+
+```text
+Address: B0:E9:FE:B3:5F:B5
+Company: not assigned (2409)
+  Data: b0e9feb35fb5b7e4099e1f0318025700
+```
+
+---
+
+## 運用チェックリスト
+
+```
+□ WinSCP でファイル配置・.env 設定
+□ sudo apt install bluez
+□ pip install -r requirements.txt
+□ sudo ./venv/bin/python3 switchbot_to_myroom.py --dry-run --debug
+□ sudo ./venv/bin/python3 switchbot_to_myroom.py → posted: ok
+□ curl https://myroom.gucchii.com/api/latest?device=2
+□ systemd タイマー有効化（任意）
+□ ルーター DHCP 予約（任意）
+```
+
+---
+
+## 関連ドキュメント
+
+- プロジェクト全体: [../README.md](../README.md)
+- DB マイグレーション（`co2` カラム）: `python3 migrate_db.py`
+- 本番 Apache 設定例: [../deployment/apache.conf](../deployment/apache.conf)

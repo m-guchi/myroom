@@ -68,16 +68,20 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
     if database.DB_MOCK:
         outdoor = weather.get_outdoor_weather()
         offset = (device - 1) * 0.4
-        return {
+        payload = {
             "device_id": device,
             "datetime": get_now_jst(),
             "temperature": round(23.5 + offset + random.uniform(-0.5, 0.5), 1),
             "humidity": round(45.0 - offset + random.uniform(-1, 1), 1),
-            "pressure": round(1013.0 + random.uniform(-1, 1), 1),
             "outdoor_temperature": outdoor["temperature"] if outdoor else None,
             "outdoor_humidity": outdoor["humidity"] if outdoor else None,
             "outdoor_pressure": outdoor["pressure"] if outdoor else None,
         }
+        if device == 1:
+            payload["pressure"] = round(1013.0 + random.uniform(-1, 1), 1)
+        else:
+            payload["co2"] = round(530 + random.uniform(-20, 20))
+        return payload
 
     record = (
         db.query(database.DHTRecord)
@@ -302,7 +306,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
             pass
 
     if database.DB_MOCK:
-        records_raw = database.generate_mock_history_for_range(start_time, end_time)
+        records_raw = database.generate_mock_history_for_range(start_time, end_time, device)
     else:
         records_raw_unformatted = db.query(database.DHTRecord).filter(
             database.DHTRecord.datetime >= start_time,
@@ -344,7 +348,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
                 daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': [], 'co2s': []}
             if d['temperature'] is not None: daily_map[date_str]['temps'].append(d['temperature'])
             if d['humidity'] is not None: daily_map[date_str]['humids'].append(d['humidity'])
-            if d['pressure'] is not None: daily_map[date_str]['pressures'].append(d['pressure'])
+            if d.get('pressure') is not None: daily_map[date_str]['pressures'].append(d['pressure'])
             if d.get('co2') is not None: daily_map[date_str]['co2s'].append(d['co2'])
         
         aggregated = []
@@ -409,9 +413,9 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
         out_data = get_outdoor(r['datetime'])
         formatted_records.append({
             "datetime": r['datetime'],
-            "temperature": r['temperature'],
-            "humidity": r['humidity'],
-            "pressure": r['pressure'],
+            "temperature": r.get('temperature'),
+            "humidity": r.get('humidity'),
+            "pressure": r.get('pressure'),
             "co2": r.get('co2'),
             "outdoor_temperature": out_data.get("temp"),
             "outdoor_humidity": out_data.get("humid"),

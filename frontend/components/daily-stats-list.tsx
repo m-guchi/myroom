@@ -28,6 +28,7 @@ export function DailyStatsList({
   const allValues = lastFive.flatMap((day) => {
     if (chartMetric === "temperature") return [day.temp_min, day.temp_max];
     if (chartMetric === "humidity") return [day.humid_min, day.humid_max];
+    if (chartMetric === "co2") return [day.co2_min, day.co2_max];
     return [day.pressure_min, day.pressure_max];
   });
 
@@ -40,6 +41,7 @@ export function DailyStatsList({
     temperature: "linear-gradient(90deg, #3498db 0%, #f1c40f 50%, #e74c3c 100%)",
     humidity: "linear-gradient(90deg, #d4f7d4 0%, #2ecc71 100%)",
     pressure: "linear-gradient(90deg, #e0c3fc 0%, #9b59b6 100%)",
+    co2: "linear-gradient(90deg, #fdebd0 0%, #e67e22 100%)",
   };
 
   return (
@@ -60,6 +62,11 @@ export function DailyStatsList({
           dayMax = day.humid_max;
           curVal = latestData?.humidity;
           unit = "%";
+        } else if (chartMetric === "co2") {
+          dayMin = day.co2_min;
+          dayMax = day.co2_max;
+          curVal = latestData?.co2;
+          unit = " ppm";
         } else {
           dayMin = day.pressure_min;
           dayMax = day.pressure_max;
@@ -83,7 +90,9 @@ export function DailyStatsList({
 
         const formatValue = (v: number | undefined) => {
           if (v == null) return "-";
-          return chartMetric === "pressure" ? Math.round(v) : v.toFixed(1);
+          return chartMetric === "pressure" || chartMetric === "co2"
+            ? Math.round(v)
+            : v.toFixed(1);
         };
 
         return (

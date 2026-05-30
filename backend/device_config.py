@@ -9,10 +9,14 @@ load_dotenv()
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "devices.json"
 DEFAULT_DEVICE_1_NAME = os.getenv("DEVICE_1_NAME", "リビング")
+DEFAULT_DEVICE_2_NAME = os.getenv("DEVICE_2_NAME", "寝室")
 
 
 def _default_devices() -> List[Dict[str, Any]]:
-    return [{"id": 1, "name": DEFAULT_DEVICE_1_NAME}]
+    return [
+        {"id": 1, "name": DEFAULT_DEVICE_1_NAME},
+        {"id": 2, "name": DEFAULT_DEVICE_2_NAME},
+    ]
 
 
 def _normalize_devices(raw: Any) -> List[Dict[str, Any]]:

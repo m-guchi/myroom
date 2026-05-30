@@ -3,7 +3,7 @@ export type TimeRange = "day" | "week" | "month" | "year" | "custom";
 /** グラフの表示幅（横スクロールのウィンドウサイズ） */
 export type ChartViewRange = "day" | "week" | "month" | "year";
 
-export type ChartMetric = "temperature" | "humidity" | "pressure";
+export type ChartMetric = "temperature" | "humidity" | "pressure" | "co2";
 
 export interface LatestData {
   device_id?: number;
@@ -20,21 +20,25 @@ export interface LatestData {
 export interface HistoryPoint {
   datetime?: string;
   datetimeObj: number;
-  temperature: number;
-  humidity: number;
-  pressure: number;
+  temperature?: number;
+  humidity?: number;
+  pressure?: number;
+  co2?: number;
   outdoor_temperature?: number;
   outdoor_humidity?: number;
   outdoor_pressure?: number;
   temperatureRange?: [number, number] | null;
   humidityRange?: [number, number] | null;
   pressureRange?: [number, number] | null;
+  co2Range?: [number, number] | null;
   temperature_min?: number;
   temperature_max?: number;
   humidity_min?: number;
   humidity_max?: number;
   pressure_min?: number;
   pressure_max?: number;
+  co2_min?: number;
+  co2_max?: number;
 }
 
 export interface DailyStat {
@@ -60,8 +64,53 @@ export interface DeviceInfo {
   name: string;
 }
 
-/** 環境センサーカードに表示する屋内デバイス */
+/** グラフ・日次記録に使うデバイス */
 export const PRIMARY_SENSOR_DEVICE_ID = 1;
+
+/** ダッシュボードカードに表示する屋内デバイス */
+export const DASHBOARD_SENSOR_DEVICE_IDS = [1, 2] as const;
+
+export const CHART_METRICS: ChartMetric[] = ["temperature", "humidity", "pressure", "co2"];
+
+export function deviceMetricKey(deviceId: number, metric: ChartMetric): string {
+  return `d${deviceId}_${metric}`;
+}
+
+export function deviceMetricMinKey(deviceId: number, metric: ChartMetric): string {
+  return `d${deviceId}_${metric}_min`;
+}
+
+export function deviceMetricMaxKey(deviceId: number, metric: ChartMetric): string {
+  return `d${deviceId}_${metric}_max`;
+}
+
+export function getDeviceMetricValue(
+  point: HistoryPoint,
+  deviceId: number,
+  metric: ChartMetric
+): number | undefined {
+  const key = deviceMetricKey(deviceId, metric);
+  const row = point as unknown as Record<string, unknown>;
+  if (key in row) {
+    const value = row[key];
+    return typeof value === "number" && !Number.isNaN(value) ? value : undefined;
+  }
+  if (deviceId === PRIMARY_SENSOR_DEVICE_ID) {
+    const legacy = point[metric as keyof HistoryPoint];
+    return typeof legacy === "number" && !Number.isNaN(legacy) ? legacy : undefined;
+  }
+  return undefined;
+}
+
+/** グラフのデバイスライン色（指標に関係なくデバイス固定） */
+export const DEVICE_LINE_COLORS: Record<number, string> = {
+  1: "#3498db",
+  2: "#e67e22",
+};
+
+export function getDeviceLineColor(deviceId: number): string {
+  return DEVICE_LINE_COLORS[deviceId] ?? "#95a5a6";
+}
 
 export interface OutdoorLocationSearchResult {
   name: string;
@@ -74,12 +123,21 @@ export const METRIC_COLORS: Record<ChartMetric, string> = {
   temperature: "#3498db",
   humidity: "#2ecc71",
   pressure: "#9b59b6",
+  co2: "#e67e22",
 };
 
 export const METRIC_LABELS: Record<ChartMetric, string> = {
   temperature: "温度",
   humidity: "湿度",
   pressure: "気圧",
+  co2: "CO2",
+};
+
+export const METRIC_UNITS: Record<ChartMetric, string> = {
+  temperature: "°C",
+  humidity: "%",
+  pressure: "hPa",
+  co2: "ppm",
 };
 
 export const TIME_RANGE_LABELS: Record<TimeRange, string> = {
