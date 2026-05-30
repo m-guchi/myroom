@@ -32,9 +32,9 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
-      <Card className="w-full max-w-sm rounded-[20px] border-0 bg-white shadow-none">
+      <Card className="w-full max-w-sm rounded-[20px] border-0 bg-card shadow-none">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#f0f0f0]">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-muted">
             <Lock className="size-6 text-foreground" />
           </div>
           <CardTitle className="text-2xl font-bold">MyRoom</CardTitle>
@@ -58,7 +58,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             </p>
           )}
           <Button
-            className="h-12 w-full rounded-xl bg-foreground text-base text-white hover:bg-foreground/90"
+            className="h-12 w-full rounded-xl bg-foreground text-base text-background hover:bg-foreground/90"
             onClick={handleLogin}
           >
             ログイン

@@ -89,7 +89,7 @@
 
 @layer utilities {
   .climate-card {
-    @apply rounded-[20px] bg-white p-5;
+    @apply rounded-[20px] bg-card p-5;
   }
   .metric-value {
     @apply text-[2.5rem] font-bold leading-none tracking-tight text-foreground;
@@ -104,7 +104,7 @@
     @apply text-sm text-muted-foreground;
   }
   .device-card {
-    @apply flex min-h-[120px] flex-col rounded-[18px] bg-white p-4;
+    @apply flex min-h-[120px] flex-col rounded-[18px] bg-card p-4;
   }
   .device-card-title {
     @apply text-[15px] font-bold leading-snug text-foreground;

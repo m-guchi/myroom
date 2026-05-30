@@ -152,6 +152,157 @@ export function downsampleHistoryForChart(
   return result.sort((a, b) => a.datetimeObj - b.datetimeObj);
 }
 
+type MetricSeriesPoint = {
+  datetimeObj: number;
+  datetime?: string;
+  value: number;
+};
+
+function downsampleMetricSeries(
+  points: MetricSeriesPoint[],
+  maxPoints = 320
+): MetricSeriesPoint[] {
+  if (points.length <= maxPoints) return points;
+
+  const bucketCount = Math.ceil(maxPoints / 2);
+  const bucketSize = points.length / bucketCount;
+  const result: MetricSeriesPoint[] = [];
+
+  for (let i = 0; i < bucketCount; i++) {
+    const from = Math.floor(i * bucketSize);
+    const to = Math.min(points.length, Math.floor((i + 1) * bucketSize));
+    if (from >= to) continue;
+
+    let minPoint = points[from];
+    let maxPoint = points[from];
+
+    for (let j = from + 1; j < to; j++) {
+      const point = points[j];
+      if (point.value < minPoint.value) minPoint = point;
+      if (point.value > maxPoint.value) maxPoint = point;
+    }
+
+    if (minPoint.datetimeObj <= maxPoint.datetimeObj) {
+      result.push(minPoint);
+      if (maxPoint !== minPoint) result.push(maxPoint);
+    } else {
+      result.push(maxPoint);
+      if (minPoint !== maxPoint) result.push(minPoint);
+    }
+  }
+
+  return result.sort((a, b) => a.datetimeObj - b.datetimeObj);
+}
+
+/** デバイスごとに間引いてから時刻軸でマージ（各デバイスの線が連続する） */
+export function downsampleMultiDeviceHistoryForChart(
+  historyData: HistoryPoint[],
+  metric: ChartMetric,
+  maxPoints = 320,
+  deviceIds?: readonly number[]
+): HistoryPoint[] {
+  if (!deviceIds?.length) {
+    return downsampleHistoryForChart(historyData, metric, maxPoints);
+  }
+
+  const byTime = new Map<number, HistoryPoint>();
+
+  for (const deviceId of deviceIds) {
+    const series: MetricSeriesPoint[] = [];
+    for (const point of historyData) {
+      const value = getDeviceMetricValue(point, deviceId, metric);
+      if (value == null) continue;
+      series.push({
+        datetimeObj: point.datetimeObj,
+        datetime: point.datetime,
+        value,
+      });
+    }
+
+    const sampled = downsampleMetricSeries(series, maxPoints);
+    const key = deviceMetricKey(deviceId, metric);
+
+    for (const entry of sampled) {
+      let row = byTime.get(entry.datetimeObj);
+      if (!row) {
+        row = {
+          datetimeObj: entry.datetimeObj,
+          datetime: entry.datetime,
+        };
+        byTime.set(entry.datetimeObj, row);
+      }
+      (row as unknown as Record<string, unknown>)[key] = entry.value;
+    }
+  }
+
+  if (metric !== "co2" && hasOutdoorMetricData(historyData, metric)) {
+    const outdoorKey = `outdoor_${metric}` as keyof HistoryPoint;
+    const outdoorSeries: MetricSeriesPoint[] = [];
+
+    for (const point of historyData) {
+      const value = point[outdoorKey];
+      if (typeof value !== "number" || Number.isNaN(value)) continue;
+      outdoorSeries.push({
+        datetimeObj: point.datetimeObj,
+        datetime: point.datetime,
+        value,
+      });
+    }
+
+    const sampledOutdoor = downsampleMetricSeries(outdoorSeries, maxPoints);
+    for (const entry of sampledOutdoor) {
+      let row = byTime.get(entry.datetimeObj);
+      if (!row) {
+        row = {
+          datetimeObj: entry.datetimeObj,
+          datetime: entry.datetime,
+        };
+        byTime.set(entry.datetimeObj, row);
+      }
+      (row as unknown as Record<string, unknown>)[outdoorKey] = entry.value;
+    }
+  }
+
+  return Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
+}
+
+/** 選択カーソル位置まで線を延ばす（最終データより後のときのみ） */
+export function withSelectionEndPoints(
+  chartData: HistoryPoint[],
+  selectionTime: number | null,
+  deviceIds: readonly number[],
+  metric: ChartMetric,
+  includeOutdoor = false
+): HistoryPoint[] {
+  if (!chartData.length || selectionTime == null) return chartData;
+
+  const lastTime = chartData[chartData.length - 1].datetimeObj;
+  if (selectionTime <= lastTime) return chartData;
+
+  const row: HistoryPoint = { datetimeObj: selectionTime };
+  const record = row as unknown as Record<string, unknown>;
+  let hasAny = false;
+
+  for (const deviceId of deviceIds) {
+    const value = interpolateDeviceMetricAtTime(chartData, deviceId, metric, selectionTime);
+    if (value != null) {
+      record[deviceMetricKey(deviceId, metric)] = value;
+      hasAny = true;
+    }
+  }
+
+  if (includeOutdoor && metric !== "co2") {
+    const outdoorValue = interpolateOutdoorMetricAtTime(chartData, metric, selectionTime);
+    if (outdoorValue != null) {
+      record[`outdoor_${metric}`] = outdoorValue;
+      hasAny = true;
+    }
+  }
+
+  if (!hasAny) return chartData;
+  return [...chartData, row];
+}
+
 export function hasDeviceMetricData(
   historyData: HistoryPoint[],
   deviceId: number,
@@ -400,9 +551,9 @@ export function formatActivePointLabel(timestamp: number, viewRange: ChartViewRa
   const date = new Date(timestamp);
   if (isNaN(date.getTime())) return "";
   if (viewRange === "year") {
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
   }
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  return `${date.getMonth() + 1}/${date.getDate()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 export function getChartTicksForDomain(
@@ -569,6 +720,18 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
           ? Math.round(Number(item.pressure))
           : undefined,
       co2: item.co2 != null ? Math.round(Number(item.co2)) : undefined,
+      outdoor_temperature:
+        item.outdoor_temperature != null && item.outdoor_temperature !== ""
+          ? Number(item.outdoor_temperature)
+          : undefined,
+      outdoor_humidity:
+        item.outdoor_humidity != null && item.outdoor_humidity !== ""
+          ? Number(item.outdoor_humidity)
+          : undefined,
+      outdoor_pressure:
+        item.outdoor_pressure != null && item.outdoor_pressure !== ""
+          ? Math.round(Number(item.outdoor_pressure))
+          : undefined,
       temperatureRange:
         item.temperature_min !== undefined && item.temperature_max !== undefined
           ? [Number(item.temperature_min), Number(item.temperature_max)]

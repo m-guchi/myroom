@@ -37,8 +37,8 @@ export default function RootLayout({
       <body className={`${notoSansJP.className} min-h-screen`}>
         <ThemeProvider
           attribute="class"
-          defaultTheme="light"
-          enableSystem={false}
+          defaultTheme="system"
+          enableSystem
           disableTransitionOnChange
         >
           <div className="mx-auto min-h-screen max-w-[480px] bg-background">
