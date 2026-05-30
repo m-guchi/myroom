@@ -39,8 +39,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=switchbot
-Group=bluetooth
+User=root
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
 ExecStart=${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/switchbot_to_myroom.py
@@ -73,6 +72,6 @@ systemctl enable "${SERVICE_NAME}.timer"
 echo
 echo "Installed."
 echo "1. Edit ${INSTALL_DIR}/.env (set SWITCHBOT_MAC and MYROOM_API_URL)"
-echo "2. Test: sudo -u switchbot ${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/switchbot_to_myroom.py --dry-run --debug"
+echo "2. Test: ${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/switchbot_to_myroom.py --dry-run --debug"
 echo "3. Start timer: sudo systemctl start ${SERVICE_NAME}.timer"
 echo "4. Logs: journalctl -u ${SERVICE_NAME}.service -f"

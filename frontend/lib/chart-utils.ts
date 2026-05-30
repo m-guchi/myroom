@@ -305,7 +305,9 @@ export function computeVisibleYDomain(
     const pad =
       metric === "pressure"
         ? Math.max(Math.abs(minValue) * 0.05, 5)
-        : Math.max(Math.abs(minValue) * 0.1, 1);
+        : metric === "co2"
+          ? Math.max(Math.abs(minValue) * 0.05, 30)
+          : Math.max(Math.abs(minValue) * 0.1, 1);
     return [minValue - pad, maxValue + pad];
   }
 
@@ -313,7 +315,9 @@ export function computeVisibleYDomain(
   const pad =
     metric === "pressure"
       ? Math.max(span * 0.08, 3)
-      : Math.max(span * 0.1, 0.5);
+      : metric === "co2"
+        ? Math.max(span * 0.08, 20)
+        : Math.max(span * 0.1, 0.5);
 
   return [minValue - pad, maxValue + pad];
 }
@@ -328,6 +332,7 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
       temperature: Number(item.temperature) || 0,
       humidity: Number(item.humidity) || 0,
       pressure: item.pressure ? Math.round(Number(item.pressure)) : 0,
+      co2: item.co2 != null ? Math.round(Number(item.co2)) : undefined,
       temperatureRange:
         item.temperature_min !== undefined && item.temperature_max !== undefined
           ? [Number(item.temperature_min), Number(item.temperature_max)]
@@ -339,6 +344,10 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
       pressureRange:
         item.pressure_min !== undefined && item.pressure_max !== undefined
           ? [Math.round(Number(item.pressure_min)), Math.round(Number(item.pressure_max))]
+          : null,
+      co2Range:
+        item.co2_min !== undefined && item.co2_max !== undefined
+          ? [Math.round(Number(item.co2_min)), Math.round(Number(item.co2_max))]
           : null,
     }))
     .filter((item) => item.datetimeObj > 0) as HistoryPoint[];

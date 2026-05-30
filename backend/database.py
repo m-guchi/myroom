@@ -49,11 +49,13 @@ def generate_mock_history_for_range(
         temp = 20 + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-1, 1)
         humid = 50 + 10 * (1 + math.cos(t.hour / 24 * 2 * math.pi)) + random.uniform(-2, 2)
         pressure = 1013 + random.uniform(-5, 5)
+        co2 = 450 + 150 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-30, 30)
         data.append({
             "datetime": t,
             "temperature": round(temp, 1),
             "humidity": round(humid, 1),
             "pressure": round(pressure, 1),
+            "co2": round(co2),
         })
         t -= interval
 

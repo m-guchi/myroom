@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Droplets, Gauge, Thermometer } from "lucide-react";
+import { Droplets, Gauge, Thermometer, Wind } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ChartMetric,
@@ -19,6 +19,7 @@ import {
   HistoryPoint,
   METRIC_COLORS,
   METRIC_LABELS,
+  METRIC_UNITS,
 } from "@/lib/types";
 import {
   clampDomainOffset,
@@ -38,6 +39,7 @@ const METRIC_ICONS = {
   temperature: Thermometer,
   humidity: Droplets,
   pressure: Gauge,
+  co2: Wind,
 } as const;
 
 const VIEW_RANGES: ChartViewRange[] = ["day", "week", "month", "year"];
@@ -66,13 +68,14 @@ function getMetricKeys(metric: ChartMetric) {
 }
 
 function getMetricValue(point: HistoryPoint, metric: ChartMetric): number | undefined {
-  const value = point[metric];
-  return typeof value === "number" ? value : undefined;
+  const value = point[metric as keyof HistoryPoint];
+  return typeof value === "number" && !Number.isNaN(value) ? value : undefined;
 }
 
 function formatMetricValue(value: number | undefined, metric: ChartMetric): string {
   if (value == null) return "--";
-  return metric === "pressure" ? String(Math.round(value)) : value.toFixed(1);
+  if (metric === "pressure" || metric === "co2") return String(Math.round(value));
+  return value.toFixed(1);
 }
 
 function computePlotPosition(
@@ -218,8 +221,8 @@ export function EnvironmentChart({
     [currentDomain, visibleYDomain, selectionLineX, activeValue]
   );
 
-  const unit =
-    chartMetric === "temperature" ? "°C" : chartMetric === "humidity" ? "%" : "hPa";
+  const unit = METRIC_UNITS[chartMetric];
+  const showOutdoorLine = chartMetric !== "co2";
 
   const handleViewRangeChange = (range: ChartViewRange) => {
     setDomainOffset(0);
@@ -316,7 +319,7 @@ export function EnvironmentChart({
             {formatMetricValue(activeValue, chartMetric)}
             {unit}
           </p>
-          {activeOutdoor != null && (
+          {showOutdoorLine && activeOutdoor != null && (
             <p className="text-xs text-muted-foreground">
               屋外: {formatMetricValue(activeOutdoor, chartMetric)}
               {unit}
@@ -390,19 +393,23 @@ export function EnvironmentChart({
                 tickLine={false}
                 width={40}
                 tickFormatter={(val) =>
-                  chartMetric === "pressure" ? String(Math.round(val)) : val.toFixed(1)
+                  chartMetric === "pressure" || chartMetric === "co2"
+                    ? String(Math.round(val))
+                    : val.toFixed(1)
                 }
               />
-              <Line
-                type="monotone"
-                dataKey={outdoorKey as string}
-                stroke="#adb5bd"
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                dot={false}
-                name="屋外"
-                isAnimationActive={false}
-              />
+              {showOutdoorLine && (
+                <Line
+                  type="monotone"
+                  dataKey={outdoorKey as string}
+                  stroke="#adb5bd"
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  dot={false}
+                  name="屋外"
+                  isAnimationActive={false}
+                />
+              )}
               {referenceLines}
               <Line
                 type="monotone"
