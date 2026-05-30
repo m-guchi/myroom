@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { fetchDashboardData, fetchDevices, fetchOutdoorLocation } from "@/lib/api";
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
+  DASHBOARD_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
   type ChartMetric,
   type ChartViewRange,
@@ -150,6 +151,9 @@ function DeviceCard({ title, metrics, action, onClick }: DeviceCardProps) {
 export function MyRoomDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [latestData, setLatestData] = useState<LatestData | null>(null);
+  const [latestByDevice, setLatestByDevice] = useState<Record<number, LatestData | null>>(
+    {}
+  );
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [chartLoading, setChartLoading] = useState(false);
@@ -159,6 +163,7 @@ export function MyRoomDashboard() {
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
   const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
+  const [deviceSettingsId, setDeviceSettingsId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
 
   const {
@@ -194,6 +199,7 @@ export function MyRoomDashboard() {
       if (showChartLoading) setChartLoading(true);
       try {
         const data = await fetchDashboardData(PRIMARY_SENSOR_DEVICE_ID);
+        setLatestByDevice(data.latestByDevice);
         setLatestData(data.latest);
         setDailyStats(data.dailyStats);
         if (reloadHistory) {
@@ -235,14 +241,14 @@ export function MyRoomDashboard() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  const primaryDevice =
-    devices.find((device) => device.id === PRIMARY_SENSOR_DEVICE_ID) ?? {
-      id: PRIMARY_SENSOR_DEVICE_ID,
-      name: "リビング",
+  const getDeviceInfo = (deviceId: number): DeviceInfo =>
+    devices.find((device) => device.id === deviceId) ?? {
+      id: deviceId,
+      name: deviceId === 1 ? "リビング" : deviceId === 2 ? "寝室" : `デバイス ${deviceId}`,
     };
-  const sensorLatest = latestData;
-  const indoorMetrics = buildIndoorMetrics(sensorLatest);
-  const outdoorMetrics = buildOutdoorMetrics(latestData);
+
+  const sensorLatest = latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? latestData;
+  const outdoorMetrics = buildOutdoorMetrics(sensorLatest);
   const lastUpdated = sensorLatest?.datetime
     ? new Date(sensorLatest.datetime).toLocaleString("ja-JP", {
         year: "numeric",
@@ -288,14 +294,26 @@ export function MyRoomDashboard() {
 
         <section>
           <div className="grid grid-cols-2 gap-3">
-            <DeviceCard
-              title={primaryDevice.name}
-              action={
-                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
-              }
-              onClick={() => setDeviceSettingsOpen(true)}
-              metrics={indoorMetrics}
-            />
+            {DASHBOARD_SENSOR_DEVICE_IDS.map((deviceId) => {
+              const device = getDeviceInfo(deviceId);
+              return (
+                <DeviceCard
+                  key={deviceId}
+                  title={device.name}
+                  action={
+                    <ChevronRight
+                      className="size-5 shrink-0 text-muted-foreground/60"
+                      strokeWidth={1.75}
+                    />
+                  }
+                  onClick={() => {
+                    setDeviceSettingsId(deviceId);
+                    setDeviceSettingsOpen(true);
+                  }}
+                  metrics={buildIndoorMetrics(latestByDevice[deviceId])}
+                />
+              );
+            })}
 
             <DeviceCard
               title={outdoorLocation?.name ?? "屋外"}
@@ -344,7 +362,7 @@ export function MyRoomDashboard() {
 
       <DeviceNameSettings
         open={deviceSettingsOpen}
-        deviceId={PRIMARY_SENSOR_DEVICE_ID}
+        deviceId={deviceSettingsId}
         onClose={() => setDeviceSettingsOpen(false)}
         onSaved={(device) => {
           setDevices((prev) => {

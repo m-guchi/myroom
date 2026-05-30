@@ -60,8 +60,11 @@ export interface DeviceInfo {
   name: string;
 }
 
-/** 環境センサーカードに表示する屋内デバイス */
+/** グラフ・日次記録に使うデバイス */
 export const PRIMARY_SENSOR_DEVICE_ID = 1;
+
+/** ダッシュボードカードに表示する屋内デバイス */
+export const DASHBOARD_SENSOR_DEVICE_IDS = [1, 2] as const;
 
 export interface OutdoorLocationSearchResult {
   name: string;
