@@ -128,6 +128,40 @@ npm run dev
 - UI: http://localhost:5173
 - 開発時は `/api` が FastAPI (`localhost:8000`) にプロキシされます
 
+## 自動テスト
+
+GitHub への push / PR 前に、次のコマンドで CI と同等のチェックを実行できます。
+
+```bash
+chmod +x scripts/test.sh   # 初回のみ
+./scripts/test.sh
+```
+
+個別に実行する場合:
+
+```bash
+# バックエンド（pytest、DB_MOCK=true・外部APIなし）
+source venv/bin/activate
+pip install -r requirements-dev.txt
+pytest tests/ -q
+
+# フロントエンド
+cd frontend
+npm run typecheck
+npm run test          # Vitest（chart-utils 等）
+npm run build
+```
+
+### テスト内容
+
+| 対象 | 内容 |
+|------|------|
+| `tests/test_api.py` | API エンドポイント（health、latest、history、sensor、devices、屋外地点） |
+| `tests/test_config.py` | デバイス名・屋外地点の設定ファイル読み書き |
+| `frontend/lib/chart-utils.test.ts` | グラフ計算・快適度・履歴マージのユニットテスト |
+
+`main` / `develop` への push と PR では [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が自動実行されます。`main` への push 時は、CI 通過後にデプロイ（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）が続きます。
+
 ## システム仕様
 
 ### 画面構成

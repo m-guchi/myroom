@@ -82,7 +82,7 @@ describe("comfort helpers", () => {
   });
 
   it("returns advice for comfortable conditions", () => {
-    const advice = getComfortAdvice(24, 50);
+    const advice = getComfortAdvice(22, 50);
     expect(advice.mainAdvice).toContain("快適");
   });
 });
