@@ -79,6 +79,31 @@ def migrate():
                 conn.execute(text("ALTER TABLE dht ADD COLUMN co2 INT NULL"))
                 print("Column 'co2' added.")
 
+            print("Checking if 'aircon' table exists...")
+            result = conn.execute(text("SHOW TABLES LIKE 'aircon'"))
+            if result.fetchone():
+                print("Table 'aircon' already exists.")
+            else:
+                print("Creating table 'aircon'...")
+                conn.execute(text("""
+                    CREATE TABLE aircon (
+                        datetime DATETIME NOT NULL,
+                        ac_id INT NOT NULL DEFAULT 1,
+                        name VARCHAR(100) NULL,
+                        room_temperature FLOAT NULL,
+                        target_temperature FLOAT NULL,
+                        humidity INT NULL,
+                        mode VARCHAR(20) NULL,
+                        power VARCHAR(10) NULL,
+                        fan_speed VARCHAR(10) NULL,
+                        fan_swing VARCHAR(20) NULL,
+                        online TINYINT NULL,
+                        model VARCHAR(100) NULL,
+                        PRIMARY KEY (datetime, ac_id)
+                    )
+                """))
+                print("Table 'aircon' created.")
+
         print("Migration completed.")
 
     except Exception as e:

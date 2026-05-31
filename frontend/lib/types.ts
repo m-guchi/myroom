@@ -64,6 +64,36 @@ export interface DeviceInfo {
   name: string;
 }
 
+export interface AirconData {
+  ac_id?: number;
+  datetime?: string;
+  name?: string;
+  room_temperature?: number;
+  target_temperature?: number;
+  humidity?: number;
+  mode?: string;
+  power?: string;
+  fan_speed?: string;
+  fan_swing?: string;
+  online?: boolean;
+  model?: string;
+}
+
+export const AIRCON_MODE_LABELS: Record<string, string> = {
+  HEATING: "暖房",
+  COOLING: "冷房",
+  FAN: "送風",
+  DRY: "除湿",
+  DRY_COOL: "除湿冷房",
+  AUTO: "自動",
+  UNKNOWN: "--",
+};
+
+export function formatAirconMode(mode?: string | null): string {
+  if (!mode) return "--";
+  return AIRCON_MODE_LABELS[mode] ?? mode;
+}
+
 /** グラフ・日次記録に使うデバイス */
 export const PRIMARY_SENSOR_DEVICE_ID = 1;
 

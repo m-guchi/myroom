@@ -30,6 +30,24 @@ class DHTRecord(Base):
     pressure = Column(Integer, nullable=True)
     co2 = Column(Integer, nullable=True)
 
+
+class AirconRecord(Base):
+    __tablename__ = "aircon"
+
+    datetime = Column(DateTime, primary_key=True)
+    ac_id = Column(Integer, primary_key=True, default=1)
+
+    name = Column(String(100), nullable=True)
+    room_temperature = Column(Float, nullable=True)
+    target_temperature = Column(Float, nullable=True)
+    humidity = Column(Integer, nullable=True)
+    mode = Column(String(20), nullable=True)
+    power = Column(String(10), nullable=True)
+    fan_speed = Column(String(10), nullable=True)
+    fan_swing = Column(String(20), nullable=True)
+    online = Column(Integer, nullable=True)
+    model = Column(String(100), nullable=True)
+
 # DHTDaily model removed as we aggregate from dht table directly
 
 # Mock Data Generator
@@ -72,6 +90,23 @@ def generate_mock_history():
     end = datetime.datetime.now()
     start = end - datetime.timedelta(days=730)
     return generate_mock_history_for_range(start, end)
+
+def generate_mock_aircon_latest() -> dict:
+    return {
+        "ac_id": 1,
+        "datetime": datetime.datetime.now(),
+        "name": "リビングエアコン",
+        "room_temperature": round(24.5 + random.uniform(-0.3, 0.3), 1),
+        "target_temperature": 26.0,
+        "humidity": 50,
+        "mode": "COOLING",
+        "power": "ON",
+        "fan_speed": "AUTO",
+        "fan_swing": "AUTO",
+        "online": True,
+        "model": "RAS-KW4025D",
+    }
+
 
 def generate_mock_daily():
     data = []

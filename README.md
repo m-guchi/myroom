@@ -234,6 +234,39 @@ curl -X POST "https://myroom.gucchii.com/api/sensor?device=2" \
 **Raspberry Pi のセットアップ**（WinSCP、SSH、BLE/`btmon`、systemd、トラブルシューティング）は  
 **[`raspberry-pi/README.md`](raspberry-pi/README.md)** に手順をまとめています。
 
+### エアコン（白くまくんアプリ / AirCloud Home + Raspberry Pi）
+
+日立ルームエアコン（白くまくんアプリ対応機）の状態を **AirCloud Home クラウド API** 経由で取得し、MyRoom に送信できます。
+
+**前提**
+
+- 白くまくんアプリでアカウント登録・エアコン登録済み
+- エアコンが Wi-Fi に接続済み
+- Raspberry Pi（または cron 実行可能な Linux マシン）から HTTPS で MyRoom API に到達できること
+
+**本番 URL**
+
+| 用途 | URL |
+|------|-----|
+| API（エアコン POST） | https://myroom.gucchii.com/api/aircon |
+| API（最新状態 GET） | https://myroom.gucchii.com/api/aircon/latest |
+
+```bash
+# 5分ごとに取得・送信（Pi 上）
+python3 aircon_to_myroom.py
+
+# 登録済みユニット一覧
+python3 aircon_to_myroom.py --list-units
+```
+
+取得できる主な項目: 室温、設定温度、運転モード、電源 ON/OFF、風量・風向、オンライン状態など（詳細は下記参照）。
+
+**DB マイグレーション**（本番 DB 利用時）:
+
+```bash
+python3 migrate_db.py   # aircon テーブルを作成
+```
+
 ### その他
 
 - **最近の記録**: 直近7日分から表示し、「もっと見る」で追加読み込み
@@ -252,6 +285,8 @@ curl -X POST "https://myroom.gucchii.com/api/sensor?device=2" \
 | GET | `/api/history?range=day&device=1` | 履歴（`range`: day/week/month/year、または `start`/`end`） |
 | GET | `/api/daily-stats?device=1` | 日次統計（最近の記録） |
 | POST | `/api/sensor?device=1` | センサーデータ受信 |
+| POST | `/api/aircon` | エアコン状態受信（AirCloud Home 連携） |
+| GET | `/api/aircon/latest?ac_id=1` | エアコン最新状態 |
 | GET | `/api/devices` | デバイス一覧（表示名） |
 | PUT | `/api/devices/{id}` | デバイス表示名の更新 |
 | GET | `/api/outdoor-location` | 屋外地点の取得 |
