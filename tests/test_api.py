@@ -59,6 +59,27 @@ def test_history_year_returns_daily_aggregation(client):
     assert "temperature_max" in sample
 
 
+def test_aircon_history_day_returns_records(client):
+    response = client.get("/api/aircon/history?range=day&ac_id=1")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert "temperature" in data[0]
+    assert "target_temperature" in data[0]
+
+
+def test_aircon_history_year_returns_daily_aggregation(client):
+    response = client.get("/api/aircon/history?range=year&ac_id=1")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) > 0
+    sample = data[0]
+    assert "temperature_min" in sample
+    assert "temperature_max" in sample
+    assert "target_temperature" in sample
+
+
 def test_daily_stats_returns_list(client):
     response = client.get("/api/daily-stats?device=1")
     assert response.status_code == 200
@@ -148,3 +169,24 @@ def test_aircon_post_accepts_status(client):
     )
     assert response.status_code == 200
     assert response.json()["status"] == "mock_ok"
+
+
+def test_aircon_units_list(client):
+    response = client.get("/api/aircon/units")
+    assert response.status_code == 200
+    units = response.json()["units"]
+    assert any(unit["ac_id"] == 1 for unit in units)
+
+
+def test_update_aircon_unit_name(client):
+    response = client.put("/api/aircon/units/1", json={"name": "寝室エアコン"})
+    assert response.status_code == 200
+    assert response.json()["name"] == "寝室エアコン"
+
+    latest = client.get("/api/aircon/latest").json()
+    assert latest["name"] == "寝室エアコン"
+
+
+def test_update_aircon_unit_name_rejects_empty(client):
+    response = client.put("/api/aircon/units/1", json={"name": "   "})
+    assert response.status_code == 400

@@ -1,7 +1,9 @@
 import {
   DASHBOARD_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
+  hasAirconData,
   type AirconData,
+  type AirconUnitInfo,
   type DailyStat,
   type DeviceInfo,
   type HistoryPoint,
@@ -11,8 +13,8 @@ import {
   type TimeRange,
   type ChartViewRange,
 } from "@/lib/types";
-import { processHistoryData } from "@/lib/chart-utils";
-import { toApiDateTime } from "@/lib/history-loader";
+import { processHistoryData, processAirconHistoryData } from "@/lib/chart-utils";
+import { toApiDateTime, type AirconHistoryPoint } from "@/lib/history-loader";
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -24,8 +26,11 @@ export async function fetchLatest(deviceId = PRIMARY_SENSOR_DEVICE_ID): Promise<
   return fetchJson<LatestData>(`/api/latest?device=${deviceId}`);
 }
 
-export async function fetchAirconLatest(acId = 1): Promise<AirconData> {
-  return fetchJson<AirconData>(`/api/aircon/latest?ac_id=${acId}`);
+export async function fetchAirconLatest(acId?: number): Promise<AirconData | null> {
+  const url =
+    acId != null ? `/api/aircon/latest?ac_id=${acId}` : "/api/aircon/latest";
+  const data = await fetchJson<AirconData>(url);
+  return hasAirconData(data) ? data : null;
 }
 
 export async function fetchHistory(
@@ -62,6 +67,26 @@ export async function fetchHistoryWindow(
   return processHistoryData(data);
 }
 
+export async function fetchAirconHistoryWindow(
+  start: Date,
+  end: Date,
+  viewRange: ChartViewRange,
+  acId = 1
+): Promise<AirconHistoryPoint[]> {
+  const params = new URLSearchParams({
+    start: toApiDateTime(start),
+    end: toApiDateTime(end),
+    ac_id: String(acId),
+  });
+  if (viewRange === "year") {
+    params.set("range", "year");
+  }
+  const data = await fetchJson<Record<string, unknown>[]>(
+    `/api/aircon/history?${params.toString()}`
+  );
+  return processAirconHistoryData(data);
+}
+
 export async function fetchDailyStats(
   deviceId = PRIMARY_SENSOR_DEVICE_ID
 ): Promise<DailyStat[]> {
@@ -87,6 +112,27 @@ export async function updateDeviceName(
     throw new Error(body?.detail || `Request failed: ${res.status}`);
   }
   return res.json() as Promise<DeviceInfo>;
+}
+
+export async function fetchAirconUnits(): Promise<AirconUnitInfo[]> {
+  const data = await fetchJson<{ units: AirconUnitInfo[] }>("/api/aircon/units");
+  return data.units;
+}
+
+export async function updateAirconUnitName(
+  acId: number,
+  name: string
+): Promise<AirconUnitInfo> {
+  const res = await fetch(`/api/aircon/units/${acId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<AirconUnitInfo>;
 }
 
 export async function fetchOutdoorLocation(): Promise<OutdoorLocation> {

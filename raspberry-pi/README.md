@@ -42,6 +42,8 @@ SwitchBot CO2 ──BLE──► Raspberry Pi Zero W ──HTTPS──► myroom
 | ファイル | 必須 |
 |---------|------|
 | `switchbot_to_myroom.py` | ✅ |
+| `aircon_to_myroom.py` | エアコン連携時 |
+| `aircloudhome_client.py` | エアコン連携時 |
 | `requirements.txt` | ✅ |
 | `.env.example` | ✅ |
 | `install.sh` | 任意（systemd 自動化用） |
@@ -183,23 +185,39 @@ curl "https://myroom.gucchii.com/api/health"
 
 ## 6. 定期実行（systemd・5分ごと）
 
-SwitchBot は約 **5分間隔** で BLE を送信するため、5分ごとの実行を推奨します。
+SwitchBot は約 **5分間隔** で BLE を送信するため、5分ごとの実行を推奨します。  
+エアコンも同じ **5分間隔** で AirCloud Home から取得します。
 
 ```bash
 cd ~/myroom-api
 chmod +x install.sh
 sudo ./install.sh
 
-sudo nano /opt/myroom-pi/.env          # MAC 等を確認
+sudo nano /opt/myroom-pi/.env          # MAC / エアコン認証情報を設定
+
+# SwitchBot CO2
 sudo systemctl start switchbot-co2.timer
 sudo systemctl enable switchbot-co2.timer
 journalctl -u switchbot-co2.service -f
+
+# エアコン（AirCloud Home）
+sudo /opt/myroom-pi/run-aircon-collector.sh --dry-run --debug
+sudo systemctl start aircon-myroom.timer
+sudo systemctl enable aircon-myroom.timer
+journalctl -u aircon-myroom.service -f
+```
+
+タイマーの状態確認:
+
+```bash
+systemctl list-timers switchbot-co2.timer aircon-myroom.timer
 ```
 
 手動テスト（btmon に root 権限が必要）:
 
 ```bash
 sudo /opt/myroom-pi/venv/bin/python3 /opt/myroom-pi/switchbot_to_myroom.py --dry-run --debug
+sudo /opt/myroom-pi/run-aircon-collector.sh --dry-run --debug
 ```
 
 `install.sh` 更新後はサービス定義を再適用:
@@ -207,7 +225,7 @@ sudo /opt/myroom-pi/venv/bin/python3 /opt/myroom-pi/switchbot_to_myroom.py --dry
 ```bash
 sudo ./install.sh
 sudo systemctl daemon-reload
-sudo systemctl restart switchbot-co2.timer
+sudo systemctl restart switchbot-co2.timer aircon-myroom.timer
 ```
 
 ---
@@ -291,7 +309,7 @@ Company: not assigned (2409)
 □ sudo ./venv/bin/python3 switchbot_to_myroom.py --dry-run --debug
 □ sudo ./venv/bin/python3 switchbot_to_myroom.py → posted: ok
 □ curl https://myroom.gucchii.com/api/latest?device=2
-□ systemd タイマー有効化（任意）
+□ systemd タイマー有効化（SwitchBot / エアコン）
 □ ルーター DHCP 予約（任意）
 ```
 
@@ -353,7 +371,26 @@ python3 aircon_to_myroom.py --dry-run --debug
 python3 aircon_to_myroom.py
 ```
 
-### cron / systemd（5分間隔の例）
+### 自動取得（systemd・5分ごと）
+
+`install.sh` で SwitchBot と一緒に **`aircon-myroom.timer`** が登録されます。
+
+```bash
+cd ~/myroom-api
+sudo ./install.sh
+
+sudo nano /opt/myroom-pi/.env
+# AIRCON_EMAIL / AIRCON_PASSWORD / MYROOM_AIRCON_API_URL を設定
+
+sudo /opt/myroom-pi/run-aircon-collector.sh --dry-run --debug
+sudo systemctl start aircon-myroom.timer
+sudo systemctl enable aircon-myroom.timer
+journalctl -u aircon-myroom.service -f
+```
+
+認証情報が未設定の場合、タイマーはスキップします（ログに `skip` と出ます）。
+
+### cron（systemd を使わない場合）
 
 ```cron
 */5 * * * * cd /home/guchi/myroom-api && ./venv/bin/python3 aircon_to_myroom.py >> /var/log/aircon-myroom.log 2>&1

@@ -4,7 +4,9 @@ import {
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
+  deviceTargetMetricKey,
   getDeviceMetricValue,
+  getDeviceTargetMetricValue,
 } from "@/lib/types";
 
 export const VIEW_RANGE_MS: Record<ChartViewRange, number> = {
@@ -263,7 +265,48 @@ export function downsampleMultiDeviceHistoryForChart(
     }
   }
 
+  if (metric === "temperature" && deviceIds?.length) {
+    for (const deviceId of deviceIds) {
+      if (hasDeviceTargetMetricData(historyData, deviceId)) {
+        downsampleTargetSeriesForDevice(historyData, deviceId, byTime, maxPoints);
+      }
+    }
+  }
+
   return Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
+}
+
+function downsampleTargetSeriesForDevice(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  byTime: Map<number, HistoryPoint>,
+  maxPoints: number
+) {
+  const targetKey = deviceTargetMetricKey(deviceId);
+  const series: MetricSeriesPoint[] = [];
+
+  for (const point of historyData) {
+    const value = getDeviceTargetMetricValue(point, deviceId);
+    if (value == null) continue;
+    series.push({
+      datetimeObj: point.datetimeObj,
+      datetime: point.datetime,
+      value,
+    });
+  }
+
+  const sampled = downsampleMetricSeries(series, maxPoints);
+  for (const entry of sampled) {
+    let row = byTime.get(entry.datetimeObj);
+    if (!row) {
+      row = {
+        datetimeObj: entry.datetimeObj,
+        datetime: entry.datetime,
+      };
+      byTime.set(entry.datetimeObj, row);
+    }
+    (row as unknown as Record<string, unknown>)[targetKey] = entry.value;
+  }
 }
 
 /** 選択カーソル位置まで線を延ばす（最終データより後のときのみ） */
@@ -272,7 +315,8 @@ export function withSelectionEndPoints(
   selectionTime: number | null,
   deviceIds: readonly number[],
   metric: ChartMetric,
-  includeOutdoor = false
+  includeOutdoor = false,
+  targetDeviceIds?: readonly number[]
 ): HistoryPoint[] {
   if (!chartData.length || selectionTime == null) return chartData;
 
@@ -299,6 +343,16 @@ export function withSelectionEndPoints(
     }
   }
 
+  if (metric === "temperature" && targetDeviceIds?.length) {
+    for (const deviceId of targetDeviceIds) {
+      const value = getDeviceTargetMetricValueAtTime(chartData, deviceId, selectionTime);
+      if (value != null) {
+        record[deviceTargetMetricKey(deviceId)] = value;
+        hasAny = true;
+      }
+    }
+  }
+
   if (!hasAny) return chartData;
   return [...chartData, row];
 }
@@ -309,6 +363,17 @@ export function hasDeviceMetricData(
   metric: ChartMetric
 ): boolean {
   const key = deviceMetricKey(deviceId, metric);
+  return historyData.some((point) => {
+    const value = (point as unknown as Record<string, unknown>)[key];
+    return typeof value === "number" && !Number.isNaN(value);
+  });
+}
+
+export function hasDeviceTargetMetricData(
+  historyData: HistoryPoint[],
+  deviceId: number
+): boolean {
+  const key = deviceTargetMetricKey(deviceId);
   return historyData.some((point) => {
     const value = (point as unknown as Record<string, unknown>)[key];
     return typeof value === "number" && !Number.isNaN(value);
@@ -459,6 +524,51 @@ export function getDeviceMetricValueAtTime(
   targetTime: number
 ): number | undefined {
   return interpolateDeviceMetricAtTime(historyData, deviceId, metric, targetTime);
+}
+
+function findPrevNextTargetValues(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): {
+  prev?: { t: number; v: number };
+  next?: { t: number; v: number };
+} {
+  let prev: { t: number; v: number } | undefined;
+  let next: { t: number; v: number } | undefined;
+
+  for (const point of historyData) {
+    const value = getDeviceTargetMetricValue(point, deviceId);
+    if (value == null) continue;
+
+    if (point.datetimeObj <= targetTime) {
+      prev = { t: point.datetimeObj, v: value };
+      continue;
+    }
+    next = { t: point.datetimeObj, v: value };
+    break;
+  }
+
+  return { prev, next };
+}
+
+export function getDeviceTargetMetricValueAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): number | undefined {
+  const { prev, next } = findPrevNextTargetValues(historyData, deviceId, targetTime);
+
+  if (prev && next) {
+    if (targetTime === prev.t) return prev.v;
+    if (targetTime === next.t) return next.v;
+    if (targetTime > prev.t && targetTime < next.t) {
+      return interpolateBetween(prev, next, targetTime);
+    }
+  }
+
+  if (prev) return prev.v;
+  return undefined;
 }
 
 /** 指定時刻の屋外指標値（線形補間。データがなければ直前の値） */
@@ -618,7 +728,8 @@ export function computeVisibleYDomain(
   metric: ChartMetric,
   aggregated: boolean,
   deviceIds?: readonly number[],
-  includeOutdoor = false
+  includeOutdoor = false,
+  targetDeviceIds?: readonly number[]
 ): [number, number] | ["auto", "auto"] {
   if (!historyData.length) return ["auto", "auto"];
 
@@ -665,6 +776,12 @@ export function computeVisibleYDomain(
 
     if (includeOutdoor) {
       collectNumericValues(values, point[outdoorKey]);
+    }
+
+    if (metric === "temperature" && targetDeviceIds?.length) {
+      for (const deviceId of targetDeviceIds) {
+        collectNumericValues(values, getDeviceTargetMetricValue(point, deviceId));
+      }
     }
 
     const range = point[rangeKey];
@@ -752,6 +869,28 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
     .filter((item) => item.datetimeObj > 0) as HistoryPoint[];
 
   return processed.sort((a, b) => a.datetimeObj - b.datetimeObj);
+}
+
+export function processAirconHistoryData(
+  raw: Record<string, unknown>[]
+): import("@/lib/history-loader").AirconHistoryPoint[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => ({
+      datetime: item.datetime != null ? String(item.datetime) : undefined,
+      datetimeObj: item.datetime ? new Date(String(item.datetime)).getTime() : 0,
+      temperature:
+        item.temperature != null && item.temperature !== ""
+          ? Number(item.temperature)
+          : undefined,
+      target_temperature:
+        item.target_temperature != null && item.target_temperature !== ""
+          ? Number(item.target_temperature)
+          : undefined,
+    }))
+    .filter((item) => item.datetimeObj > 0)
+    .sort((a, b) => a.datetimeObj - b.datetimeObj);
 }
 
 function getEffectiveLogic(timeRange: TimeRange, start: number, end: number): string {

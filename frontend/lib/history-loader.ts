@@ -4,6 +4,7 @@ import {
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
+  deviceTargetMetricKey,
   getDeviceMetricValue,
 } from "@/lib/types";
 import { getViewRangeMs } from "@/lib/chart-utils";
@@ -115,4 +116,44 @@ export function getLoadedRange(data: HistoryPoint[]): LoadedHistoryRange | null 
     min: data[0].datetimeObj,
     max: data[data.length - 1].datetimeObj,
   };
+}
+
+export interface AirconHistoryPoint {
+  datetime?: string;
+  datetimeObj: number;
+  temperature?: number;
+  target_temperature?: number;
+}
+
+/** エアコン履歴をグラフ用のマルチデバイス形式にマージ */
+export function mergeAirconIntoHistory(
+  base: HistoryPoint[],
+  airconPoints: AirconHistoryPoint[],
+  chartDeviceId: number
+): HistoryPoint[] {
+  if (!airconPoints.length) return base;
+
+  const byTime = new Map<number, HistoryPoint>();
+  for (const point of base) byTime.set(point.datetimeObj, { ...point });
+
+  for (const point of airconPoints) {
+    let row = byTime.get(point.datetimeObj);
+    if (!row) {
+      row = {
+        datetime: point.datetime,
+        datetimeObj: point.datetimeObj,
+      };
+      byTime.set(point.datetimeObj, row);
+    }
+
+    const record = row as unknown as Record<string, unknown>;
+    if (point.temperature != null) {
+      record[deviceMetricKey(chartDeviceId, "temperature")] = point.temperature;
+    }
+    if (point.target_temperature != null) {
+      record[deviceTargetMetricKey(chartDeviceId)] = point.target_temperature;
+    }
+  }
+
+  return Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
 }

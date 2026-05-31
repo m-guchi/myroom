@@ -14,16 +14,19 @@ import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
 import { DeviceNameSettings } from "@/components/device-name-settings";
+import { AirconNameSettings } from "@/components/aircon-name-settings";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
 import { Button } from "@/components/ui/button";
-import { fetchDashboardData, fetchDevices, fetchOutdoorLocation } from "@/lib/api";
+import { fetchDashboardData, fetchDevices, fetchOutdoorLocation, fetchAirconUnits } from "@/lib/api";
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
+  AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
   formatAirconMode,
   getDeviceLineColor,
   PRIMARY_SENSOR_DEVICE_ID,
   type AirconData,
+  type AirconUnitInfo,
   type ChartMetric,
   type ChartViewRange,
   type DailyStat,
@@ -104,19 +107,16 @@ function buildAirconMetrics(data: AirconData | null | undefined): DeviceMetric[]
       value: `${data.room_temperature.toFixed(1)}°C`,
     });
   }
-  if (data.target_temperature != null) {
-    metrics.push({
-      key: "target_temperature",
-      icon: <Snowflake className="size-5" strokeWidth={1.75} style={{ color: accentColor }} />,
-      value: `設定 ${data.target_temperature.toFixed(1)}°C`,
-    });
-  }
-  if (data.mode || data.power) {
+  if (data.target_temperature != null || data.mode || data.power) {
     const modeLabel = data.power === "OFF" ? "停止" : formatAirconMode(data.mode);
+    const value =
+      data.power !== "OFF" && data.target_temperature != null
+        ? `${modeLabel} ${data.target_temperature.toFixed(1)}°C`
+        : modeLabel;
     metrics.push({
-      key: "mode",
-      icon: <Wind className="size-5" strokeWidth={1.75} style={{ color: accentColor }} />,
-      value: modeLabel,
+      key: "mode_target",
+      icon: <Snowflake className="size-5" strokeWidth={1.75} style={{ color: accentColor }} />,
+      value,
     });
   }
 
@@ -221,6 +221,20 @@ export function MyRoomDashboard() {
   const [deviceSettingsId, setDeviceSettingsId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
+  const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
+  const [airconSettingsOpen, setAirconSettingsOpen] = useState(false);
+  const [airconSettingsId, setAirconSettingsId] = useState(1);
+
+  const activeAirconId = airconLatest?.ac_id ?? airconSettingsId;
+  const airconChartTitle =
+    airconLatest?.name ??
+    airconUnits.find((unit) => unit.ac_id === activeAirconId)?.name ??
+    "エアコン";
+
+  const chartDeviceIds = useMemo(
+    () => [...DASHBOARD_SENSOR_DEVICE_IDS, AIRCON_CHART_DEVICE_ID] as const,
+    []
+  );
 
   const {
     historyData,
@@ -229,7 +243,10 @@ export function MyRoomDashboard() {
     noMoreOlderData,
     resetAndLoad,
     ensureVisibleRangeLoaded,
-  } = useChartHistory(DASHBOARD_SENSOR_DEVICE_IDS, viewRange);
+  } = useChartHistory(DASHBOARD_SENSOR_DEVICE_IDS, viewRange, {
+    airconAcId: activeAirconId,
+    airconChartDeviceId: AIRCON_CHART_DEVICE_ID,
+  });
 
   const deviceNames = useMemo(() => {
     const names: Record<number, string> = {};
@@ -239,8 +256,9 @@ export function MyRoomDashboard() {
         device?.name ??
         (deviceId === 1 ? "リビング" : deviceId === 2 ? "寝室" : `デバイス ${deviceId}`);
     }
+    names[AIRCON_CHART_DEVICE_ID] = airconChartTitle;
     return names;
-  }, [devices]);
+  }, [devices, airconChartTitle]);
 
   useEffect(() => {
     if (localStorage.getItem(AUTH_KEY) === "true") {
@@ -256,6 +274,9 @@ export function MyRoomDashboard() {
     fetchDevices()
       .then(setDevices)
       .catch(() => setDevices([]));
+    fetchAirconUnits()
+      .then(setAirconUnits)
+      .catch(() => setAirconUnits([]));
   }, [isAuthenticated]);
 
   const fetchData = useCallback(
@@ -317,6 +338,7 @@ export function MyRoomDashboard() {
 
   const sensorLatest = latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? latestData;
   const outdoorMetrics = buildOutdoorMetrics(sensorLatest);
+  const airconTitle = airconChartTitle;
   const lastUpdated = sensorLatest?.datetime
     ? new Date(sensorLatest.datetime).toLocaleString("ja-JP", {
         year: "numeric",
@@ -348,7 +370,7 @@ export function MyRoomDashboard() {
 
           <EnvironmentChart
             historyData={historyData}
-            deviceIds={DASHBOARD_SENSOR_DEVICE_IDS}
+            deviceIds={chartDeviceIds}
             deviceNames={deviceNames}
             chartMetric={chartMetric}
             onChartMetricChange={setChartMetric}
@@ -359,6 +381,8 @@ export function MyRoomDashboard() {
             historyEpoch={historyEpoch}
             noMoreOlderData={noMoreOlderData}
             onVisibleDomainChange={ensureVisibleRangeLoaded}
+            airconTargetDeviceId={AIRCON_CHART_DEVICE_ID}
+            outdoorLocationName={outdoorLocation?.name}
           />
         </section>
 
@@ -397,8 +421,15 @@ export function MyRoomDashboard() {
             />
 
             <DeviceCard
-              title={airconLatest?.name ?? "エアコン"}
+              title={airconTitle}
               accentColor="#1abc9c"
+              action={
+                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
+              }
+              onClick={() => {
+                setAirconSettingsId(activeAirconId);
+                setAirconSettingsOpen(true);
+              }}
               metrics={buildAirconMetrics(airconLatest)}
             />
           </div>
@@ -455,6 +486,22 @@ export function MyRoomDashboard() {
         onClose={() => setOutdoorSettingsOpen(false)}
         onSaved={(location) => {
           setOutdoorLocation(location);
+          fetchData();
+        }}
+      />
+
+      <AirconNameSettings
+        open={airconSettingsOpen}
+        acId={airconSettingsId}
+        onClose={() => setAirconSettingsOpen(false)}
+        onSaved={(unit: AirconUnitInfo) => {
+          setAirconUnits((prev) => {
+            const others = prev.filter((item) => item.ac_id !== unit.ac_id);
+            return [...others, unit].sort((a, b) => a.ac_id - b.ac_id);
+          });
+          setAirconLatest((prev) =>
+            prev && prev.ac_id === unit.ac_id ? { ...prev, name: unit.name } : prev
+          );
           fetchData();
         }}
       />

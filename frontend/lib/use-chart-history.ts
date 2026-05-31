@@ -2,21 +2,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getViewRangeMs } from "@/lib/chart-utils";
-import { fetchHistoryWindow } from "@/lib/api";
+import { fetchAirconHistoryWindow, fetchHistoryWindow } from "@/lib/api";
 import {
   getHistoryChunkMs,
   getHistoryInitialSpanMs,
   getLoadedRange,
+  mergeAirconIntoHistory,
   mergeHistoryPoints,
   mergeMultiDeviceHistory,
-  toApiDateTime,
 } from "@/lib/history-loader";
+import { AIRCON_CHART_DEVICE_ID } from "@/lib/types";
 import type { ChartViewRange, HistoryPoint } from "@/lib/types";
+
+export interface UseChartHistoryOptions {
+  airconAcId?: number | null;
+  airconChartDeviceId?: number;
+}
 
 export function useChartHistory(
   deviceIds: readonly number[],
-  viewRange: ChartViewRange
+  viewRange: ChartViewRange,
+  options?: UseChartHistoryOptions
 ) {
+  const airconAcId = options?.airconAcId ?? null;
+  const airconChartDeviceId = options?.airconChartDeviceId ?? AIRCON_CHART_DEVICE_ID;
+
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyEpoch, setHistoryEpoch] = useState(0);
@@ -26,20 +36,33 @@ export function useChartHistory(
   const loadingOlderRef = useRef(false);
   const loadingNewerRef = useRef(false);
   const deviceIdsKey = deviceIds.join(",");
+  const airconKey = airconAcId ?? "none";
 
   const fetchMergedWindow = useCallback(
     async (start: Date, end: Date) => {
-      const chunks = await Promise.all(
+      const sensorChunks = await Promise.all(
         deviceIds.map((deviceId) =>
           fetchHistoryWindow(start, end, viewRange, deviceId)
         )
       );
       const byDevice = Object.fromEntries(
-        deviceIds.map((deviceId, index) => [deviceId, chunks[index]])
+        deviceIds.map((deviceId, index) => [deviceId, sensorChunks[index]])
       ) as Record<number, HistoryPoint[]>;
-      return mergeMultiDeviceHistory(byDevice);
+      let merged = mergeMultiDeviceHistory(byDevice);
+
+      if (airconAcId != null) {
+        const airconChunk = await fetchAirconHistoryWindow(
+          start,
+          end,
+          viewRange,
+          airconAcId
+        );
+        merged = mergeAirconIntoHistory(merged, airconChunk, airconChartDeviceId);
+      }
+
+      return merged;
     },
-    [deviceIds, viewRange]
+    [deviceIds, viewRange, airconAcId, airconChartDeviceId]
   );
 
   const resetAndLoad = useCallback(async () => {
@@ -66,7 +89,7 @@ export function useChartHistory(
 
   useEffect(() => {
     resetAndLoad();
-  }, [resetAndLoad, deviceIdsKey]);
+  }, [resetAndLoad, deviceIdsKey, airconKey]);
 
   const ensureVisibleRangeLoaded = useCallback(
     async (visibleMin: number, visibleMax: number) => {
