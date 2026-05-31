@@ -162,46 +162,13 @@ export function mergeAirconIntoHistory(
   }
 
   const merged = Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
-  return applyAirconTargetForwardFill(merged, chartDeviceId);
+  return merged;
 }
 
-/** 運転中は設定温度を前方補完し、OFF 中は設定温度を付けない */
+/** @deprecated 設定温度の前方補完は行わない（OFF 区間をグラフに出さないため） */
 export function applyAirconTargetForwardFill(
   data: HistoryPoint[],
-  chartDeviceId: number
+  _chartDeviceId: number
 ): HistoryPoint[] {
-  const powerKey = deviceAirconPowerKey(chartDeviceId);
-  const targetKey = deviceTargetMetricKey(chartDeviceId);
-  const tempKey = deviceMetricKey(chartDeviceId, "temperature");
-
-  let lastPower: string | undefined;
-  let lastTarget: number | undefined;
-
-  return data.map((point) => {
-    const raw = point as unknown as Record<string, unknown>;
-    if (typeof raw[tempKey] !== "number") {
-      return point;
-    }
-
-    const record = { ...raw };
-    const power = record[powerKey];
-    if (typeof power === "string") {
-      lastPower = power;
-    }
-
-    const effectivePower = typeof power === "string" ? power : lastPower;
-    const explicitTarget = record[targetKey];
-    if (typeof explicitTarget === "number" && !Number.isNaN(explicitTarget)) {
-      lastTarget = explicitTarget;
-    }
-
-    if (effectivePower != null && isAirconPowerOff(effectivePower)) {
-      lastTarget = undefined;
-      delete record[targetKey];
-    } else if (lastTarget != null) {
-      record[targetKey] = lastTarget;
-    }
-
-    return record as unknown as HistoryPoint;
-  });
+  return data;
 }

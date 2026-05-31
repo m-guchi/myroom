@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calcDiscomfortIndex,
+  buildAirconTargetChartSegments,
   buildAirconTargetChartSeries,
   clampDomainOffset,
   computeChartDomain,
@@ -23,7 +24,7 @@ import {
   mergeHistoryPoints,
   toApiDateTime,
 } from "@/lib/history-loader";
-import { deviceTargetMetricKey, getDeviceTargetMetricValue } from "@/lib/types";
+import { getDeviceTargetMetricValue } from "@/lib/types";
 
 function makePoint(
   datetimeObj: number,
@@ -238,7 +239,7 @@ describe("isAggregatedRange", () => {
 describe("mergeAirconIntoHistory", () => {
   const chartDeviceId = 3;
 
-  it("forward-fills target temperature while aircon is on", () => {
+  it("does not forward-fill target temperature while aircon is on", () => {
     const merged = mergeAirconIntoHistory(
       [],
       [
@@ -263,9 +264,9 @@ describe("mergeAirconIntoHistory", () => {
     );
 
     expect(merged).toHaveLength(3);
-    for (const point of merged) {
-      expect(getDeviceTargetMetricValue(point, chartDeviceId)).toBe(28);
-    }
+    expect(getDeviceTargetMetricValue(merged[0], chartDeviceId)).toBe(28);
+    expect(getDeviceTargetMetricValue(merged[1], chartDeviceId)).toBeUndefined();
+    expect(getDeviceTargetMetricValue(merged[2], chartDeviceId)).toBeUndefined();
   });
 
   it("clears target temperature while aircon is off", () => {
@@ -294,7 +295,6 @@ describe("mergeAirconIntoHistory", () => {
 
 describe("buildAirconTargetChartSeries", () => {
   it("returns a continuous target series even when mixed with other device rows", () => {
-    const targetKey = deviceTargetMetricKey(3);
     const history = mergeAirconIntoHistory(
       [],
       Array.from({ length: 30 }, (_, index) => ({
@@ -320,5 +320,40 @@ describe("buildAirconTargetChartSeries", () => {
     const series = buildAirconTargetChartSeries(interleaved, 3, 320);
     expect(series).toHaveLength(30);
     expect(series.every((point) => point.airconTarget === 28)).toBe(true);
+  });
+
+  it("splits target series when aircon is off", () => {
+    const history = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 28,
+          power: "ON",
+        },
+        {
+          datetimeObj: 2000,
+          temperature: 29.5,
+          power: "OFF",
+        },
+        {
+          datetimeObj: 3000,
+          temperature: 30,
+          target_temperature: 26,
+          power: "ON",
+        },
+      ],
+      3
+    );
+
+    const segments = buildAirconTargetChartSegments(history, 3, 320);
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toEqual([
+      { datetimeObj: 1000, airconTarget: 28 },
+    ]);
+    expect(segments[1]).toEqual([
+      { datetimeObj: 3000, airconTarget: 26 },
+    ]);
   });
 });
