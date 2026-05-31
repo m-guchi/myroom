@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calcDiscomfortIndex,
+  buildAirconTargetChartSeries,
   clampDomainOffset,
   computeChartDomain,
   downsampleHistoryForChart,
@@ -18,9 +19,11 @@ import type { HistoryPoint } from "@/lib/types";
 import {
   getHistoryChunkMs,
   getHistoryInitialSpanMs,
+  mergeAirconIntoHistory,
   mergeHistoryPoints,
   toApiDateTime,
 } from "@/lib/history-loader";
+import { deviceTargetMetricKey, getDeviceTargetMetricValue } from "@/lib/types";
 
 function makePoint(
   datetimeObj: number,
@@ -229,5 +232,93 @@ describe("isAggregatedRange", () => {
   it("aggregates only year view", () => {
     expect(isAggregatedRange("year")).toBe(true);
     expect(isAggregatedRange("month")).toBe(false);
+  });
+});
+
+describe("mergeAirconIntoHistory", () => {
+  const chartDeviceId = 3;
+
+  it("forward-fills target temperature while aircon is on", () => {
+    const merged = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 28,
+          power: "ON",
+        },
+        {
+          datetimeObj: 2000,
+          temperature: 29.5,
+          power: "ON",
+        },
+        {
+          datetimeObj: 3000,
+          temperature: 30,
+          power: "ON",
+        },
+      ],
+      chartDeviceId
+    );
+
+    expect(merged).toHaveLength(3);
+    for (const point of merged) {
+      expect(getDeviceTargetMetricValue(point, chartDeviceId)).toBe(28);
+    }
+  });
+
+  it("clears target temperature while aircon is off", () => {
+    const merged = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 28,
+          power: "ON",
+        },
+        {
+          datetimeObj: 2000,
+          temperature: 29.5,
+          power: "OFF",
+        },
+      ],
+      chartDeviceId
+    );
+
+    expect(getDeviceTargetMetricValue(merged[0], chartDeviceId)).toBe(28);
+    expect(getDeviceTargetMetricValue(merged[1], chartDeviceId)).toBeUndefined();
+  });
+});
+
+describe("buildAirconTargetChartSeries", () => {
+  it("returns a continuous target series even when mixed with other device rows", () => {
+    const targetKey = deviceTargetMetricKey(3);
+    const history = mergeAirconIntoHistory(
+      [],
+      Array.from({ length: 30 }, (_, index) => ({
+        datetimeObj: 1_000_000 + index * 300_000,
+        temperature: 29 + index * 0.01,
+        target_temperature: 28,
+        power: "ON",
+      })),
+      3
+    );
+
+    const interleaved = history.flatMap((point, index) => {
+      const rows: HistoryPoint[] = [point];
+      if (index % 2 === 0) {
+        rows.unshift({
+          datetimeObj: point.datetimeObj - 60_000,
+          temperature: 20,
+        } as HistoryPoint);
+      }
+      return rows;
+    });
+
+    const series = buildAirconTargetChartSeries(interleaved, 3, 320);
+    expect(series).toHaveLength(30);
+    expect(series.every((point) => point.airconTarget === 28)).toBe(true);
   });
 });

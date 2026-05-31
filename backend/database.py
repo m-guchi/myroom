@@ -125,6 +125,7 @@ def generate_mock_aircon_history_for_range(
     while t >= start_naive:
         if t.hour in (8, 9, 18, 19):
             target = 24.0 if t.hour < 12 else 27.0
+        power = "OFF" if t.hour < 6 or t.hour >= 23 else "ON"
         room = (
             22
             + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi))
@@ -135,7 +136,8 @@ def generate_mock_aircon_history_for_range(
                 "datetime": t,
                 "ac_id": ac_id,
                 "room_temperature": round(room, 1),
-                "target_temperature": target,
+                "target_temperature": target if power == "ON" else None,
+                "power": power,
             }
         )
         t -= interval

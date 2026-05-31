@@ -5,6 +5,8 @@ import {
   ChevronRight,
   Droplets,
   Gauge,
+  ListOrdered,
+  Palette,
   RefreshCw,
   Settings,
   Snowflake,
@@ -17,17 +19,32 @@ import { DailyStatsList } from "@/components/daily-stats-list";
 import { DeviceNameSettings } from "@/components/device-name-settings";
 import { AirconNameSettings } from "@/components/aircon-name-settings";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
+import { DisplayOrderSettings } from "@/components/display-order-settings";
+import { ChartColorSettings as ChartColorSettingsDialog } from "@/components/chart-color-settings";
 import { SensorRecordsPanel } from "@/components/sensor-records-panel";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
 import { fetchDashboardData, fetchDevices, fetchOutdoorLocation, fetchAirconUnits } from "@/lib/api";
 import { useChartHistory } from "@/lib/use-chart-history";
+import {
+  buildDefaultDisplayOrder,
+  loadDisplayOrder,
+  saveDisplayOrder,
+  type DisplayOrderItem,
+} from "@/lib/display-order";
+import {
+  buildDefaultChartColors,
+  getDeviceChartColor,
+  loadChartColors,
+  saveChartColors,
+  type ChartColorSettings,
+} from "@/lib/chart-colors";
 import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
   formatAirconMode,
-  getDeviceLineColor,
+  isAirconPowerOff,
   PRIMARY_SENSOR_DEVICE_ID,
   type AirconData,
   type AirconUnitInfo,
@@ -99,11 +116,13 @@ function buildIndoorMetrics(
   return metrics;
 }
 
-function buildAirconMetrics(data: AirconData | null | undefined): DeviceMetric[] {
+function buildAirconMetrics(
+  data: AirconData | null | undefined,
+  accentColor: string
+): DeviceMetric[] {
   if (!data) return [];
 
   const metrics: DeviceMetric[] = [];
-  const accentColor = "#1abc9c";
 
   if (data.room_temperature != null) {
     metrics.push({
@@ -113,9 +132,10 @@ function buildAirconMetrics(data: AirconData | null | undefined): DeviceMetric[]
     });
   }
   if (data.target_temperature != null || data.mode || data.power) {
-    const modeLabel = data.power === "OFF" ? "停止" : formatAirconMode(data.mode);
+    const powerOff = isAirconPowerOff(data.power);
+    const modeLabel = powerOff ? "停止" : formatAirconMode(data.mode);
     const value =
-      data.power !== "OFF" && data.target_temperature != null
+      !powerOff && data.target_temperature != null
         ? `${modeLabel} ${data.target_temperature.toFixed(1)}°C`
         : modeLabel;
     metrics.push({
@@ -263,6 +283,14 @@ export function MyRoomDashboard() {
   const [recordsPanelOpen, setRecordsPanelOpen] = useState(false);
   const [recordsDeviceId, setRecordsDeviceId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
+  const [displayOrderOpen, setDisplayOrderOpen] = useState(false);
+  const [chartColorOpen, setChartColorOpen] = useState(false);
+  const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>(() =>
+    buildDefaultDisplayOrder(DASHBOARD_SENSOR_DEVICE_IDS)
+  );
+  const [chartColors, setChartColors] = useState<ChartColorSettings>(() =>
+    buildDefaultChartColors()
+  );
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
@@ -308,6 +336,8 @@ export function MyRoomDashboard() {
     if (localStorage.getItem(AUTH_KEY) === "true") {
       setIsAuthenticated(true);
     }
+    setDisplayOrder(loadDisplayOrder(DASHBOARD_SENSOR_DEVICE_IDS));
+    setChartColors(loadChartColors());
   }, []);
 
   useEffect(() => {
@@ -383,12 +413,29 @@ export function MyRoomDashboard() {
   }, [dailyStatsByDevice]);
 
   const dailyStatsDeviceIds = useMemo(() => {
-    const ids: number[] = [...DASHBOARD_SENSOR_DEVICE_IDS];
-    if ((dailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0) {
-      ids.push(AIRCON_CHART_DEVICE_ID);
+    const ids: number[] = [];
+    for (const item of displayOrder) {
+      if (item.type === "device") {
+        ids.push(item.deviceId);
+      } else if (
+        item.type === "aircon" &&
+        (dailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0
+      ) {
+        ids.push(AIRCON_CHART_DEVICE_ID);
+      }
     }
     return ids;
-  }, [dailyStatsByDevice]);
+  }, [displayOrder, dailyStatsByDevice]);
+
+  const handleDisplayOrderChange = (order: DisplayOrderItem[]) => {
+    setDisplayOrder(order);
+    saveDisplayOrder(order);
+  };
+
+  const handleChartColorsChange = (colors: ChartColorSettings) => {
+    setChartColors(colors);
+    saveChartColors(colors);
+  };
 
   const latestForDailyStats = useMemo(() => {
     const merged = { ...latestByDevice };
@@ -459,59 +506,102 @@ export function MyRoomDashboard() {
             onVisibleDomainChange={ensureVisibleRangeLoaded}
             airconTargetDeviceId={AIRCON_CHART_DEVICE_ID}
             outdoorLocationName={outdoorLocation?.name}
+            legendOrder={displayOrder}
+            chartColors={chartColors}
           />
         </section>
 
         <section>
+          <div className="mb-3 flex items-center justify-between px-0.5">
+            <h2 className="section-title">センサー</h2>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setChartColorOpen(true)}
+                className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Palette className="size-4" />
+                色
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayOrderOpen(true)}
+                className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <ListOrdered className="size-4" />
+                表示順
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
-            {DASHBOARD_SENSOR_DEVICE_IDS.map((deviceId) => {
-              const device = getDeviceInfo(deviceId);
-              const accentColor = getDeviceLineColor(deviceId);
+            {displayOrder.map((item) => {
+              if (item.type === "device") {
+                const deviceId = item.deviceId;
+                const device = getDeviceInfo(deviceId);
+                const accentColor = getDeviceChartColor(chartColors, deviceId);
+                return (
+                  <DeviceCard
+                    key={`device-${deviceId}`}
+                    title={device.name}
+                    accentColor={accentColor}
+                    action={
+                      <ChevronRight
+                        className="size-5 shrink-0 text-muted-foreground/60"
+                        strokeWidth={1.75}
+                      />
+                    }
+                    onSettingsClick={() => {
+                      setDeviceSettingsId(deviceId);
+                      setDeviceSettingsOpen(true);
+                    }}
+                    onClick={() => {
+                      setRecordsDeviceId(deviceId);
+                      setRecordsPanelOpen(true);
+                    }}
+                    metrics={buildIndoorMetrics(latestByDevice[deviceId], accentColor)}
+                  />
+                );
+              }
+
+              if (item.type === "outdoor") {
+                return (
+                  <DeviceCard
+                    key="outdoor"
+                    title={outdoorLocation?.name ?? "屋外"}
+                    metrics={outdoorMetrics}
+                    action={
+                      <ChevronRight
+                        className="size-5 shrink-0 text-muted-foreground/60"
+                        strokeWidth={1.75}
+                      />
+                    }
+                    onClick={() => setOutdoorSettingsOpen(true)}
+                  />
+                );
+              }
+
               return (
                 <DeviceCard
-                  key={deviceId}
-                  title={device.name}
-                  accentColor={accentColor}
+                  key="aircon"
+                  title={airconTitle}
+                  accentColor={getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)}
                   action={
                     <ChevronRight
                       className="size-5 shrink-0 text-muted-foreground/60"
                       strokeWidth={1.75}
                     />
                   }
-                  onSettingsClick={() => {
-                    setDeviceSettingsId(deviceId);
-                    setDeviceSettingsOpen(true);
-                  }}
                   onClick={() => {
-                    setRecordsDeviceId(deviceId);
-                    setRecordsPanelOpen(true);
+                    setAirconSettingsId(activeAirconId);
+                    setAirconSettingsOpen(true);
                   }}
-                  metrics={buildIndoorMetrics(latestByDevice[deviceId], accentColor)}
+                  metrics={buildAirconMetrics(
+                    airconLatest,
+                    getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)
+                  )}
                 />
               );
             })}
-
-            <DeviceCard
-              title={outdoorLocation?.name ?? "屋外"}
-              metrics={outdoorMetrics}
-              action={
-                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
-              }
-              onClick={() => setOutdoorSettingsOpen(true)}
-            />
-
-            <DeviceCard
-              title={airconTitle}
-              accentColor="#1abc9c"
-              action={
-                <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
-              }
-              onClick={() => {
-                setAirconSettingsId(activeAirconId);
-                setAirconSettingsOpen(true);
-              }}
-              metrics={buildAirconMetrics(airconLatest)}
-            />
           </div>
         </section>
 
@@ -527,6 +617,7 @@ export function MyRoomDashboard() {
             chartMetric={chartMetric}
             latestByDevice={latestForDailyStats}
             dailyLimit={dailyLimit}
+            chartColors={chartColors}
             onLoadMore={() =>
               setDailyLimit((prev) => Math.min(prev + 7, maxDailyStatsDays))
             }
@@ -557,6 +648,27 @@ export function MyRoomDashboard() {
           バージョン {APP_VERSION}
         </button>
       </div>
+
+      <DisplayOrderSettings
+        open={displayOrderOpen}
+        order={displayOrder}
+        deviceNames={deviceNames}
+        outdoorName={outdoorLocation?.name}
+        airconName={airconTitle}
+        chartColors={chartColors}
+        onClose={() => setDisplayOrderOpen(false)}
+        onChange={handleDisplayOrderChange}
+      />
+
+      <ChartColorSettingsDialog
+        open={chartColorOpen}
+        colors={chartColors}
+        deviceNames={deviceNames}
+        outdoorName={outdoorLocation?.name}
+        airconName={airconTitle}
+        onClose={() => setChartColorOpen(false)}
+        onChange={handleChartColorsChange}
+      />
 
       <DeviceNameSettings
         open={deviceSettingsOpen}

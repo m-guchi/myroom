@@ -153,6 +153,10 @@ export function deviceTargetMetricKey(deviceId: number): string {
   return `d${deviceId}_target_temperature`;
 }
 
+export function deviceAirconPowerKey(deviceId: number): string {
+  return `d${deviceId}_aircon_power`;
+}
+
 export function getDeviceMetricValue(
   point: HistoryPoint,
   deviceId: number,
@@ -178,8 +182,20 @@ export function getDeviceTargetMetricValue(
   const key = deviceTargetMetricKey(deviceId);
   const row = point as unknown as Record<string, unknown>;
   const value = row[key];
-  return typeof value === "number" && !Number.isNaN(value) ? value : undefined;
+  if (typeof value === "number" && !Number.isNaN(value)) return value;
+  if (typeof value === "string" && value !== "") {
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
 }
+
+export function isAirconPowerOff(power: unknown): boolean {
+  return typeof power === "string" && power.toUpperCase() === "OFF";
+}
+
+/** Recharts 用の設定温度系列キー */
+export const AIRCON_TARGET_CHART_KEY = "airconTarget";
 
 /** グラフのデバイスライン色（指標に関係なくデバイス固定） */
 export const DEVICE_LINE_COLORS: Record<number, string> = {
@@ -188,8 +204,18 @@ export const DEVICE_LINE_COLORS: Record<number, string> = {
   3: "#1abc9c",
 };
 
+/** エアコン設定温度ライン（室温とは別色） */
+export const AIRCON_TARGET_LINE_COLORS = {
+  light: "#9333ea",
+  dark: "#e879f9",
+} as const;
+
 export function getDeviceLineColor(deviceId: number): string {
   return DEVICE_LINE_COLORS[deviceId] ?? "#95a5a6";
+}
+
+export function getAirconTargetLineColor(theme: "light" | "dark" = "light"): string {
+  return AIRCON_TARGET_LINE_COLORS[theme];
 }
 
 export interface OutdoorLocationSearchResult {

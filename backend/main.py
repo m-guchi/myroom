@@ -783,6 +783,7 @@ def get_aircon_history(
                     "ac_id": record.ac_id,
                     "room_temperature": record.room_temperature,
                     "target_temperature": record.target_temperature,
+                    "power": record.power,
                 }
             )
 
@@ -794,7 +795,11 @@ def get_aircon_history(
                 daily_map[date_str] = {"room_temps": [], "target_temps": []}
             if row.get("room_temperature") is not None:
                 daily_map[date_str]["room_temps"].append(row["room_temperature"])
-            if row.get("target_temperature") is not None:
+            if (
+                row.get("target_temperature") is not None
+                and row.get("power") is not None
+                and str(row.get("power")).upper() != "OFF"
+            ):
                 daily_map[date_str]["target_temps"].append(row["target_temperature"])
 
         aggregated = []
@@ -823,11 +828,18 @@ def get_aircon_history(
 
     formatted_records = []
     for row in records_raw:
+        power = row.get("power")
         formatted_records.append(
             {
                 "datetime": row["datetime"],
                 "temperature": row.get("room_temperature"),
-                "target_temperature": row.get("target_temperature"),
+                "target_temperature": (
+                    row.get("target_temperature")
+                    if row.get("power") is None
+                    or str(row.get("power")).upper() != "OFF"
+                    else None
+                ),
+                "power": power,
             }
         )
 

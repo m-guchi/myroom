@@ -6,6 +6,17 @@ export interface ChangelogEntry {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-05",
+    changes: [
+      "グラフの色を24色パレットから自由に設定",
+      "エアコンの室温と設定温度を別々の色で設定可能に",
+      "センサーカード・グラフ凡例の表示順を変更可能に",
+      "エアコン停止時は設定温度の線と値を非表示",
+      "エアコン設定温度グラフの表示不具合を修正",
+    ],
+  },
+  {
     version: "1.4.0",
     date: "2026-05",
     changes: [
