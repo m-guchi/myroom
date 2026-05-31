@@ -1,12 +1,15 @@
 import type { ChartMetric, ChartViewRange, HistoryPoint, TimeRange } from "@/lib/types";
 import {
   CHART_METRICS,
+  deviceAirconPowerKey,
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
   deviceTargetMetricKey,
   getDeviceMetricValue,
   getDeviceTargetMetricValue,
+  isAirconPowerOff,
+  AIRCON_TARGET_CHART_KEY,
 } from "@/lib/types";
 
 export const VIEW_RANGE_MS: Record<ChartViewRange, number> = {
@@ -208,6 +211,7 @@ export function downsampleMultiDeviceHistoryForChart(
   }
 
   const byTime = new Map<number, HistoryPoint>();
+  const historyByTime = new Map(historyData.map((point) => [point.datetimeObj, point]));
 
   for (const deviceId of deviceIds) {
     const series: MetricSeriesPoint[] = [];
@@ -223,6 +227,7 @@ export function downsampleMultiDeviceHistoryForChart(
 
     const sampled = downsampleMetricSeries(series, maxPoints);
     const key = deviceMetricKey(deviceId, metric);
+    const targetKey = deviceTargetMetricKey(deviceId);
 
     for (const entry of sampled) {
       let row = byTime.get(entry.datetimeObj);
@@ -233,7 +238,17 @@ export function downsampleMultiDeviceHistoryForChart(
         };
         byTime.set(entry.datetimeObj, row);
       }
-      (row as unknown as Record<string, unknown>)[key] = entry.value;
+      const record = row as unknown as Record<string, unknown>;
+      record[key] = entry.value;
+
+      if (metric === "temperature") {
+        const source = historyByTime.get(entry.datetimeObj);
+        const targetValue =
+          source != null ? getDeviceTargetMetricValue(source, deviceId) : undefined;
+        if (targetValue != null) {
+          record[targetKey] = targetValue;
+        }
+      }
     }
   }
 
@@ -274,6 +289,48 @@ export function downsampleMultiDeviceHistoryForChart(
   }
 
   return Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
+}
+
+export interface AirconTargetChartPoint {
+  datetimeObj: number;
+  datetime?: string;
+  airconTarget: number;
+}
+
+/** 設定温度だけを連続した系列にして Recharts で描画する */
+export function buildAirconTargetChartSeries(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  maxPoints = 320
+): AirconTargetChartPoint[] {
+  const powerKey = deviceAirconPowerKey(deviceId);
+  const metricSeries: MetricSeriesPoint[] = [];
+
+  for (const point of historyData) {
+    const record = point as unknown as Record<string, unknown>;
+    const power = record[powerKey];
+    if (isAirconPowerOff(power)) continue;
+
+    const value = getDeviceTargetMetricValue(point, deviceId);
+    if (value == null) continue;
+
+    metricSeries.push({
+      datetimeObj: point.datetimeObj,
+      datetime: point.datetime,
+      value,
+    });
+  }
+
+  const sampled =
+    maxPoints > 0 && metricSeries.length > maxPoints
+      ? downsampleMetricSeries(metricSeries, maxPoints)
+      : metricSeries;
+
+  return sampled.map((entry) => ({
+    datetimeObj: entry.datetimeObj,
+    datetime: entry.datetime,
+    airconTarget: entry.value,
+  }));
 }
 
 function downsampleTargetSeriesForDevice(
@@ -552,11 +609,42 @@ function findPrevNextTargetValues(
   return { prev, next };
 }
 
+function getAirconPowerAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): string | undefined {
+  const powerKey = deviceAirconPowerKey(deviceId);
+  let lastPower: string | undefined;
+
+  for (const point of historyData) {
+    if (point.datetimeObj > targetTime) break;
+    const power = (point as unknown as Record<string, unknown>)[powerKey];
+    if (typeof power === "string") {
+      lastPower = power;
+    }
+  }
+
+  return lastPower;
+}
+
+export function isAirconOffAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): boolean {
+  return isAirconPowerOff(getAirconPowerAtTime(historyData, deviceId, targetTime));
+}
+
 export function getDeviceTargetMetricValueAtTime(
   historyData: HistoryPoint[],
   deviceId: number,
   targetTime: number
 ): number | undefined {
+  if (isAirconOffAtTime(historyData, deviceId, targetTime)) {
+    return undefined;
+  }
+
   const { prev, next } = findPrevNextTargetValues(historyData, deviceId, targetTime);
 
   if (prev && next) {
@@ -888,6 +976,7 @@ export function processAirconHistoryData(
         item.target_temperature != null && item.target_temperature !== ""
           ? Number(item.target_temperature)
           : undefined,
+      power: item.power != null ? String(item.power) : undefined,
     }))
     .filter((item) => item.datetimeObj > 0)
     .sort((a, b) => a.datetimeObj - b.datetimeObj);

@@ -1,11 +1,13 @@
 import type { ChartMetric, ChartViewRange, HistoryPoint } from "@/lib/types";
 import {
   CHART_METRICS,
+  deviceAirconPowerKey,
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
   deviceTargetMetricKey,
-  getDeviceMetricValue,
+  getDeviceTargetMetricValue,
+  isAirconPowerOff,
 } from "@/lib/types";
 import { getViewRangeMs } from "@/lib/chart-utils";
 
@@ -123,6 +125,7 @@ export interface AirconHistoryPoint {
   datetimeObj: number;
   temperature?: number;
   target_temperature?: number;
+  power?: string;
 }
 
 /** エアコン履歴をグラフ用のマルチデバイス形式にマージ */
@@ -150,10 +153,55 @@ export function mergeAirconIntoHistory(
     if (point.temperature != null) {
       record[deviceMetricKey(chartDeviceId, "temperature")] = point.temperature;
     }
-    if (point.target_temperature != null) {
+    if (point.power != null) {
+      record[deviceAirconPowerKey(chartDeviceId)] = point.power;
+    }
+    if (point.target_temperature != null && !isAirconPowerOff(point.power)) {
       record[deviceTargetMetricKey(chartDeviceId)] = point.target_temperature;
     }
   }
 
-  return Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
+  const merged = Array.from(byTime.values()).sort((a, b) => a.datetimeObj - b.datetimeObj);
+  return applyAirconTargetForwardFill(merged, chartDeviceId);
+}
+
+/** 運転中は設定温度を前方補完し、OFF 中は設定温度を付けない */
+export function applyAirconTargetForwardFill(
+  data: HistoryPoint[],
+  chartDeviceId: number
+): HistoryPoint[] {
+  const powerKey = deviceAirconPowerKey(chartDeviceId);
+  const targetKey = deviceTargetMetricKey(chartDeviceId);
+  const tempKey = deviceMetricKey(chartDeviceId, "temperature");
+
+  let lastPower: string | undefined;
+  let lastTarget: number | undefined;
+
+  return data.map((point) => {
+    const raw = point as unknown as Record<string, unknown>;
+    if (typeof raw[tempKey] !== "number") {
+      return point;
+    }
+
+    const record = { ...raw };
+    const power = record[powerKey];
+    if (typeof power === "string") {
+      lastPower = power;
+    }
+
+    const effectivePower = typeof power === "string" ? power : lastPower;
+    const explicitTarget = record[targetKey];
+    if (typeof explicitTarget === "number" && !Number.isNaN(explicitTarget)) {
+      lastTarget = explicitTarget;
+    }
+
+    if (effectivePower != null && isAirconPowerOff(effectivePower)) {
+      lastTarget = undefined;
+      delete record[targetKey];
+    } else if (lastTarget != null) {
+      record[targetKey] = lastTarget;
+    }
+
+    return record as unknown as HistoryPoint;
+  });
 }

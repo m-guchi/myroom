@@ -6,8 +6,11 @@ import {
   ChartMetric,
   DailyStat,
   LatestData,
-  getDeviceLineColor,
 } from "@/lib/types";
+import {
+  getDeviceChartColor,
+  type ChartColorSettings,
+} from "@/lib/chart-colors";
 
 interface DailyStatsListProps {
   dailyStatsByDevice: Record<number, DailyStat[]>;
@@ -16,6 +19,7 @@ interface DailyStatsListProps {
   chartMetric: ChartMetric;
   latestByDevice: Record<number, LatestData | null>;
   dailyLimit: number;
+  chartColors: ChartColorSettings;
   onLoadMore: () => void;
 }
 
@@ -60,6 +64,7 @@ export function DailyStatsList({
   chartMetric,
   latestByDevice,
   dailyLimit,
+  chartColors,
   onLoadMore,
 }: DailyStatsListProps) {
   const { visibleDates, globalRange, maxAvailableDays } = useMemo(() => {
@@ -150,7 +155,7 @@ export function DailyStatsList({
                   isToday && curVal != null
                     ? ((curVal - globalRange.min) / globalRange.span) * 100
                     : null;
-                const accentColor = getDeviceLineColor(deviceId);
+                const accentColor = getDeviceChartColor(chartColors, deviceId);
 
                 return (
                   <div key={deviceId} className="flex items-center gap-3">
