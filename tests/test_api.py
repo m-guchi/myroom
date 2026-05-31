@@ -121,3 +121,30 @@ def test_outdoor_location_search(client):
     results = response.json()["results"]
     assert len(results) == 1
     assert results[0]["name"] == "大阪"
+
+
+def test_aircon_latest_returns_mock_data(client):
+    response = client.get("/api/aircon/latest")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["room_temperature"] is not None
+    assert data["target_temperature"] is not None
+    assert data["mode"] == "COOLING"
+
+
+def test_aircon_post_accepts_status(client):
+    response = client.post(
+        "/api/aircon",
+        json={
+            "datetime": "2026-05-30 12:00:00",
+            "ac_id": 1,
+            "name": "リビング",
+            "room_temperature": 24.5,
+            "target_temperature": 26.0,
+            "mode": "COOLING",
+            "power": "ON",
+            "online": True,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "mock_ok"

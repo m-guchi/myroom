@@ -58,6 +58,39 @@ class OutdoorLocation(BaseModel):
 class DeviceNameUpdate(BaseModel):
     name: str
 
+class AirconData(BaseModel):
+    datetime: str
+    ac_id: Optional[int] = 1
+    name: Optional[str] = None
+    room_temperature: Optional[float] = None
+    target_temperature: Optional[float] = None
+    humidity: Optional[int] = None
+    mode: Optional[str] = None
+    power: Optional[str] = None
+    fan_speed: Optional[str] = None
+    fan_swing: Optional[str] = None
+    online: Optional[bool] = None
+    model: Optional[str] = None
+
+def _build_aircon_payload(record: Optional[database.AirconRecord]) -> dict:
+    if record is None:
+        return {}
+
+    return {
+        "ac_id": record.ac_id,
+        "datetime": record.datetime,
+        "name": record.name,
+        "room_temperature": record.room_temperature,
+        "target_temperature": record.target_temperature,
+        "humidity": record.humidity,
+        "mode": record.mode,
+        "power": record.power,
+        "fan_speed": record.fan_speed,
+        "fan_swing": record.fan_swing,
+        "online": bool(record.online) if record.online is not None else None,
+        "model": record.model,
+    }
+
 def _discover_device_ids(db: Optional[Session]) -> List[int]:
     if database.DB_MOCK or db is None:
         return []
@@ -269,6 +302,58 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
     daily_stats.sort(key=lambda x: x['date'])
     
     return daily_stats
+
+@app.post("/api/aircon")
+async def create_aircon_data(
+    data: AirconData,
+    db: Session = Depends(database.get_db),
+):
+    """Receive air conditioner status from AirCloud Home collector."""
+    if database.DB_MOCK:
+        return {"status": "mock_ok", "received": data}
+
+    try:
+        try:
+            dt = datetime.datetime.strptime(data.datetime, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            dt = datetime.datetime.fromisoformat(data.datetime)
+
+        record = database.AirconRecord(
+            datetime=dt,
+            ac_id=data.ac_id or 1,
+            name=data.name,
+            room_temperature=data.room_temperature,
+            target_temperature=data.target_temperature,
+            humidity=data.humidity,
+            mode=data.mode,
+            power=data.power,
+            fan_speed=data.fan_speed,
+            fan_swing=data.fan_swing,
+            online=1 if data.online else 0 if data.online is not None else None,
+            model=data.model,
+        )
+
+        db.add(record)
+        db.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/aircon/latest")
+def get_aircon_latest(ac_id: int = 1, db: Session = Depends(database.get_db)):
+    if database.DB_MOCK:
+        return database.generate_mock_aircon_latest()
+
+    record = (
+        db.query(database.AirconRecord)
+        .filter(database.AirconRecord.ac_id == ac_id)
+        .order_by(database.AirconRecord.datetime.desc())
+        .first()
+    )
+    return _build_aircon_payload(record)
+
 
 @app.get("/api/history")
 def get_history(date: Optional[str] = None, range: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):

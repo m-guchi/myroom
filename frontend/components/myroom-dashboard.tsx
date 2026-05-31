@@ -6,6 +6,7 @@ import {
   Droplets,
   Gauge,
   RefreshCw,
+  Snowflake,
   Thermometer,
   Wind,
 } from "lucide-react";
@@ -19,8 +20,10 @@ import { fetchDashboardData, fetchDevices, fetchOutdoorLocation } from "@/lib/ap
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
   DASHBOARD_SENSOR_DEVICE_IDS,
+  formatAirconMode,
   getDeviceLineColor,
   PRIMARY_SENSOR_DEVICE_ID,
+  type AirconData,
   type ChartMetric,
   type ChartViewRange,
   type DailyStat,
@@ -82,6 +85,38 @@ function buildIndoorMetrics(
       key: "co2",
       icon: <Wind className="size-5" strokeWidth={1.75} style={iconStyle} />,
       value: `${data.co2} ppm`,
+    });
+  }
+
+  return metrics;
+}
+
+function buildAirconMetrics(data: AirconData | null | undefined): DeviceMetric[] {
+  if (!data) return [];
+
+  const metrics: DeviceMetric[] = [];
+  const accentColor = "#1abc9c";
+
+  if (data.room_temperature != null) {
+    metrics.push({
+      key: "room_temperature",
+      icon: <Thermometer className="size-5" strokeWidth={1.75} style={{ color: accentColor }} />,
+      value: `${data.room_temperature.toFixed(1)}°C`,
+    });
+  }
+  if (data.target_temperature != null) {
+    metrics.push({
+      key: "target_temperature",
+      icon: <Snowflake className="size-5" strokeWidth={1.75} style={{ color: accentColor }} />,
+      value: `設定 ${data.target_temperature.toFixed(1)}°C`,
+    });
+  }
+  if (data.mode || data.power) {
+    const modeLabel = data.power === "OFF" ? "停止" : formatAirconMode(data.mode);
+    metrics.push({
+      key: "mode",
+      icon: <Wind className="size-5" strokeWidth={1.75} style={{ color: accentColor }} />,
+      value: modeLabel,
     });
   }
 
@@ -185,6 +220,7 @@ export function MyRoomDashboard() {
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
   const [deviceSettingsId, setDeviceSettingsId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
 
   const {
     historyData,
@@ -233,6 +269,7 @@ export function MyRoomDashboard() {
         setLatestByDevice(data.latestByDevice);
         setLatestData(data.latest);
         setDailyStats(data.dailyStats);
+        setAirconLatest(data.airconLatest);
         if (reloadHistory) {
           await resetAndLoad();
         }
@@ -357,6 +394,12 @@ export function MyRoomDashboard() {
                 <ChevronRight className="size-5 shrink-0 text-muted-foreground/60" strokeWidth={1.75} />
               }
               onClick={() => setOutdoorSettingsOpen(true)}
+            />
+
+            <DeviceCard
+              title={airconLatest?.name ?? "エアコン"}
+              accentColor="#1abc9c"
+              metrics={buildAirconMetrics(airconLatest)}
             />
           </div>
         </section>

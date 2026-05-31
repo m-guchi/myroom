@@ -297,6 +297,72 @@ Company: not assigned (2409)
 
 ---
 
+## エアコン（白くまくんアプリ / AirCloud Home）→ MyRoom
+
+日立ルームエアコン（RAS-KW4025D 等、白くまくんアプリ対応機）の運転状態を AirCloud Home クラウド API から取得し、MyRoom へ POST します。
+
+```
+白くまくんアプリ (AirCloud Home)
+        │
+        ▼ HTTPS (クラウド API)
+Raspberry Pi / Linux ──HTTPS──► myroom.gucchii.com/api/aircon
+                                      │
+                                      ▼
+                                   MySQL (aircon テーブル)
+```
+
+### 前提
+
+| 項目 | 内容 |
+|------|------|
+| エアコン | 白くまくんアプリ対応・Wi-Fi 接続済み |
+| アカウント | 白くまくんアプリで登録済み（メール/パスワード） |
+| ネットワーク | Pi から `https://myroom.gucchii.com` と AirCloud Home API へ到達できること |
+| Python | 3.7 以上（`requests`, `python-dotenv`） |
+
+### ファイル
+
+| ファイル | 説明 |
+|---------|------|
+| `aircloudhome_client.py` | AirCloud Home API クライアント |
+| `aircon_to_myroom.py` | 取得 → POST スクリプト |
+
+### `.env` 設定
+
+`.env.example` を参考に以下を追加:
+
+```env
+AIRCON_EMAIL=your@email.com
+AIRCON_PASSWORD=your_password
+MYROOM_AIRCON_API_URL=https://myroom.gucchii.com/api/aircon
+# 複数台ある場合のみ
+# AIRCON_UNIT_NAME=リビング
+# AIRCON_UNIT_ID=12345
+```
+
+### 動作確認
+
+```bash
+# 登録済みユニット一覧
+python3 aircon_to_myroom.py --list-units
+
+# 取得のみ（POST しない）
+python3 aircon_to_myroom.py --dry-run --debug
+
+# 本番 POST
+python3 aircon_to_myroom.py
+```
+
+### cron / systemd（5分間隔の例）
+
+```cron
+*/5 * * * * cd /home/guchi/myroom-api && ./venv/bin/python3 aircon_to_myroom.py >> /var/log/aircon-myroom.log 2>&1
+```
+
+本番 DB 利用時は、サーバー側で `python3 migrate_db.py` を実行して `aircon` テーブルを作成してください。
+
+---
+
 ## 関連ドキュメント
 
 - プロジェクト全体: [../README.md](../README.md)

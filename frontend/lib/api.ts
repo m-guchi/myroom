@@ -1,6 +1,7 @@
 import {
   DASHBOARD_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
+  type AirconData,
   type DailyStat,
   type DeviceInfo,
   type HistoryPoint,
@@ -21,6 +22,10 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export async function fetchLatest(deviceId = PRIMARY_SENSOR_DEVICE_ID): Promise<LatestData> {
   return fetchJson<LatestData>(`/api/latest?device=${deviceId}`);
+}
+
+export async function fetchAirconLatest(acId = 1): Promise<AirconData> {
+  return fetchJson<AirconData>(`/api/aircon/latest?ac_id=${acId}`);
 }
 
 export async function fetchHistory(
@@ -130,9 +135,10 @@ export async function fetchLatestBatch(
 }
 
 export async function fetchDashboardData(deviceId = PRIMARY_SENSOR_DEVICE_ID) {
-  const [latestByDevice, dailyStats] = await Promise.allSettled([
+  const [latestByDevice, dailyStats, airconLatest] = await Promise.allSettled([
     fetchLatestBatch(DASHBOARD_SENSOR_DEVICE_IDS),
     fetchDailyStats(deviceId),
+    fetchAirconLatest(),
   ]);
 
   return {
@@ -143,5 +149,6 @@ export async function fetchDashboardData(deviceId = PRIMARY_SENSOR_DEVICE_ID) {
         ? latestByDevice.value[PRIMARY_SENSOR_DEVICE_ID] ?? null
         : null,
     dailyStats: dailyStats.status === "fulfilled" ? dailyStats.value : [],
+    airconLatest: airconLatest.status === "fulfilled" ? airconLatest.value : null,
   };
 }
