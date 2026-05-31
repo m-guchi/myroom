@@ -314,10 +314,12 @@ export function MyRoomDashboard() {
     historyEpoch,
     noMoreOlderData,
     resetAndLoad,
+    refreshLatest,
     ensureVisibleRangeLoaded,
   } = useChartHistory(DASHBOARD_SENSOR_DEVICE_IDS, viewRange, {
     airconAcId: activeAirconId,
     airconChartDeviceId: AIRCON_CHART_DEVICE_ID,
+    pollIntervalMs: 30000,
   });
 
   const deviceNames = useMemo(() => {
@@ -483,7 +485,10 @@ export function MyRoomDashboard() {
             </div>
             <button
               type="button"
-              onClick={() => fetchData({ showChartLoading: true, reloadHistory: true })}
+              onClick={() => {
+                fetchData({ showChartLoading: true });
+                void refreshLatest();
+              }}
               className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent"
               aria-label="更新"
             >

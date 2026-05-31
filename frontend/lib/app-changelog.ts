@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-05",
+    changes: [
+      "グラフを30秒ごとに自動更新して最新データを表示",
+      "エアコン停止中は設定温度グラフを表示しない（補完なし）",
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-05",
     changes: [

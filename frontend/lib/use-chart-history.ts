@@ -17,6 +17,8 @@ import type { ChartViewRange, HistoryPoint } from "@/lib/types";
 export interface UseChartHistoryOptions {
   airconAcId?: number | null;
   airconChartDeviceId?: number;
+  /** グラフ履歴の自動更新間隔（ms）。0 で無効。既定 30 秒 */
+  pollIntervalMs?: number;
 }
 
 export function useChartHistory(
@@ -26,6 +28,7 @@ export function useChartHistory(
 ) {
   const airconAcId = options?.airconAcId ?? null;
   const airconChartDeviceId = options?.airconChartDeviceId ?? AIRCON_CHART_DEVICE_ID;
+  const pollIntervalMs = options?.pollIntervalMs ?? 30000;
 
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -158,12 +161,51 @@ export function useChartHistory(
     [fetchMergedWindow, viewRange, noMoreOlderData]
   );
 
+  const refreshLatest = useCallback(async () => {
+    if (loadingNewerRef.current || loadingOlderRef.current) return;
+
+    const loaded = loadedRangeRef.current;
+    if (!loaded) return;
+
+    const now = Date.now();
+    const end = new Date(now);
+    const overlapMs = 2 * 60 * 1000;
+    const start = new Date(Math.max(loaded.min, loaded.max - overlapMs));
+
+    if (end.getTime() - start.getTime() < 1000) return;
+
+    loadingNewerRef.current = true;
+    try {
+      const chunk = await fetchMergedWindow(start, end);
+      if (!chunk.length) return;
+
+      setHistoryData((prev) => {
+        const merged = prev.length ? mergeHistoryPoints(prev, chunk) : chunk;
+        loadedRangeRef.current = getLoadedRange(merged);
+        return merged;
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      loadingNewerRef.current = false;
+    }
+  }, [fetchMergedWindow]);
+
+  useEffect(() => {
+    if (pollIntervalMs <= 0) return;
+    const id = setInterval(() => {
+      void refreshLatest();
+    }, pollIntervalMs);
+    return () => clearInterval(id);
+  }, [pollIntervalMs, refreshLatest]);
+
   return {
     historyData,
     historyLoading,
     historyEpoch,
     noMoreOlderData,
     resetAndLoad,
+    refreshLatest,
     ensureVisibleRangeLoaded,
   };
 }

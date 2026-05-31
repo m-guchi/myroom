@@ -297,40 +297,72 @@ export interface AirconTargetChartPoint {
   airconTarget: number;
 }
 
-/** 設定温度だけを連続した系列にして Recharts で描画する */
+/** 設定温度だけを連続した系列にして Recharts で描画する（OFF 区間で分割） */
 export function buildAirconTargetChartSeries(
   historyData: HistoryPoint[],
   deviceId: number,
   maxPoints = 320
 ): AirconTargetChartPoint[] {
-  const powerKey = deviceAirconPowerKey(deviceId);
-  const metricSeries: MetricSeriesPoint[] = [];
+  return buildAirconTargetChartSegments(historyData, deviceId, maxPoints).flat();
+}
 
-  for (const point of historyData) {
+export function buildAirconTargetChartSegments(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  maxPoints = 320
+): AirconTargetChartPoint[][] {
+  const powerKey = deviceAirconPowerKey(deviceId);
+  const sorted = [...historyData].sort((a, b) => a.datetimeObj - b.datetimeObj);
+  const segments: AirconTargetChartPoint[][] = [];
+  let currentSegment: AirconTargetChartPoint[] = [];
+
+  for (const point of sorted) {
     const record = point as unknown as Record<string, unknown>;
     const power = record[powerKey];
-    if (isAirconPowerOff(power)) continue;
+    if (isAirconPowerOff(power)) {
+      if (currentSegment.length > 0) {
+        segments.push(currentSegment);
+        currentSegment = [];
+      }
+      continue;
+    }
 
     const value = getDeviceTargetMetricValue(point, deviceId);
     if (value == null) continue;
 
-    metricSeries.push({
+    currentSegment.push({
       datetimeObj: point.datetimeObj,
       datetime: point.datetime,
-      value,
+      airconTarget: value,
     });
   }
 
-  const sampled =
-    maxPoints > 0 && metricSeries.length > maxPoints
-      ? downsampleMetricSeries(metricSeries, maxPoints)
-      : metricSeries;
+  if (currentSegment.length > 0) {
+    segments.push(currentSegment);
+  }
 
-  return sampled.map((entry) => ({
-    datetimeObj: entry.datetimeObj,
-    datetime: entry.datetime,
-    airconTarget: entry.value,
-  }));
+  if (maxPoints <= 0) {
+    return segments;
+  }
+
+  return segments
+    .map((segment) => {
+      if (segment.length <= maxPoints) return segment;
+      const sampled = downsampleMetricSeries(
+        segment.map((entry) => ({
+          datetimeObj: entry.datetimeObj,
+          datetime: entry.datetime,
+          value: entry.airconTarget,
+        })),
+        maxPoints
+      );
+      return sampled.map((entry) => ({
+        datetimeObj: entry.datetimeObj,
+        datetime: entry.datetime,
+        airconTarget: entry.value,
+      }));
+    })
+    .filter((segment) => segment.length > 0);
 }
 
 function downsampleTargetSeriesForDevice(
@@ -340,9 +372,13 @@ function downsampleTargetSeriesForDevice(
   maxPoints: number
 ) {
   const targetKey = deviceTargetMetricKey(deviceId);
+  const powerKey = deviceAirconPowerKey(deviceId);
   const series: MetricSeriesPoint[] = [];
 
   for (const point of historyData) {
+    const record = point as unknown as Record<string, unknown>;
+    if (isAirconPowerOff(record[powerKey])) continue;
+
     const value = getDeviceTargetMetricValue(point, deviceId);
     if (value == null) continue;
     series.push({
@@ -593,8 +629,12 @@ function findPrevNextTargetValues(
 } {
   let prev: { t: number; v: number } | undefined;
   let next: { t: number; v: number } | undefined;
+  const powerKey = deviceAirconPowerKey(deviceId);
 
   for (const point of historyData) {
+    const record = point as unknown as Record<string, unknown>;
+    if (isAirconPowerOff(record[powerKey])) continue;
+
     const value = getDeviceTargetMetricValue(point, deviceId);
     if (value == null) continue;
 
@@ -607,6 +647,24 @@ function findPrevNextTargetValues(
   }
 
   return { prev, next };
+}
+
+function hasAirconOffBetween(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  startTime: number,
+  endTime: number
+): boolean {
+  const powerKey = deviceAirconPowerKey(deviceId);
+
+  for (const point of historyData) {
+    if (point.datetimeObj <= startTime) continue;
+    if (point.datetimeObj >= endTime) break;
+    const power = (point as unknown as Record<string, unknown>)[powerKey];
+    if (isAirconPowerOff(power)) return true;
+  }
+
+  return false;
 }
 
 function getAirconPowerAtTime(
@@ -645,9 +703,17 @@ export function getDeviceTargetMetricValueAtTime(
     return undefined;
   }
 
+  for (const point of historyData) {
+    if (point.datetimeObj !== targetTime) continue;
+    return getDeviceTargetMetricValue(point, deviceId);
+  }
+
   const { prev, next } = findPrevNextTargetValues(historyData, deviceId, targetTime);
 
   if (prev && next) {
+    if (hasAirconOffBetween(historyData, deviceId, prev.t, next.t)) {
+      return undefined;
+    }
     if (targetTime === prev.t) return prev.v;
     if (targetTime === next.t) return next.v;
     if (targetTime > prev.t && targetTime < next.t) {
@@ -655,7 +721,9 @@ export function getDeviceTargetMetricValueAtTime(
     }
   }
 
-  if (prev) return prev.v;
+  if (prev && !hasAirconOffBetween(historyData, deviceId, prev.t, targetTime)) {
+    return prev.v;
+  }
   return undefined;
 }
 

@@ -29,7 +29,8 @@ import {
   clampDomainOffset,
   computeChartDomain,
   computeVisibleYDomain,
-  buildAirconTargetChartSeries,
+  buildAirconTargetChartSegments,
+  type AirconTargetChartPoint,
   downsampleMultiDeviceHistoryForChart,
   filterHistoryForDomain,
   formatActivePointLabel,
@@ -386,14 +387,14 @@ export function EnvironmentChart({
     targetDeviceIds,
   ]);
 
-  const airconTargetSeries = useMemo(() => {
+  const airconTargetSegments = useMemo(() => {
     if (!showTargetLine || airconTargetDeviceId == null || chartMetric !== "temperature") {
-      return [];
+      return [] as AirconTargetChartPoint[][];
     }
 
     const source = historySource;
     const maxPoints = aggregated ? 0 : 320;
-    let series = buildAirconTargetChartSeries(source, airconTargetDeviceId, maxPoints);
+    let segments = buildAirconTargetChartSegments(source, airconTargetDeviceId, maxPoints);
 
     if (selectionTime != null) {
       const value = getDeviceTargetMetricValueAtTime(
@@ -401,18 +402,24 @@ export function EnvironmentChart({
         airconTargetDeviceId,
         selectionTime
       );
-      if (
-        value != null &&
-        !series.some((point) => point.datetimeObj === selectionTime)
-      ) {
-        series = [
-          ...series,
-          { datetimeObj: selectionTime, airconTarget: value },
-        ].sort((a, b) => a.datetimeObj - b.datetimeObj);
+      if (value != null) {
+        segments = segments.map((segment) => {
+          if (segment.some((point) => point.datetimeObj === selectionTime)) {
+            return segment;
+          }
+          const first = segment[0]?.datetimeObj;
+          const last = segment[segment.length - 1]?.datetimeObj;
+          if (first == null || last == null) return segment;
+          if (selectionTime < first || selectionTime > last) return segment;
+          return [
+            ...segment,
+            { datetimeObj: selectionTime, airconTarget: value },
+          ].sort((a, b) => a.datetimeObj - b.datetimeObj);
+        });
       }
     }
 
-    return series;
+    return segments;
   }, [
     showTargetLine,
     airconTargetDeviceId,
@@ -421,6 +428,11 @@ export function EnvironmentChart({
     aggregated,
     selectionTime,
   ]);
+
+  const airconTargetPointCount = airconTargetSegments.reduce(
+    (count, segment) => count + segment.length,
+    0
+  );
 
   const referenceLines = ticks?.map((t) => (
     <ReferenceLine
@@ -632,12 +644,12 @@ export function EnvironmentChart({
     chartPlotData.length > 0 &&
     (plottedDeviceIds.length > 0 ||
       (showOutdoorLine && activeOutdoor != null) ||
-      (airconTargetSeries.length > 0 && activeTargetValue != null));
+      (airconTargetPointCount > 0 && activeTargetValue != null));
 
   const hasPlottedLines =
     plottedDeviceIds.length > 0 ||
     showOutdoorLine ||
-    airconTargetSeries.length > 0;
+    airconTargetPointCount > 0;
 
   return (
     <div className="climate-card flex flex-col gap-0 overflow-hidden p-0">
@@ -807,18 +819,22 @@ export function EnvironmentChart({
                   connectNulls
                 />
               ))}
-              {airconTargetSeries.length > 0 && (
-                <Line
-                  data={airconTargetSeries}
-                  type="linear"
-                  dataKey={AIRCON_TARGET_CHART_KEY}
-                  stroke={airconTargetColor}
-                  strokeWidth={1.5}
-                  dot={false}
-                  name="設定温度"
-                  isAnimationActive={false}
-                  connectNulls
-                />
+              {airconTargetSegments.map((segment, index) =>
+                segment.length > 0 ? (
+                  <Line
+                    key={`aircon-target-${index}`}
+                    data={segment}
+                    type="linear"
+                    dataKey={AIRCON_TARGET_CHART_KEY}
+                    stroke={airconTargetColor}
+                    strokeWidth={1.5}
+                    dot={false}
+                    name={index === 0 ? "設定温度" : undefined}
+                    legendType={index === 0 ? "line" : "none"}
+                    isAnimationActive={false}
+                    connectNulls={false}
+                  />
+                ) : null
               )}
             </ComposedChart>
           </ResponsiveContainer>
