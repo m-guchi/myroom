@@ -1,4 +1,5 @@
 import {
+  AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
   hasAirconData,
@@ -10,6 +11,7 @@ import {
   type LatestData,
   type OutdoorLocation,
   type OutdoorLocationSearchResult,
+  type SensorRecordsResponse,
   type TimeRange,
   type ChartViewRange,
 } from "@/lib/types";
@@ -93,6 +95,26 @@ export async function fetchDailyStats(
   return fetchJson<DailyStat[]>(`/api/daily-stats?device=${deviceId}`);
 }
 
+export async function fetchDailyStatsBatch(
+  deviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
+): Promise<Record<number, DailyStat[]>> {
+  const results = await Promise.allSettled(
+    deviceIds.map((deviceId) => fetchDailyStats(deviceId))
+  );
+
+  const dailyStatsByDevice: Record<number, DailyStat[]> = {};
+  deviceIds.forEach((deviceId, index) => {
+    const result = results[index];
+    dailyStatsByDevice[deviceId] =
+      result.status === "fulfilled" ? result.value : [];
+  });
+  return dailyStatsByDevice;
+}
+
+export async function fetchAirconDailyStats(acId = 1): Promise<DailyStat[]> {
+  return fetchJson<DailyStat[]>(`/api/aircon/daily-stats?ac_id=${acId}`);
+}
+
 export async function fetchDevices(): Promise<DeviceInfo[]> {
   const data = await fetchJson<{ devices: DeviceInfo[] }>("/api/devices");
   return data.devices;
@@ -164,6 +186,55 @@ export async function searchOutdoorLocations(
   return data.results;
 }
 
+export type SensorRecordsRange = "day" | "week" | "month";
+
+function getSensorRecordsWindow(range: SensorRecordsRange): { start: Date; end: Date } {
+  const end = new Date();
+  const start = new Date(end);
+  if (range === "day") {
+    start.setDate(start.getDate() - 1);
+  } else if (range === "week") {
+    start.setDate(start.getDate() - 7);
+  } else {
+    start.setDate(start.getDate() - 30);
+  }
+  return { start, end };
+}
+
+export async function fetchSensorRecords(
+  deviceId: number,
+  range: SensorRecordsRange,
+  offset = 0,
+  limit = 100
+): Promise<SensorRecordsResponse> {
+  const { start, end } = getSensorRecordsWindow(range);
+  const params = new URLSearchParams({
+    device: String(deviceId),
+    start: toApiDateTime(start),
+    end: toApiDateTime(end),
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return fetchJson<SensorRecordsResponse>(`/api/records?${params.toString()}`);
+}
+
+export async function deleteSensorRecord(
+  deviceId: number,
+  datetime: string
+): Promise<void> {
+  const params = new URLSearchParams({
+    device: String(deviceId),
+    datetime,
+  });
+  const res = await fetch(`/api/records?${params.toString()}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+}
+
 export async function fetchLatestBatch(
   deviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
 ): Promise<Record<number, LatestData | null>> {
@@ -180,12 +251,20 @@ export async function fetchLatestBatch(
   return latestByDevice;
 }
 
-export async function fetchDashboardData(deviceId = PRIMARY_SENSOR_DEVICE_ID) {
-  const [latestByDevice, dailyStats, airconLatest] = await Promise.allSettled([
-    fetchLatestBatch(DASHBOARD_SENSOR_DEVICE_IDS),
-    fetchDailyStats(deviceId),
-    fetchAirconLatest(),
-  ]);
+export async function fetchDashboardData(acId = 1) {
+  const [latestByDevice, dailyStatsByDevice, airconDailyStats, airconLatest] =
+    await Promise.allSettled([
+      fetchLatestBatch(DASHBOARD_SENSOR_DEVICE_IDS),
+      fetchDailyStatsBatch(DASHBOARD_SENSOR_DEVICE_IDS),
+      fetchAirconDailyStats(acId),
+      fetchAirconLatest(acId),
+    ]);
+
+  const mergedDailyStats =
+    dailyStatsByDevice.status === "fulfilled" ? { ...dailyStatsByDevice.value } : {};
+  if (airconDailyStats.status === "fulfilled" && airconDailyStats.value.length > 0) {
+    mergedDailyStats[AIRCON_CHART_DEVICE_ID] = airconDailyStats.value;
+  }
 
   return {
     latestByDevice:
@@ -194,7 +273,7 @@ export async function fetchDashboardData(deviceId = PRIMARY_SENSOR_DEVICE_ID) {
       latestByDevice.status === "fulfilled"
         ? latestByDevice.value[PRIMARY_SENSOR_DEVICE_ID] ?? null
         : null,
-    dailyStats: dailyStats.status === "fulfilled" ? dailyStats.value : [],
+    dailyStatsByDevice: mergedDailyStats,
     airconLatest: airconLatest.status === "fulfilled" ? airconLatest.value : null,
   };
 }

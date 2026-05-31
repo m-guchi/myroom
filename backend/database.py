@@ -156,6 +156,22 @@ def generate_mock_daily():
             "humid_max": round(60 + random.uniform(0, 10), 1),
             "humid_min": round(40 + random.uniform(0, 10), 1)
         })
+    data.sort(key=lambda x: x["date"])
+    return data
+
+
+def generate_mock_aircon_daily(ac_id: int = 1) -> list:
+    data = []
+    today = datetime.date.today()
+    for i in range(30):
+        d = today - datetime.timedelta(days=i)
+        base = 24.5 + random.uniform(-1.5, 1.5)
+        data.append({
+            "date": d,
+            "temp_max": round(base + random.uniform(0.5, 2.5), 1),
+            "temp_min": round(base - random.uniform(0.5, 2.5), 1),
+        })
+    data.sort(key=lambda x: x["date"])
     return data
 
 import math

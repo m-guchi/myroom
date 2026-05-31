@@ -6,6 +6,7 @@ import {
   Droplets,
   Gauge,
   RefreshCw,
+  Settings,
   Snowflake,
   Thermometer,
   Wind,
@@ -16,9 +17,12 @@ import { DailyStatsList } from "@/components/daily-stats-list";
 import { DeviceNameSettings } from "@/components/device-name-settings";
 import { AirconNameSettings } from "@/components/aircon-name-settings";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
+import { SensorRecordsPanel } from "@/components/sensor-records-panel";
+import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
 import { fetchDashboardData, fetchDevices, fetchOutdoorLocation, fetchAirconUnits } from "@/lib/api";
 import { useChartHistory } from "@/lib/use-chart-history";
+import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
@@ -49,6 +53,7 @@ interface DeviceCardProps {
   accentColor?: string;
   action?: React.ReactNode;
   onClick?: () => void;
+  onSettingsClick?: () => void;
 }
 
 function buildIndoorMetrics(
@@ -153,7 +158,14 @@ function buildOutdoorMetrics(data: LatestData | null | undefined): DeviceMetric[
   return metrics;
 }
 
-function DeviceCard({ title, metrics, accentColor, action, onClick }: DeviceCardProps) {
+function DeviceCard({
+  title,
+  metrics,
+  accentColor,
+  action,
+  onClick,
+  onSettingsClick,
+}: DeviceCardProps) {
   const className = onClick
     ? "device-card cursor-pointer text-left transition-transform active:scale-[0.98]"
     : "device-card text-left";
@@ -169,7 +181,22 @@ function DeviceCard({ title, metrics, accentColor, action, onClick }: DeviceCard
         >
           {title}
         </p>
-        {action}
+        <div className="flex shrink-0 items-center gap-0.5">
+          {onSettingsClick && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onSettingsClick();
+              }}
+              className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground"
+              aria-label={`${title}の設定`}
+            >
+              <Settings className="size-4" strokeWidth={1.75} />
+            </button>
+          )}
+          {action}
+        </div>
       </div>
       {metrics.length > 0 ? (
         <div className="flex flex-col gap-1.5">
@@ -190,9 +217,21 @@ function DeviceCard({ title, metrics, accentColor, action, onClick }: DeviceCard
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={className} style={cardStyle}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick();
+          }
+        }}
+        className={className}
+        style={cardStyle}
+      >
         {content}
-      </button>
+      </div>
     );
   }
 
@@ -209,7 +248,9 @@ export function MyRoomDashboard() {
   const [latestByDevice, setLatestByDevice] = useState<Record<number, LatestData | null>>(
     {}
   );
-  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [dailyStatsByDevice, setDailyStatsByDevice] = useState<
+    Record<number, DailyStat[]>
+  >({});
   const [refreshing, setRefreshing] = useState(false);
   const [chartLoading, setChartLoading] = useState(false);
   const [chartMetric, setChartMetric] = useState<ChartMetric>("temperature");
@@ -219,6 +260,9 @@ export function MyRoomDashboard() {
   const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
   const [deviceSettingsId, setDeviceSettingsId] = useState(PRIMARY_SENSOR_DEVICE_ID);
+  const [recordsPanelOpen, setRecordsPanelOpen] = useState(false);
+  const [recordsDeviceId, setRecordsDeviceId] = useState(PRIMARY_SENSOR_DEVICE_ID);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
@@ -286,10 +330,12 @@ export function MyRoomDashboard() {
       setRefreshing(true);
       if (showChartLoading) setChartLoading(true);
       try {
-        const data = await fetchDashboardData(PRIMARY_SENSOR_DEVICE_ID);
+        const data = await fetchDashboardData(
+          airconLatest?.ac_id ?? airconSettingsId
+        );
         setLatestByDevice(data.latestByDevice);
         setLatestData(data.latest);
-        setDailyStats(data.dailyStats);
+        setDailyStatsByDevice(data.dailyStatsByDevice);
         setAirconLatest(data.airconLatest);
         if (reloadHistory) {
           await resetAndLoad();
@@ -301,7 +347,7 @@ export function MyRoomDashboard() {
         if (showChartLoading) setChartLoading(false);
       }
     },
-    [resetAndLoad]
+    [resetAndLoad, airconLatest?.ac_id, airconSettingsId]
   );
 
   useEffect(() => {
@@ -325,6 +371,36 @@ export function MyRoomDashboard() {
     setIsAuthenticated(false);
     localStorage.removeItem(AUTH_KEY);
   };
+
+  const maxDailyStatsDays = useMemo(() => {
+    const dates = new Set<string>();
+    for (const deviceId of [...DASHBOARD_SENSOR_DEVICE_IDS, AIRCON_CHART_DEVICE_ID]) {
+      for (const day of dailyStatsByDevice[deviceId] ?? []) {
+        dates.add(String(day.date).slice(0, 10));
+      }
+    }
+    return dates.size;
+  }, [dailyStatsByDevice]);
+
+  const dailyStatsDeviceIds = useMemo(() => {
+    const ids: number[] = [...DASHBOARD_SENSOR_DEVICE_IDS];
+    if ((dailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0) {
+      ids.push(AIRCON_CHART_DEVICE_ID);
+    }
+    return ids;
+  }, [dailyStatsByDevice]);
+
+  const latestForDailyStats = useMemo(() => {
+    const merged = { ...latestByDevice };
+    if (airconLatest?.room_temperature != null) {
+      merged[AIRCON_CHART_DEVICE_ID] = {
+        device_id: AIRCON_CHART_DEVICE_ID,
+        datetime: airconLatest.datetime,
+        temperature: airconLatest.room_temperature,
+      };
+    }
+    return merged;
+  }, [latestByDevice, airconLatest]);
 
   if (!isAuthenticated) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -355,7 +431,7 @@ export function MyRoomDashboard() {
         <section>
           <div className="mb-3 flex items-center justify-between px-0.5">
             <div>
-              <h2 className="section-title">履歴</h2>
+              <h2 className="section-title">MyRoom</h2>
               <p className="section-subtitle">最終更新: {lastUpdated}</p>
             </div>
             <button
@@ -402,9 +478,13 @@ export function MyRoomDashboard() {
                       strokeWidth={1.75}
                     />
                   }
-                  onClick={() => {
+                  onSettingsClick={() => {
                     setDeviceSettingsId(deviceId);
                     setDeviceSettingsOpen(true);
+                  }}
+                  onClick={() => {
+                    setRecordsDeviceId(deviceId);
+                    setRecordsPanelOpen(true);
                   }}
                   metrics={buildIndoorMetrics(latestByDevice[deviceId], accentColor)}
                 />
@@ -441,12 +521,14 @@ export function MyRoomDashboard() {
           </div>
 
           <DailyStatsList
-            dailyStats={dailyStats}
+            dailyStatsByDevice={dailyStatsByDevice}
+            deviceIds={dailyStatsDeviceIds}
+            deviceNames={deviceNames}
             chartMetric={chartMetric}
-            latestData={latestData}
+            latestByDevice={latestForDailyStats}
             dailyLimit={dailyLimit}
             onLoadMore={() =>
-              setDailyLimit((prev) => Math.min(prev + 7, dailyStats.length))
+              setDailyLimit((prev) => Math.min(prev + 7, maxDailyStatsDays))
             }
           />
         </section>
@@ -467,6 +549,13 @@ export function MyRoomDashboard() {
             ログアウト
           </Button>
         </div>
+        <button
+          type="button"
+          onClick={() => setVersionHistoryOpen(true)}
+          className="mx-auto block pt-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          バージョン {APP_VERSION}
+        </button>
       </div>
 
       <DeviceNameSettings
@@ -479,6 +568,19 @@ export function MyRoomDashboard() {
             return [...others, device].sort((a, b) => a.id - b.id);
           });
         }}
+      />
+
+      <SensorRecordsPanel
+        open={recordsPanelOpen}
+        deviceId={recordsDeviceId}
+        deviceName={deviceNames[recordsDeviceId] ?? `デバイス ${recordsDeviceId}`}
+        onClose={() => setRecordsPanelOpen(false)}
+        onOpenSettings={() => {
+          setRecordsPanelOpen(false);
+          setDeviceSettingsId(recordsDeviceId);
+          setDeviceSettingsOpen(true);
+        }}
+        onChanged={() => fetchData({ reloadHistory: true })}
       />
 
       <OutdoorLocationSettings
@@ -504,6 +606,11 @@ export function MyRoomDashboard() {
           );
           fetchData();
         }}
+      />
+
+      <VersionHistoryDialog
+        open={versionHistoryOpen}
+        onClose={() => setVersionHistoryOpen(false)}
       />
     </div>
   );
