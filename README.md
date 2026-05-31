@@ -257,7 +257,13 @@ python3 aircon_to_myroom.py
 
 # 登録済みユニット一覧
 python3 aircon_to_myroom.py --list-units
+
+# 自動実行（systemd タイマー・5分間隔）
+sudo ./raspberry-pi/install.sh
+sudo systemctl start aircon-myroom.timer
 ```
+
+詳細は [raspberry-pi/README.md](raspberry-pi/README.md) を参照。
 
 取得できる主な項目: 室温、設定温度、運転モード、電源 ON/OFF、風量・風向、オンライン状態など（詳細は下記参照）。
 

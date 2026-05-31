@@ -10,13 +10,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Droplets, Gauge, Thermometer, Wind } from "lucide-react";
+import { Droplets, Eye, EyeOff, Gauge, Thermometer, Wind } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  AIRCON_CHART_DEVICE_ID,
   ChartMetric,
   CHART_VIEW_RANGE_LABELS,
   ChartViewRange,
   deviceMetricKey,
+  deviceTargetMetricKey,
   getDeviceLineColor,
   HistoryPoint,
   METRIC_COLORS,
@@ -34,10 +36,13 @@ import {
   getAvailableChartMetrics,
   getChartTicksForDomain,
   getDeviceMetricValueAtTime,
+  getDeviceTargetMetricValueAtTime,
   getDevicesWithMetricData,
   getMaxPositiveDomainOffset,
   getOutdoorMetricValueAtTime,
   getSelectionTime,
+  hasDeviceMetricData,
+  hasDeviceTargetMetricData,
   hasOutdoorMetricData,
   isAggregatedRange,
   withSelectionEndPoints,
@@ -70,6 +75,20 @@ interface EnvironmentChartProps {
   historyEpoch?: number;
   noMoreOlderData?: boolean;
   onVisibleDomainChange?: (visibleMin: number, visibleMax: number) => void;
+  airconTargetDeviceId?: number;
+  outdoorLocationName?: string;
+}
+
+const CHART_SERIES_DEVICE_ORDER = [1, 2, AIRCON_CHART_DEVICE_ID] as const;
+const OUTDOOR_LINE_COLOR = "#adb5bd";
+
+interface ChartSeriesRow {
+  id: string;
+  name: string;
+  color: string;
+  value: number | undefined;
+  visible: boolean;
+  toggle: () => void;
 }
 
 function getMetricKeys(metric: ChartMetric) {
@@ -152,6 +171,8 @@ export function EnvironmentChart({
   historyEpoch = 0,
   noMoreOlderData = false,
   onVisibleDomainChange,
+  airconTargetDeviceId,
+  outdoorLocationName,
 }: EnvironmentChartProps) {
   const { outdoorKey } = getMetricKeys(chartMetric);
   const aggregated = isAggregatedRange(viewRange);
@@ -167,8 +188,44 @@ export function EnvironmentChart({
   );
 
   const canShowOutdoor = hasOutdoorMetricData(historyData, chartMetric);
+  const showAirconTargetLine =
+    chartMetric === "temperature" &&
+    airconTargetDeviceId != null &&
+    hasDeviceTargetMetricData(historyData, airconTargetDeviceId);
   const [outdoorVisible, setOutdoorVisible] = useState(false);
+  const [airconTargetVisible, setAirconTargetVisible] = useState(true);
+  const [deviceLineVisible, setDeviceLineVisible] = useState<Record<number, boolean>>({});
   const showOutdoorLine = canShowOutdoor && outdoorVisible;
+  const isAirconChartDeviceVisible =
+    airconTargetDeviceId == null ||
+    deviceLineVisible[airconTargetDeviceId] !== false;
+  const effectiveAirconTargetVisible =
+    airconTargetVisible && isAirconChartDeviceVisible;
+  const showTargetLine = showAirconTargetLine && effectiveAirconTargetVisible;
+  const targetDeviceIds =
+    showTargetLine && airconTargetDeviceId != null
+      ? ([airconTargetDeviceId] as const)
+      : undefined;
+
+  const plottedDeviceIds = useMemo(
+    () =>
+      visibleDeviceIds.filter(
+        (deviceId) => deviceLineVisible[deviceId] !== false
+      ),
+    [visibleDeviceIds, deviceLineVisible]
+  );
+
+  const isDeviceLineVisible = useCallback(
+    (deviceId: number) => deviceLineVisible[deviceId] !== false,
+    [deviceLineVisible]
+  );
+
+  const toggleDeviceLine = useCallback((deviceId: number) => {
+    setDeviceLineVisible((prev) => ({
+      ...prev,
+      [deviceId]: prev[deviceId] === false,
+    }));
+  }, []);
 
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [domainOffset, setDomainOffset] = useState(0);
@@ -178,6 +235,7 @@ export function EnvironmentChart({
 
   useEffect(() => {
     setOutdoorVisible(false);
+    setAirconTargetVisible(true);
   }, [chartMetric]);
 
   useEffect(() => {
@@ -246,10 +304,11 @@ export function EnvironmentChart({
         currentDomain,
         chartMetric,
         aggregated,
-        visibleDeviceIds,
-        showOutdoorLine
+        plottedDeviceIds,
+        showOutdoorLine,
+        targetDeviceIds
       ),
-    [historyData, currentDomain, chartMetric, aggregated, visibleDeviceIds, showOutdoorLine]
+    [historyData, currentDomain, chartMetric, aggregated, plottedDeviceIds, showOutdoorLine, targetDeviceIds]
   );
 
   const chartPlotData = useMemo(() => {
@@ -263,24 +322,26 @@ export function EnvironmentChart({
           source,
           chartMetric,
           320,
-          visibleDeviceIds
+          plottedDeviceIds
         );
 
     return withSelectionEndPoints(
       base,
       selectionTime,
-      visibleDeviceIds,
+      plottedDeviceIds,
       chartMetric,
-      showOutdoorLine
+      showOutdoorLine,
+      targetDeviceIds
     );
   }, [
     historyData,
     currentDomain,
     chartMetric,
     aggregated,
-    visibleDeviceIds,
+    plottedDeviceIds,
     selectionTime,
     showOutdoorLine,
+    targetDeviceIds,
   ]);
 
   const referenceLines = ticks?.map((t) => (
@@ -294,7 +355,7 @@ export function EnvironmentChart({
 
   const activeDeviceValues = useMemo(() => {
     if (selectionTime == null) return [];
-    return visibleDeviceIds
+    return plottedDeviceIds
       .map((deviceId) => ({
         deviceId,
         name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
@@ -307,12 +368,94 @@ export function EnvironmentChart({
         color: getDeviceLineColor(deviceId),
       }))
       .filter((entry) => entry.value != null);
-  }, [selectionTime, visibleDeviceIds, deviceNames, chartMetric, chartPlotData]);
+  }, [selectionTime, plottedDeviceIds, deviceNames, chartMetric, chartPlotData]);
 
   const activeOutdoor = useMemo(() => {
     if (selectionTime == null) return undefined;
     return getOutdoorMetricValueAtTime(chartPlotData, chartMetric, selectionTime);
   }, [selectionTime, chartPlotData, chartMetric]);
+
+  const activeTargetValue = useMemo(() => {
+    if (
+      selectionTime == null ||
+      !showAirconTargetLine ||
+      airconTargetDeviceId == null
+    ) {
+      return undefined;
+    }
+    return getDeviceTargetMetricValueAtTime(
+      chartPlotData,
+      airconTargetDeviceId,
+      selectionTime
+    );
+  }, [selectionTime, showAirconTargetLine, airconTargetDeviceId, chartPlotData]);
+
+  const chartSeriesRows = useMemo((): ChartSeriesRow[] => {
+    const rows: ChartSeriesRow[] = [];
+
+    for (const deviceId of CHART_SERIES_DEVICE_ORDER) {
+      if (!deviceIds.includes(deviceId)) continue;
+      if (!hasDeviceMetricData(historyData, deviceId, chartMetric)) continue;
+
+      rows.push({
+        id: `device-${deviceId}`,
+        name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
+        color: getDeviceLineColor(deviceId),
+        value:
+          selectionTime == null
+            ? undefined
+            : getDeviceMetricValueAtTime(
+                chartPlotData,
+                deviceId,
+                chartMetric,
+                selectionTime
+              ),
+        visible: isDeviceLineVisible(deviceId),
+        toggle: () => toggleDeviceLine(deviceId),
+      });
+    }
+
+    if (showAirconTargetLine && airconTargetDeviceId != null) {
+      rows.push({
+        id: "aircon-target",
+        name: "エアコン設定温度",
+        color: getDeviceLineColor(airconTargetDeviceId),
+        value: activeTargetValue,
+        visible: effectiveAirconTargetVisible,
+        toggle: () => setAirconTargetVisible((visible) => !visible),
+      });
+    }
+
+    if (canShowOutdoor) {
+      rows.push({
+        id: "outdoor",
+        name: outdoorLocationName ?? "屋外",
+        color: OUTDOOR_LINE_COLOR,
+        value: activeOutdoor,
+        visible: outdoorVisible,
+        toggle: () => setOutdoorVisible((visible) => !visible),
+      });
+    }
+
+    return rows;
+  }, [
+    deviceIds,
+    historyData,
+    chartMetric,
+    deviceNames,
+    selectionTime,
+    chartPlotData,
+    isDeviceLineVisible,
+    toggleDeviceLine,
+    showAirconTargetLine,
+    airconTargetDeviceId,
+    activeTargetValue,
+    effectiveAirconTargetVisible,
+    canShowOutdoor,
+    outdoorLocationName,
+    activeOutdoor,
+    outdoorVisible,
+  ]);
 
   const selectionLabel =
     selectionTime != null
@@ -396,7 +539,12 @@ export function EnvironmentChart({
   const showSelectionOverlay =
     lineLeft != null &&
     chartPlotData.length > 0 &&
-    (visibleDeviceIds.length > 0 || (showOutdoorLine && activeOutdoor != null));
+    (plottedDeviceIds.length > 0 ||
+      (showOutdoorLine && activeOutdoor != null) ||
+      (showTargetLine && activeTargetValue != null));
+
+  const hasPlottedLines =
+    plottedDeviceIds.length > 0 || showOutdoorLine || showTargetLine;
 
   return (
     <div className="climate-card flex flex-col gap-0 overflow-hidden p-0">
@@ -432,60 +580,42 @@ export function EnvironmentChart({
         </Tabs>
       </div>
 
-      {selectionTime != null && showSelectionOverlay && (
-        <div className="px-2 pt-3 text-center">
-          <p className="text-xs whitespace-nowrap text-muted-foreground">{selectionLabel}</p>
-          {activeDeviceValues.length > 0 && (
-            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-              {activeDeviceValues.map((entry) => (
-                <p key={entry.deviceId} className="text-lg font-bold" style={{ color: entry.color }}>
-                  {entry.name}: {formatMetricValue(entry.value, chartMetric)}
-                  {unit}
-                </p>
-              ))}
-            </div>
-          )}
-          {showOutdoorLine && activeOutdoor != null && (
-            <p className="text-xs text-muted-foreground">
-              屋外: {formatMetricValue(activeOutdoor, chartMetric)}
-              {unit}
+      {chartSeriesRows.length > 0 && (
+        <div className="px-3 pt-3">
+          {selectionTime != null && (
+            <p className="mb-2 text-center text-xs whitespace-nowrap text-muted-foreground">
+              {selectionLabel}
             </p>
           )}
-        </div>
-      )}
-
-      {(visibleDeviceIds.length > 0 || canShowOutdoor) && (
-        <div className="flex flex-wrap items-center justify-center gap-3 px-2 pt-2">
-          {visibleDeviceIds.map((deviceId) => (
-            <div key={deviceId} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span
-                className="inline-block h-0.5 w-4 rounded-full"
-                style={{ backgroundColor: getDeviceLineColor(deviceId) }}
-              />
-              {deviceNames[deviceId] ?? `デバイス ${deviceId}`}
-            </div>
-          ))}
-          {canShowOutdoor && (
-            <button
-              type="button"
-              onClick={() => setOutdoorVisible((visible) => !visible)}
-              aria-pressed={outdoorVisible}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] transition-colors",
-                outdoorVisible
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <span
-                className={cn(
-                  "inline-block h-0 w-4 border-t-2 border-dashed",
-                  outdoorVisible ? "border-[#adb5bd]" : "border-muted-foreground/40"
-                )}
-              />
-              屋外
-            </button>
-          )}
+          <div className="flex flex-col gap-2">
+            {chartSeriesRows.map((row) => (
+              <div key={row.id} className="flex items-center justify-between gap-3">
+                <p
+                  className={cn(
+                    "min-w-0 flex-1 text-lg font-bold",
+                    !row.visible && "opacity-40"
+                  )}
+                  style={{ color: row.color }}
+                >
+                  {row.name}: {formatMetricValue(row.value, chartMetric)}
+                  {unit}
+                </p>
+                <button
+                  type="button"
+                  onClick={row.toggle}
+                  aria-pressed={row.visible}
+                  aria-label={`${row.name}の表示切替`}
+                  className="shrink-0 rounded-full p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  {row.visible ? (
+                    <Eye className="size-5" strokeWidth={1.75} />
+                  ) : (
+                    <EyeOff className="size-5" strokeWidth={1.75} />
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -522,14 +652,14 @@ export function EnvironmentChart({
             <p>データがありません</p>
             <p className="text-[10px] opacity-70">バックエンドが起動しているか確認してください</p>
           </div>
-        ) : !chartPlotData.length || (!visibleDeviceIds.length && !showOutdoorLine) ? (
+        ) : !chartPlotData.length || !hasPlottedLines ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
-            表示範囲内にデータがありません
+            表示する項目を選択してください
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%" className="pointer-events-none">
             <ComposedChart
-              key={`${chartMetric}-${viewRange}-${visibleDeviceIds.join("-")}-${outdoorVisible}`}
+              key={`${chartMetric}-${viewRange}-${plottedDeviceIds.join("-")}-${outdoorVisible}-${airconTargetVisible}`}
               data={chartPlotData}
               margin={{ top: PLOT_INSET.top, right: PLOT_INSET.right, left: 0, bottom: 0 }}
             >
@@ -573,7 +703,7 @@ export function EnvironmentChart({
                 />
               )}
               {referenceLines}
-              {visibleDeviceIds.map((deviceId) => (
+              {plottedDeviceIds.map((deviceId) => (
                 <Line
                   key={deviceId}
                   type="linear"
@@ -586,6 +716,19 @@ export function EnvironmentChart({
                   connectNulls
                 />
               ))}
+              {showTargetLine && airconTargetDeviceId != null && (
+                <Line
+                  type="linear"
+                  dataKey={deviceTargetMetricKey(airconTargetDeviceId)}
+                  stroke={getDeviceLineColor(airconTargetDeviceId)}
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
+                  dot={false}
+                  name="設定温度"
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         )}

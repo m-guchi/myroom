@@ -8,7 +8,7 @@ from typing import List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, weather, outdoor_config, device_config
+from . import database, weather, outdoor_config, device_config, aircon_config
 from pydantic import BaseModel, model_validator
 
 load_dotenv()
@@ -58,6 +58,9 @@ class OutdoorLocation(BaseModel):
 class DeviceNameUpdate(BaseModel):
     name: str
 
+class AirconNameUpdate(BaseModel):
+    name: str
+
 class AirconData(BaseModel):
     datetime: str
     ac_id: Optional[int] = 1
@@ -72,6 +75,26 @@ class AirconData(BaseModel):
     online: Optional[bool] = None
     model: Optional[str] = None
 
+def _fetch_latest_aircon_record(
+    db: Session, ac_id: Optional[int] = None
+) -> Optional[database.AirconRecord]:
+    if ac_id is not None:
+        record = (
+            db.query(database.AirconRecord)
+            .filter(database.AirconRecord.ac_id == ac_id)
+            .order_by(database.AirconRecord.datetime.desc())
+            .first()
+        )
+        if record:
+            return record
+
+    return (
+        db.query(database.AirconRecord)
+        .order_by(database.AirconRecord.datetime.desc())
+        .first()
+    )
+
+
 def _build_aircon_payload(record: Optional[database.AirconRecord]) -> dict:
     if record is None:
         return {}
@@ -79,7 +102,8 @@ def _build_aircon_payload(record: Optional[database.AirconRecord]) -> dict:
     return {
         "ac_id": record.ac_id,
         "datetime": record.datetime,
-        "name": record.name,
+        "name": aircon_config.get_display_name(record.ac_id, record.name),
+        "source_name": record.name,
         "room_temperature": record.room_temperature,
         "target_temperature": record.target_temperature,
         "humidity": record.humidity,
@@ -96,6 +120,14 @@ def _discover_device_ids(db: Optional[Session]) -> List[int]:
         return []
     rows = db.query(database.DHTRecord.device_id).distinct().all()
     return sorted({row[0] for row in rows if row[0] is not None})
+
+
+def _discover_ac_ids(db: Optional[Session]) -> List[int]:
+    if database.DB_MOCK or db is None:
+        return []
+    rows = db.query(database.AirconRecord.ac_id).distinct().all()
+    return sorted({row[0] for row in rows if row[0] is not None})
+
 
 def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
     if database.DB_MOCK:
@@ -184,6 +216,26 @@ def update_device_name(device_id: int, body: DeviceNameUpdate, db: Session = Dep
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return device
+
+
+@app.get("/api/aircon/units")
+def get_aircon_units(db: Session = Depends(database.get_db)):
+    return {"units": aircon_config.list_units(_discover_ac_ids(db))}
+
+
+@app.put("/api/aircon/units/{ac_id}")
+def update_aircon_unit_name(
+    ac_id: int,
+    body: AirconNameUpdate,
+    db: Session = Depends(database.get_db),
+):
+    if ac_id < 1:
+        raise HTTPException(status_code=400, detail="ac id must be >= 1")
+    try:
+        unit = aircon_config.save_unit_name(ac_id, body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return unit
 
 @app.post("/api/sensor")
 async def create_sensor_data(
@@ -342,31 +394,32 @@ async def create_aircon_data(
 
 
 @app.get("/api/aircon/latest")
-def get_aircon_latest(ac_id: int = 1, db: Session = Depends(database.get_db)):
+def get_aircon_latest(ac_id: Optional[int] = None, db: Session = Depends(database.get_db)):
     if database.DB_MOCK:
-        return database.generate_mock_aircon_latest()
+        payload = database.generate_mock_aircon_latest()
+        payload["name"] = aircon_config.get_display_name(
+            payload["ac_id"], payload.get("source_name")
+        )
+        return payload
 
-    record = (
-        db.query(database.AirconRecord)
-        .filter(database.AirconRecord.ac_id == ac_id)
-        .order_by(database.AirconRecord.datetime.desc())
-        .first()
-    )
+    record = _fetch_latest_aircon_record(db, ac_id)
     return _build_aircon_payload(record)
 
 
-@app.get("/api/history")
-def get_history(date: Optional[str] = None, range: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
+def _resolve_history_window(
+    date: Optional[str] = None,
+    range: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+):
     end_time = get_now_jst()
     start_time = end_time - datetime.timedelta(hours=24)
-
     effective_range = range
 
     if start and end:
         try:
             start_time = datetime.datetime.fromisoformat(start)
             end_time = datetime.datetime.fromisoformat(end)
-            # range が明示されていればそれを優先（年表示の日次集計など）
             if not range:
                 delta = end_time - start_time
                 if delta.days > 7:
@@ -374,13 +427,13 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
         except ValueError:
             pass
     elif range:
-        if range == 'day':
+        if range == "day":
             start_time = end_time - datetime.timedelta(days=1)
-        elif range == 'week':
+        elif range == "week":
             start_time = end_time - datetime.timedelta(days=7)
-        elif range == 'month':
+        elif range == "month":
             start_time = end_time - datetime.timedelta(days=30)
-        elif range == 'year':
+        elif range == "year":
             start_time = end_time - datetime.timedelta(days=365)
     elif date:
         try:
@@ -389,6 +442,13 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
             end_time = datetime.datetime.combine(target_date, datetime.time.max)
         except ValueError:
             pass
+
+    return start_time, end_time, effective_range
+
+
+@app.get("/api/history")
+def get_history(date: Optional[str] = None, range: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
+    start_time, end_time, effective_range = _resolve_history_window(date, range, start, end)
 
     if database.DB_MOCK:
         records_raw = database.generate_mock_history_for_range(start_time, end_time, device)
@@ -508,6 +568,88 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
         })
         
     formatted_records.sort(key=lambda x: x['datetime'])
+    return formatted_records
+
+
+@app.get("/api/aircon/history")
+def get_aircon_history(
+    date: Optional[str] = None,
+    range: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    ac_id: Optional[int] = None,
+    db: Session = Depends(database.get_db),
+):
+    start_time, end_time, effective_range = _resolve_history_window(date, range, start, end)
+
+    if database.DB_MOCK:
+        records_raw = database.generate_mock_aircon_history_for_range(
+            start_time, end_time, ac_id or 1
+        )
+    else:
+        query = db.query(database.AirconRecord).filter(
+            database.AirconRecord.datetime >= start_time,
+            database.AirconRecord.datetime <= end_time,
+        )
+        if ac_id is not None:
+            query = query.filter(database.AirconRecord.ac_id == ac_id)
+        records_raw = []
+        for record in query.order_by(database.AirconRecord.datetime.asc()).all():
+            records_raw.append(
+                {
+                    "datetime": record.datetime,
+                    "ac_id": record.ac_id,
+                    "room_temperature": record.room_temperature,
+                    "target_temperature": record.target_temperature,
+                }
+            )
+
+    if effective_range == "year":
+        daily_map = {}
+        for row in records_raw:
+            date_str = row["datetime"].strftime("%Y-%m-%d")
+            if date_str not in daily_map:
+                daily_map[date_str] = {"room_temps": [], "target_temps": []}
+            if row.get("room_temperature") is not None:
+                daily_map[date_str]["room_temps"].append(row["room_temperature"])
+            if row.get("target_temperature") is not None:
+                daily_map[date_str]["target_temps"].append(row["target_temperature"])
+
+        aggregated = []
+        for date_str, values in daily_map.items():
+            if not values["room_temps"] and not values["target_temps"]:
+                continue
+            dt = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(hour=12)
+            entry = {"datetime": dt}
+            if values["room_temps"]:
+                entry.update(
+                    {
+                        "temperature": round(
+                            sum(values["room_temps"]) / len(values["room_temps"]), 1
+                        ),
+                        "temperature_min": min(values["room_temps"]),
+                        "temperature_max": max(values["room_temps"]),
+                    }
+                )
+            if values["target_temps"]:
+                entry["target_temperature"] = round(
+                    sum(values["target_temps"]) / len(values["target_temps"]), 1
+                )
+            aggregated.append(entry)
+        aggregated.sort(key=lambda x: x["datetime"])
+        return aggregated
+
+    formatted_records = []
+    for row in records_raw:
+        formatted_records.append(
+            {
+                "datetime": row["datetime"],
+                "temperature": row.get("room_temperature"),
+                "target_temperature": row.get("target_temperature"),
+            }
+        )
+
+    formatted_records.sort(key=lambda x: x["datetime"])
     return formatted_records
 
 # Serve Next.js static export (frontend/out)

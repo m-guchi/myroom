@@ -64,10 +64,16 @@ export interface DeviceInfo {
   name: string;
 }
 
+export interface AirconUnitInfo {
+  ac_id: number;
+  name: string;
+}
+
 export interface AirconData {
   ac_id?: number;
   datetime?: string;
   name?: string;
+  source_name?: string;
   room_temperature?: number;
   target_temperature?: number;
   humidity?: number;
@@ -94,11 +100,24 @@ export function formatAirconMode(mode?: string | null): string {
   return AIRCON_MODE_LABELS[mode] ?? mode;
 }
 
+export function hasAirconData(data: AirconData | null | undefined): boolean {
+  if (!data) return false;
+  return (
+    data.room_temperature != null ||
+    data.target_temperature != null ||
+    data.power != null ||
+    data.mode != null
+  );
+}
+
 /** グラフ・日次記録に使うデバイス */
 export const PRIMARY_SENSOR_DEVICE_ID = 1;
 
 /** ダッシュボードカードに表示する屋内デバイス */
 export const DASHBOARD_SENSOR_DEVICE_IDS = [1, 2] as const;
+
+/** グラフ上のエアコン（室温）用デバイスID */
+export const AIRCON_CHART_DEVICE_ID = 3;
 
 export const CHART_METRICS: ChartMetric[] = ["temperature", "humidity", "pressure", "co2"];
 
@@ -112,6 +131,10 @@ export function deviceMetricMinKey(deviceId: number, metric: ChartMetric): strin
 
 export function deviceMetricMaxKey(deviceId: number, metric: ChartMetric): string {
   return `d${deviceId}_${metric}_max`;
+}
+
+export function deviceTargetMetricKey(deviceId: number): string {
+  return `d${deviceId}_target_temperature`;
 }
 
 export function getDeviceMetricValue(
@@ -132,10 +155,21 @@ export function getDeviceMetricValue(
   return undefined;
 }
 
+export function getDeviceTargetMetricValue(
+  point: HistoryPoint,
+  deviceId: number
+): number | undefined {
+  const key = deviceTargetMetricKey(deviceId);
+  const row = point as unknown as Record<string, unknown>;
+  const value = row[key];
+  return typeof value === "number" && !Number.isNaN(value) ? value : undefined;
+}
+
 /** グラフのデバイスライン色（指標に関係なくデバイス固定） */
 export const DEVICE_LINE_COLORS: Record<number, string> = {
   1: "#3498db",
   2: "#e67e22",
+  3: "#1abc9c",
 };
 
 export function getDeviceLineColor(deviceId: number): string {

@@ -27,6 +27,29 @@ def test_device_config_rejects_invalid_name(data_dir):
         assert "name is required" in str(exc)
 
 
+def test_aircon_config_save_and_list(data_dir):
+    from backend import aircon_config
+
+    saved = aircon_config.save_unit_name(1, "リビングエアコン")
+    assert saved == {"ac_id": 1, "name": "リビングエアコン"}
+
+    units = aircon_config.list_units(discovered_ac_ids=[2])
+    assert units == [
+        {"ac_id": 1, "name": "リビングエアコン"},
+        {"ac_id": 2, "name": "エアコン 2"},
+    ]
+
+
+def test_aircon_config_rejects_invalid_name(data_dir):
+    from backend import aircon_config
+
+    try:
+        aircon_config.save_unit_name(1, "  ")
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "name is required" in str(exc)
+
+
 def test_outdoor_config_save_and_get(data_dir):
     saved = outdoor_config.save_location(34.6937, 135.5023, "大阪")
     assert saved["name"] == "大阪"

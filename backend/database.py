@@ -96,6 +96,7 @@ def generate_mock_aircon_latest() -> dict:
         "ac_id": 1,
         "datetime": datetime.datetime.now(),
         "name": "リビングエアコン",
+        "source_name": "リビングエアコン",
         "room_temperature": round(24.5 + random.uniform(-0.3, 0.3), 1),
         "target_temperature": 26.0,
         "humidity": 50,
@@ -106,6 +107,41 @@ def generate_mock_aircon_latest() -> dict:
         "online": True,
         "model": "RAS-KW4025D",
     }
+
+
+def generate_mock_aircon_history_for_range(
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+    ac_id: int = 1,
+) -> list:
+    """指定期間のエアコンモック履歴を生成。"""
+    data = []
+    start_naive = start_time.replace(tzinfo=None) if start_time.tzinfo else start_time
+    end_naive = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
+    t = end_naive
+    interval = datetime.timedelta(minutes=10)
+    target = 26.0
+
+    while t >= start_naive:
+        if t.hour in (8, 9, 18, 19):
+            target = 24.0 if t.hour < 12 else 27.0
+        room = (
+            22
+            + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi))
+            + random.uniform(-0.8, 0.8)
+        )
+        data.append(
+            {
+                "datetime": t,
+                "ac_id": ac_id,
+                "room_temperature": round(room, 1),
+                "target_temperature": target,
+            }
+        )
+        t -= interval
+
+    data.reverse()
+    return data
 
 
 def generate_mock_daily():

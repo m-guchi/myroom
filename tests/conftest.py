@@ -13,6 +13,10 @@ def data_dir(tmp_path, monkeypatch):
         tmp_path / "devices.json",
     )
     monkeypatch.setattr(
+        "backend.aircon_config.CONFIG_PATH",
+        tmp_path / "aircon.json",
+    )
+    monkeypatch.setattr(
         "backend.outdoor_config.CONFIG_PATH",
         tmp_path / "outdoor_location.json",
     )
