@@ -190,3 +190,38 @@ def test_update_aircon_unit_name(client):
 def test_update_aircon_unit_name_rejects_empty(client):
     response = client.put("/api/aircon/units/1", json={"name": "   "})
     assert response.status_code == 400
+
+
+def test_records_list_returns_mock_data(client):
+    response = client.get("/api/records?device=1")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data["records"], list)
+    assert len(data["records"]) > 0
+    assert data["records"][0]["device_id"] == 1
+    assert "datetime" in data["records"][0]
+
+
+def test_records_delete_mock_ok(client):
+    response = client.delete(
+        "/api/records",
+        params={"device": 1, "datetime": "2026-05-30 12:00:00"},
+    )
+    assert response.status_code == 200
+    assert response.json()["deleted"] is True
+
+
+def test_records_rejects_invalid_device(client):
+    response = client.get("/api/records?device=0")
+    assert response.status_code == 400
+
+
+def test_aircon_daily_stats_returns_mock_data(client):
+    response = client.get("/api/aircon/daily-stats?ac_id=1")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert "temp_min" in data[0]
+    assert "temp_max" in data[0]
+    assert "humid_min" not in data[0]

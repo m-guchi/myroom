@@ -1,137 +1,201 @@
 "use client";
 
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ChartMetric,
   DailyStat,
   LatestData,
+  getDeviceLineColor,
 } from "@/lib/types";
 
 interface DailyStatsListProps {
-  dailyStats: DailyStat[];
+  dailyStatsByDevice: Record<number, DailyStat[]>;
+  deviceIds: readonly number[];
+  deviceNames: Record<number, string>;
   chartMetric: ChartMetric;
-  latestData: LatestData | null;
+  latestByDevice: Record<number, LatestData | null>;
   dailyLimit: number;
   onLoadMore: () => void;
 }
 
+function getDayMetricValues(day: DailyStat, metric: ChartMetric) {
+  if (metric === "temperature") {
+    return { min: day.temp_min, max: day.temp_max };
+  }
+  if (metric === "humidity") {
+    return { min: day.humid_min, max: day.humid_max };
+  }
+  if (metric === "co2") {
+    return { min: day.co2_min, max: day.co2_max };
+  }
+  return { min: day.pressure_min, max: day.pressure_max };
+}
+
+function getLatestMetricValue(
+  latest: LatestData | null | undefined,
+  metric: ChartMetric
+): number | undefined {
+  if (!latest) return undefined;
+  if (metric === "temperature") return latest.temperature;
+  if (metric === "humidity") return latest.humidity;
+  if (metric === "co2") return latest.co2;
+  return latest.pressure ?? undefined;
+}
+
+function formatMetricValue(value: number | undefined, metric: ChartMetric): string {
+  if (value == null) return "-";
+  if (metric === "pressure" || metric === "co2") return String(Math.round(value));
+  return value.toFixed(1);
+}
+
+function normalizeDateKey(date: DailyStat["date"]): string {
+  return String(date).slice(0, 10);
+}
+
 export function DailyStatsList({
-  dailyStats,
+  dailyStatsByDevice,
+  deviceIds,
+  deviceNames,
   chartMetric,
-  latestData,
+  latestByDevice,
   dailyLimit,
   onLoadMore,
 }: DailyStatsListProps) {
-  const lastFive = dailyStats.slice(-dailyLimit).reverse();
-  if (!lastFive.length) return null;
+  const { visibleDates, globalRange, maxAvailableDays } = useMemo(() => {
+    const dateSet = new Set<string>();
 
-  const allValues = lastFive.flatMap((day) => {
-    if (chartMetric === "temperature") return [day.temp_min, day.temp_max];
-    if (chartMetric === "humidity") return [day.humid_min, day.humid_max];
-    if (chartMetric === "co2") return [day.co2_min, day.co2_max];
-    return [day.pressure_min, day.pressure_max];
-  });
+    for (const deviceId of deviceIds) {
+      for (const day of dailyStatsByDevice[deviceId] ?? []) {
+        dateSet.add(normalizeDateKey(day.date));
+      }
+    }
 
-  const validValues = allValues.filter((v): v is number => v != null);
-  const gMin = validValues.length > 0 ? Math.min(...validValues) : 0;
-  const gMax = validValues.length > 0 ? Math.max(...validValues) : 100;
-  const gRange = gMax - gMin || 1;
+    const sortedDates = Array.from(dateSet).sort();
+    const visible = sortedDates.slice(-dailyLimit).reverse();
 
-  const barGradients: Record<ChartMetric, string> = {
-    temperature: "linear-gradient(90deg, #3498db 0%, #f1c40f 50%, #e74c3c 100%)",
-    humidity: "linear-gradient(90deg, #d4f7d4 0%, #2ecc71 100%)",
-    pressure: "linear-gradient(90deg, #e0c3fc 0%, #9b59b6 100%)",
-    co2: "linear-gradient(90deg, #fdebd0 0%, #e67e22 100%)",
-  };
+    const values: number[] = [];
+    for (const date of visible) {
+      for (const deviceId of deviceIds) {
+        const day = (dailyStatsByDevice[deviceId] ?? []).find(
+          (item) => normalizeDateKey(item.date) === date
+        );
+        if (!day) continue;
+        const { min, max } = getDayMetricValues(day, chartMetric);
+        if (min != null) values.push(min);
+        if (max != null) values.push(max);
+      }
+    }
+
+    const gMin = values.length > 0 ? Math.min(...values) : 0;
+    const gMax = values.length > 0 ? Math.max(...values) : 100;
+
+    return {
+      visibleDates: visible,
+      globalRange: { min: gMin, max: gMax, span: gMax - gMin || 1 },
+      maxAvailableDays: sortedDates.length,
+    };
+  }, [dailyStatsByDevice, deviceIds, chartMetric, dailyLimit]);
+
+  if (!visibleDates.length) return null;
+
+  const unit =
+    chartMetric === "temperature"
+      ? "°"
+      : chartMetric === "humidity"
+        ? "%"
+        : chartMetric === "co2"
+          ? " ppm"
+          : "";
 
   return (
     <div className="flex flex-col gap-3">
-      {lastFive.map((day, index) => {
-        let dayMin: number | undefined;
-        let dayMax: number | undefined;
-        let curVal: number | undefined;
-        let unit = "";
-
-        if (chartMetric === "temperature") {
-          dayMin = day.temp_min;
-          dayMax = day.temp_max;
-          curVal = latestData?.temperature;
-          unit = "°";
-        } else if (chartMetric === "humidity") {
-          dayMin = day.humid_min;
-          dayMax = day.humid_max;
-          curVal = latestData?.humidity;
-          unit = "%";
-        } else if (chartMetric === "co2") {
-          dayMin = day.co2_min;
-          dayMax = day.co2_max;
-          curVal = latestData?.co2;
-          unit = " ppm";
-        } else {
-          dayMin = day.pressure_min;
-          dayMax = day.pressure_max;
-          curVal = latestData?.pressure;
-        }
-
-        const left = dayMin != null ? ((dayMin - gMin) / gRange) * 100 : 0;
-        const width =
-          dayMin != null && dayMax != null ? ((dayMax - dayMin) / gRange) * 100 : 0;
-        const isToday = index === 0;
-        const curPos =
-          isToday && curVal != null && gRange > 0
-            ? ((curVal - gMin) / gRange) * 100
-            : null;
-
-        const dateLabel = isToday
-          ? "今日"
-          : index === 1
-            ? "昨日"
-            : String(day.date).substring(5).replace("-", "/") || "--";
-
-        const formatValue = (v: number | undefined) => {
-          if (v == null) return "-";
-          return chartMetric === "pressure" || chartMetric === "co2"
-            ? Math.round(v)
-            : v.toFixed(1);
-        };
+      {visibleDates.map((dateKey, index) => {
+        const dateLabel =
+          index === 0
+            ? "今日"
+            : index === 1
+              ? "昨日"
+              : dateKey.substring(5).replace("-", "/");
 
         return (
           <div
-            key={`${day.date}-${index}`}
-            className="flex items-center justify-between rounded-[18px] bg-card px-4 py-4"
+            key={dateKey}
+            className="rounded-[18px] bg-card px-4 py-4"
           >
             <span className="text-[15px] font-bold">{dateLabel}</span>
-            <div className="flex items-center gap-4">
-              <span className="text-sm font-medium text-muted-foreground">
-                {formatValue(dayMin)}
-                {unit}
-              </span>
-              <div className="relative h-1.5 w-20 overflow-visible rounded-full bg-black/5 dark:bg-white/10">
-                <div
-                  className="absolute h-full rounded-full transition-all duration-300"
-                  style={{
-                    left: `${left}%`,
-                    width: `${width}%`,
-                    background: barGradients[chartMetric],
-                  }}
-                />
-                {curPos !== null && (
-                  <div
-                    className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-foreground bg-background shadow-sm"
-                    style={{ left: `${curPos}%` }}
-                  />
-                )}
-              </div>
-              <span className="text-sm font-bold">
-                {formatValue(dayMax)}
-                {unit}
-              </span>
+            <div className="mt-3 flex flex-col gap-3">
+              {deviceIds.map((deviceId) => {
+                const day = (dailyStatsByDevice[deviceId] ?? []).find(
+                  (item) => normalizeDateKey(item.date) === dateKey
+                );
+                if (!day) return null;
+
+                const { min: dayMin, max: dayMax } = getDayMetricValues(day, chartMetric);
+                if (dayMin == null && dayMax == null) return null;
+
+                const left =
+                  dayMin != null
+                    ? ((dayMin - globalRange.min) / globalRange.span) * 100
+                    : 0;
+                const width =
+                  dayMin != null && dayMax != null
+                    ? ((dayMax - dayMin) / globalRange.span) * 100
+                    : 0;
+                const isToday = index === 0;
+                const curVal = isToday
+                  ? getLatestMetricValue(latestByDevice[deviceId], chartMetric)
+                  : undefined;
+                const curPos =
+                  isToday && curVal != null
+                    ? ((curVal - globalRange.min) / globalRange.span) * 100
+                    : null;
+                const accentColor = getDeviceLineColor(deviceId);
+
+                return (
+                  <div key={deviceId} className="flex items-center gap-3">
+                    <span
+                      className="w-14 shrink-0 truncate text-xs font-semibold"
+                      style={{ color: accentColor }}
+                      title={deviceNames[deviceId] ?? `デバイス ${deviceId}`}
+                    >
+                      {deviceNames[deviceId] ?? `D${deviceId}`}
+                    </span>
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <span className="w-10 shrink-0 text-right text-sm font-medium text-muted-foreground">
+                        {formatMetricValue(dayMin, chartMetric)}
+                        {unit}
+                      </span>
+                      <div className="relative h-1.5 min-w-0 flex-1 overflow-visible rounded-full bg-black/5 dark:bg-white/10">
+                        <div
+                          className="absolute h-full rounded-full transition-all duration-300"
+                          style={{
+                            left: `${left}%`,
+                            width: `${width}%`,
+                            backgroundColor: accentColor,
+                          }}
+                        />
+                        {curPos != null && (
+                          <div
+                            className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-foreground bg-background shadow-sm"
+                            style={{ left: `${curPos}%` }}
+                          />
+                        )}
+                      </div>
+                      <span className="w-10 shrink-0 text-sm font-bold">
+                        {formatMetricValue(dayMax, chartMetric)}
+                        {unit}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
       })}
 
-      {dailyStats.length > dailyLimit && (
+      {maxAvailableDays > dailyLimit && (
         <Button
           variant="outline"
           className="mt-1 rounded-[18px] border-border bg-card text-muted-foreground"

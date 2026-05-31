@@ -17,6 +17,22 @@ export interface LatestData {
   outdoor_pressure?: number;
 }
 
+export interface SensorRecord {
+  datetime: string;
+  device_id: number;
+  temperature?: number | null;
+  humidity?: number | null;
+  pressure?: number | null;
+  co2?: number | null;
+}
+
+export interface SensorRecordsResponse {
+  records: SensorRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface HistoryPoint {
   datetime?: string;
   datetimeObj: number;

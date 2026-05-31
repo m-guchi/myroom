@@ -695,7 +695,6 @@ export function EnvironmentChart({
                   dataKey={outdoorKey as string}
                   stroke="#adb5bd"
                   strokeWidth={2}
-                  strokeDasharray="4 4"
                   dot={false}
                   name="屋外"
                   isAnimationActive={false}
@@ -721,8 +720,7 @@ export function EnvironmentChart({
                   type="linear"
                   dataKey={deviceTargetMetricKey(airconTargetDeviceId)}
                   stroke={getDeviceLineColor(airconTargetDeviceId)}
-                  strokeWidth={2}
-                  strokeDasharray="6 3"
+                  strokeWidth={1.5}
                   dot={false}
                   name="設定温度"
                   isAnimationActive={false}

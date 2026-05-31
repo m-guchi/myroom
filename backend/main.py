@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -355,6 +355,60 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
     
     return daily_stats
 
+
+@app.get("/api/aircon/daily-stats")
+def get_aircon_daily_stats(ac_id: int = 1, db: Session = Depends(database.get_db)):
+    if ac_id < 1:
+        raise HTTPException(status_code=400, detail="ac_id must be >= 1")
+    if database.DB_MOCK:
+        return database.generate_mock_aircon_daily(ac_id)
+
+    today = datetime.date.today()
+    start_date = today - datetime.timedelta(days=30)
+
+    import pandas as pd
+
+    records = (
+        db.query(database.AirconRecord)
+        .filter(
+            database.AirconRecord.datetime >= start_date,
+            database.AirconRecord.ac_id == ac_id,
+            database.AirconRecord.room_temperature.isnot(None),
+        )
+        .all()
+    )
+
+    if not records:
+        return []
+
+    data = [
+        {
+            "datetime": record.datetime,
+            "room_temperature": record.room_temperature,
+        }
+        for record in records
+    ]
+
+    df = pd.DataFrame(data)
+    df["date"] = df["datetime"].dt.date
+    daily_stats = []
+
+    for date, group in df.groupby("date"):
+        max_row = group.loc[group["room_temperature"].idxmax()]
+        min_row = group.loc[group["room_temperature"].idxmin()]
+        daily_stats.append(
+            {
+                "date": date,
+                "temp_max": float(max_row["room_temperature"]),
+                "temp_max_time": max_row["datetime"].strftime("%H:%M"),
+                "temp_min": float(min_row["room_temperature"]),
+                "temp_min_time": min_row["datetime"].strftime("%H:%M"),
+            }
+        )
+
+    daily_stats.sort(key=lambda x: x["date"])
+    return daily_stats
+
 @app.post("/api/aircon")
 async def create_aircon_data(
     data: AirconData,
@@ -444,6 +498,134 @@ def _resolve_history_window(
             pass
 
     return start_time, end_time, effective_range
+
+
+def _normalize_pressure_hpa(pressure: Optional[int]) -> Optional[float]:
+    if pressure is None:
+        return None
+    if pressure > 5000:
+        return round(pressure / 100.0, 1)
+    return float(pressure)
+
+
+def _format_record_row(record: database.DHTRecord) -> dict:
+    return {
+        "datetime": record.datetime.strftime("%Y-%m-%d %H:%M:%S"),
+        "device_id": record.device_id,
+        "temperature": record.temperature,
+        "humidity": record.humidity,
+        "pressure": _normalize_pressure_hpa(record.pressure),
+        "co2": record.co2,
+    }
+
+
+def _parse_record_datetime(value: str) -> datetime.datetime:
+    try:
+        return datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return datetime.datetime.fromisoformat(value)
+
+
+@app.get("/api/records")
+def get_sensor_records(
+    device: int = 1,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(database.get_db),
+):
+    if device < 1:
+        raise HTTPException(status_code=400, detail="device id must be >= 1")
+    if limit < 1 or limit > 500:
+        limit = 100
+    if offset < 0:
+        offset = 0
+
+    end_time = get_now_jst()
+    start_time = end_time - datetime.timedelta(days=7)
+    if start and end:
+        try:
+            start_time = _parse_record_datetime(start)
+            end_time = _parse_record_datetime(end)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid start or end datetime") from exc
+
+    if database.DB_MOCK:
+        rows = database.generate_mock_history_for_range(start_time, end_time, device)
+        rows.sort(key=lambda item: item["datetime"], reverse=True)
+        total = len(rows)
+        page = rows[offset : offset + limit]
+        records = [
+            {
+                "datetime": row["datetime"].strftime("%Y-%m-%d %H:%M:%S"),
+                "device_id": device,
+                "temperature": row.get("temperature"),
+                "humidity": row.get("humidity"),
+                "pressure": row.get("pressure"),
+                "co2": row.get("co2"),
+            }
+            for row in page
+        ]
+        return {"records": records, "total": total, "limit": limit, "offset": offset}
+
+    total = (
+        db.query(database.DHTRecord)
+        .filter(
+            database.DHTRecord.device_id == device,
+            database.DHTRecord.datetime >= start_time,
+            database.DHTRecord.datetime <= end_time,
+        )
+        .count()
+    )
+    rows = (
+        db.query(database.DHTRecord)
+        .filter(
+            database.DHTRecord.device_id == device,
+            database.DHTRecord.datetime >= start_time,
+            database.DHTRecord.datetime <= end_time,
+        )
+        .order_by(database.DHTRecord.datetime.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "records": [_format_record_row(row) for row in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.delete("/api/records")
+def delete_sensor_record(
+    device: int,
+    datetime_value: str = Query(..., alias="datetime"),
+    db: Session = Depends(database.get_db),
+):
+    if device < 1:
+        raise HTTPException(status_code=400, detail="device id must be >= 1")
+    try:
+        dt = _parse_record_datetime(datetime_value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid datetime") from exc
+
+    if database.DB_MOCK:
+        return {"status": "mock_ok", "deleted": True}
+
+    deleted = (
+        db.query(database.DHTRecord)
+        .filter(
+            database.DHTRecord.device_id == device,
+            database.DHTRecord.datetime == dt,
+        )
+        .delete(synchronize_session=False)
+    )
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="record not found")
+    db.commit()
+    return {"status": "ok", "deleted": True}
 
 
 @app.get("/api/history")
