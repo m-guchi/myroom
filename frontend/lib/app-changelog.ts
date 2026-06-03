@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.6.1",
+    date: "2026-05",
+    changes: [
+      "センサーカードの表示順をリロード後も保持",
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-05",
     changes: [
