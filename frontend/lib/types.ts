@@ -129,11 +129,23 @@ export function hasAirconData(data: AirconData | null | undefined): boolean {
 /** グラフ・日次記録に使うデバイス */
 export const PRIMARY_SENSOR_DEVICE_ID = 1;
 
-/** ダッシュボードカードに表示する屋内デバイス */
-export const DASHBOARD_SENSOR_DEVICE_IDS = [1, 2] as const;
+/** デバイス一覧取得前のフォールバック */
+export const FALLBACK_SENSOR_DEVICE_IDS = [1, 2] as const;
 
-/** グラフ上のエアコン（室温）用デバイスID */
+/** @deprecated API のデバイス一覧を使う。互換用フォールバックのみ */
+export const DASHBOARD_SENSOR_DEVICE_IDS = FALLBACK_SENSOR_DEVICE_IDS;
+
+/** グラフ用の仮想デバイスID（エアコン室温）。屋内センサー一覧からは除外する */
 export const AIRCON_CHART_DEVICE_ID = 3;
+
+/** /api/devices から屋内センサーの device_id 一覧を得る */
+export function getSensorDeviceIds(devices: DeviceInfo[]): number[] {
+  const ids = devices
+    .map((device) => device.id)
+    .filter((id) => id !== AIRCON_CHART_DEVICE_ID)
+    .sort((a, b) => a - b);
+  return ids.length > 0 ? ids : [...FALLBACK_SENSOR_DEVICE_IDS];
+}
 
 export const CHART_METRICS: ChartMetric[] = ["temperature", "humidity", "pressure", "co2"];
 

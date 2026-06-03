@@ -81,6 +81,26 @@ def get_device(device_id: int) -> Optional[Dict[str, Any]]:
     return None
 
 
+def ensure_device(device_id: int, name: Optional[str] = None) -> Dict[str, Any]:
+    """DB に出現した device_id を devices.json に自動登録する（未登録時のみ）。"""
+    if device_id < 1:
+        raise ValueError("device id must be >= 1")
+
+    devices = _load_config()
+    for device in devices:
+        if device["id"] == device_id:
+            return device
+
+    label = (name or f"デバイス {device_id}").strip() or f"デバイス {device_id}"
+    devices.append({"id": device_id, "name": label})
+    normalized = _normalize_devices(devices)
+    _write_config(normalized)
+    saved = get_device(device_id)
+    if saved is None:
+        raise ValueError("failed to register device")
+    return saved
+
+
 def save_device_name(device_id: int, name: str) -> Dict[str, Any]:
     if device_id < 1:
         raise ValueError("device id must be >= 1")

@@ -36,14 +36,16 @@ describe("chart-colors", () => {
 
   it("lists config items including separate aircon room and target", () => {
     const items = getChartColorConfigItems(
-      { 1: "リビング", 2: "寝室", [AIRCON_CHART_DEVICE_ID]: "寝室エアコン" },
+      { 1: "リビング", 2: "寝室", 4: "書斎", [AIRCON_CHART_DEVICE_ID]: "寝室エアコン" },
       "外気",
-      "寝室エアコン"
+      "寝室エアコン",
+      [1, 2, 4]
     );
 
     expect(items.map((item) => item.label)).toEqual([
       "リビング",
       "寝室",
+      "書斎",
       "寝室エアコン（室温）",
       "寝室エアコン（設定温度）",
       "外気",

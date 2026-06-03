@@ -14,6 +14,7 @@ interface ChartColorSettingsProps {
   open: boolean;
   colors: ChartColorSettings;
   deviceNames: Record<number, string>;
+  sensorDeviceIds?: readonly number[];
   outdoorName?: string | null;
   airconName?: string | null;
   onClose: () => void;
@@ -24,6 +25,7 @@ export function ChartColorSettings({
   open,
   colors,
   deviceNames,
+  sensorDeviceIds,
   outdoorName,
   airconName,
   onClose,
@@ -31,7 +33,12 @@ export function ChartColorSettings({
 }: ChartColorSettingsProps) {
   if (!open) return null;
 
-  const items = getChartColorConfigItems(deviceNames, outdoorName, airconName);
+  const items = getChartColorConfigItems(
+    deviceNames,
+    outdoorName,
+    airconName,
+    sensorDeviceIds
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">

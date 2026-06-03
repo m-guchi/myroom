@@ -25,6 +25,11 @@ if [[ ! -f "${INSTALL_DIR}/.env" ]]; then
   echo "Created ${INSTALL_DIR}/.env — edit before running."
 fi
 
+if [[ ! -f "${INSTALL_DIR}/sensors.json" ]]; then
+  cp "${SCRIPT_DIR}/sensors.json.example" "${INSTALL_DIR}/sensors.json"
+  echo "Created ${INSTALL_DIR}/sensors.json — edit MAC addresses and device_id."
+fi
+
 if ! id switchbot >/dev/null 2>&1; then
   useradd --system --home "${INSTALL_DIR}" --shell /usr/sbin/nologin switchbot
 fi
@@ -113,7 +118,7 @@ echo
 echo "Installed."
 echo
 echo "SwitchBot CO2:"
-echo "  1. Edit ${INSTALL_DIR}/.env (SWITCHBOT_MAC, MYROOM_API_URL)"
+echo "  1. Edit ${INSTALL_DIR}/sensors.json (MAC + device_id per sensor) and .env (MYROOM_API_URL)"
 echo "  2. Test: sudo ${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/switchbot_to_myroom.py --dry-run --debug"
 echo "  3. Start: sudo systemctl start ${SWITCHBOT_SERVICE}.timer"
 echo "  4. Logs: journalctl -u ${SWITCHBOT_SERVICE}.service -f"

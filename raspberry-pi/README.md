@@ -48,20 +48,40 @@ SwitchBot CO2 ──BLE──► Raspberry Pi Zero W ──HTTPS──► myroom
 | `.env.example` | ✅ |
 | `install.sh` | 任意（systemd 自動化用） |
 
-### `.env` の作成
+### `.env` と `sensors.json` の作成
 
-`.env.example` を複製して `.env` にリネームし、編集:
+`.env.example` を複製して `.env` にリネームし、`sensors.json.example` を `sensors.json` にコピーして編集します（`install.sh` でも自動作成されます）。
+
+**複数台（推奨）** — `sensors.json`:
+
+```json
+[
+  { "mac": "B0:E9:FE:B3:5F:B5", "device_id": 2, "name": "寝室" },
+  { "mac": "11:22:33:44:55:66", "device_id": 4, "name": "書斎" }
+]
+```
+
+- **mac**: SwitchBot アプリ → デバイス設定で確認（コロン区切り）
+- **device_id**: MyRoom の `?device=` と一致させる（DHT=`1`、1台目 CO2=`2` など重複不可）
+- **name**: 初回 POST 時に MyRoom へ表示名として登録（任意）。`data/devices.json` への手動追記は不要
+- **type**: `co2`（CO2センサー）/ `meter`（温湿度計・防水温湿度計）/ `auto`（省略時・自動判定）
+
+`.env`（API 共通）:
 
 ```env
-SWITCHBOT_MAC=B0:E9:FE:B3:5F:B5
 MYROOM_API_URL=https://myroom.gucchii.com/api/sensor
-MYROOM_DEVICE_ID=2
 SCAN_TIMEOUT=90
 HTTP_TIMEOUT=30
 ```
 
-- **SWITCHBOT_MAC**: SwitchBot アプリ → デバイス設定で確認
-- **MYROOM_DEVICE_ID**: 既存 DHT センサー（`device=1`）と区別するため `2` 推奨
+**1台だけ（従来）** — `.env` に MAC を直接書く方法も利用できます:
+
+```env
+SWITCHBOT_MAC=B0:E9:FE:B3:5F:B5
+MYROOM_DEVICE_ID=2
+```
+
+> `sensors.json` がある場合はそちらが優先されます。1台運用で `sensors.json` を使わない場合はファイルを削除するか、上記の従来形式のみにしてください。
 
 ---
 
@@ -263,14 +283,19 @@ CO2 センサーからは **気圧を送りません**（DB には `NULL`）。
 
 ## 環境変数一覧
 
-| 変数 | 説明 | 例 |
-|------|------|-----|
-| `SWITCHBOT_MAC` | センサー MAC（必須） | `B0:E9:FE:B3:5F:B5` |
+| 変数 / ファイル | 説明 | 例 |
+|----------------|------|-----|
+| `sensors.json` | 複数台の MAC と `device_id`（推奨） | 上記 JSON |
+| `SWITCHBOT_SENSORS_FILE` | センサー定義ファイルパス | `sensors.json` |
+| `SWITCHBOT_SENSORS_JSON` | 同上を JSON 文字列で指定 | `[{"mac":"...","device_id":2}]` |
+| `SWITCHBOT_MAC` | 1台用 MAC（レガシー） | `B0:E9:FE:B3:5F:B5` |
 | `MYROOM_API_URL` | POST 先 URL | `https://myroom.gucchii.com/api/sensor` |
-| `MYROOM_DEVICE_ID` | `device` クエリ | `2` |
+| `MYROOM_DEVICE_ID` | 1台用 `device` クエリ | `2` |
 | `SCAN_TIMEOUT` | BLE 待ち秒数（秒） | `90`（長い場合は `300`） |
 | `HTTP_TIMEOUT` | HTTP タイムアウト（秒） | `30` |
-| `MATCH_ANY_SWITCHBOT` | `1` で MAC フィルタ無効 | `0`（通常） |
+| `PARTIAL_SCAN_GRACE_SEC` | 1台見つかった後、他を待つ秒数 | `20` |
+| `REQUIRE_ALL_SENSORS` | `1` で全台必須（未検出なら失敗） | `0`（通常・部分送信可） |
+| `MATCH_ANY_SWITCHBOT` | `1` で MAC フィルタ無効（1台のみ） | `0`（通常） |
 
 ---
 
