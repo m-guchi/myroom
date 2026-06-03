@@ -121,7 +121,8 @@ EOF
 
 chmod 600 "${INSTALL_DIR}/.env"
 chown -R switchbot:switchbot "${INSTALL_DIR}"
-chown root:root "${INSTALL_DIR}/.env" "${INSTALL_DIR}/run-aircon-collector.sh"
+# aircon-myroom runs as switchbot; root-owned .env breaks load_dotenv / manual runs
+chown root:root "${INSTALL_DIR}/run-aircon-collector.sh"
 
 systemctl daemon-reload
 systemctl enable "${SWITCHBOT_SERVICE}.timer"

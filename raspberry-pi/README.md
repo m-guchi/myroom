@@ -313,6 +313,7 @@ CO2 センサーからは **気圧を送りません**（DB には `NULL`）。
 | `No route to host`（API） | Pi の IPv4 設定ミス | `192.168.0.x` 固定 IP を解除、DHCP で `192.168.2.x` を取得 |
 | API 422 `pressure` required | 本番 API が旧版 | `main` デプロイ + `pm2 restart myroom-backend` |
 | venv `誤ったインタプリタ` | フォルダ移動後の venv | `rm -rf venv && python3 -m venv venv` |
+| `Permission denied: '/opt/myroom-pi/.env'`（aircon） | `.env` が `root:root` のまま（旧 install.sh） | `sudo chown switchbot:switchbot /opt/myroom-pi/.env && sudo chmod 600 /opt/myroom-pi/.env` のあと `sudo systemctl start aircon-myroom.service` |
 
 ### btmon で SwitchBot が見えているか
 

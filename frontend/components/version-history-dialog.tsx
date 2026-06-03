@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { APP_CHANGELOG } from "@/lib/app-changelog";
+import { APP_CHANGELOG, formatChangelogDate } from "@/lib/app-changelog";
 import { APP_VERSION } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +47,9 @@ export function VersionHistoryDialog({ open, onClose }: VersionHistoryDialogProp
                       v{entry.version}
                     </h3>
                     {entry.date && (
-                      <span className="text-xs text-muted-foreground">{entry.date}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatChangelogDate(entry.date)}
+                      </span>
                     )}
                     {isCurrent && (
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground">
