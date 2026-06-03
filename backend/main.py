@@ -241,6 +241,7 @@ def update_aircon_unit_name(
 async def create_sensor_data(
     data: SensorData,
     device: int = 1,
+    device_name: Optional[str] = Query(None, description="初回登録時の表示名（省略可）"),
     db: Session = Depends(database.get_db)
 ):
     """
@@ -271,6 +272,7 @@ async def create_sensor_data(
         
         db.add(record)
         db.commit()
+        device_config.ensure_device(device, device_name)
         return {"status": "ok"}
     except Exception as e:
         db.rollback()

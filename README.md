@@ -229,6 +229,7 @@ curl -X POST "https://myroom.gucchii.com/api/sensor?device=2" \
 
 - `temperature` / `humidity` / `pressure` / `co2` の **いずれか1つ以上** が必須
 - 複数デバイスは `device` クエリで区別（例: DHT=`1`、SwitchBot CO2=`2`）
+- **SwitchBot 複数台**: Raspberry Pi の `sensors.json` に MAC と `device_id` を列挙（1回の BLE スキャンでまとめて POST）。新しい `device_id` は初回 POST で自動登録され、ダッシュボードにも自動表示
 - CO2 値は UI のセンサーカードに ppm として表示
 
 **Raspberry Pi のセットアップ**（WinSCP、SSH、BLE/`btmon`、systemd、トラブルシューティング）は  

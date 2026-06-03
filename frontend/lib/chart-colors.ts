@@ -46,7 +46,9 @@ export function deviceColorKey(deviceId: number): string {
   return `device:${deviceId}`;
 }
 
-export function buildDefaultChartColors(): ChartColorSettings {
+export function buildDefaultChartColors(
+  sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
+): ChartColorSettings {
   const colors: ChartColorSettings = {
     [deviceColorKey(1)]: "#3498db",
     [deviceColorKey(2)]: "#e67e22",
@@ -54,6 +56,14 @@ export function buildDefaultChartColors(): ChartColorSettings {
     [OUTDOOR_COLOR_KEY]: "#adb5bd",
     [AIRCON_TARGET_COLOR_KEY]: "#9b59b6",
   };
+
+  sensorDeviceIds.forEach((deviceId, index) => {
+    const key = deviceColorKey(deviceId);
+    if (colors[key] == null) {
+      colors[key] = CHART_COLOR_PALETTE[index % CHART_COLOR_PALETTE.length];
+    }
+  });
+
   return colors;
 }
 
@@ -114,12 +124,13 @@ export function getAirconTargetChartColor(colors: ChartColorSettings): string {
 export function getChartColorConfigItems(
   deviceNames: Record<number, string>,
   outdoorName?: string | null,
-  airconName?: string | null
+  airconName?: string | null,
+  sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
 ): ChartColorConfigItem[] {
   const airconLabel = airconName ?? "エアコン";
   const items: ChartColorConfigItem[] = [];
 
-  for (const deviceId of DASHBOARD_SENSOR_DEVICE_IDS) {
+  for (const deviceId of sensorDeviceIds) {
     items.push({
       key: deviceColorKey(deviceId),
       label: deviceNames[deviceId] ?? `デバイス ${deviceId}`,

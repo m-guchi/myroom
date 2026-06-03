@@ -28,7 +28,7 @@ import { fetchDashboardData, fetchDevices, fetchOutdoorLocation, fetchAirconUnit
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
   buildDefaultDisplayOrder,
-  loadDisplayOrder,
+  normalizeDisplayOrder,
   saveDisplayOrder,
   type DisplayOrderItem,
 } from "@/lib/display-order";
@@ -42,8 +42,8 @@ import {
 import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
-  DASHBOARD_SENSOR_DEVICE_IDS,
   formatAirconMode,
+  getSensorDeviceIds,
   isAirconPowerOff,
   PRIMARY_SENSOR_DEVICE_ID,
   type AirconData,
@@ -286,7 +286,7 @@ export function MyRoomDashboard() {
   const [displayOrderOpen, setDisplayOrderOpen] = useState(false);
   const [chartColorOpen, setChartColorOpen] = useState(false);
   const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>(() =>
-    buildDefaultDisplayOrder(DASHBOARD_SENSOR_DEVICE_IDS)
+    buildDefaultDisplayOrder()
   );
   const [chartColors, setChartColors] = useState<ChartColorSettings>(() =>
     buildDefaultChartColors()
@@ -303,9 +303,11 @@ export function MyRoomDashboard() {
     airconUnits.find((unit) => unit.ac_id === activeAirconId)?.name ??
     "エアコン";
 
+  const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
+
   const chartDeviceIds = useMemo(
-    () => [...DASHBOARD_SENSOR_DEVICE_IDS, AIRCON_CHART_DEVICE_ID] as const,
-    []
+    () => [...sensorDeviceIds, AIRCON_CHART_DEVICE_ID],
+    [sensorDeviceIds]
   );
 
   const {
@@ -316,7 +318,7 @@ export function MyRoomDashboard() {
     resetAndLoad,
     refreshLatest,
     ensureVisibleRangeLoaded,
-  } = useChartHistory(DASHBOARD_SENSOR_DEVICE_IDS, viewRange, {
+  } = useChartHistory(sensorDeviceIds, viewRange, {
     airconAcId: activeAirconId,
     airconChartDeviceId: AIRCON_CHART_DEVICE_ID,
     pollIntervalMs: 30000,
@@ -324,7 +326,7 @@ export function MyRoomDashboard() {
 
   const deviceNames = useMemo(() => {
     const names: Record<number, string> = {};
-    for (const deviceId of DASHBOARD_SENSOR_DEVICE_IDS) {
+    for (const deviceId of sensorDeviceIds) {
       const device = devices.find((item) => item.id === deviceId);
       names[deviceId] =
         device?.name ??
@@ -332,15 +334,18 @@ export function MyRoomDashboard() {
     }
     names[AIRCON_CHART_DEVICE_ID] = airconChartTitle;
     return names;
-  }, [devices, airconChartTitle]);
+  }, [devices, sensorDeviceIds, airconChartTitle]);
 
   useEffect(() => {
     if (localStorage.getItem(AUTH_KEY) === "true") {
       setIsAuthenticated(true);
     }
-    setDisplayOrder(loadDisplayOrder(DASHBOARD_SENSOR_DEVICE_IDS));
     setChartColors(loadChartColors());
   }, []);
+
+  useEffect(() => {
+    setDisplayOrder((prev) => normalizeDisplayOrder(prev, sensorDeviceIds));
+  }, [sensorDeviceIds]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -363,7 +368,8 @@ export function MyRoomDashboard() {
       if (showChartLoading) setChartLoading(true);
       try {
         const data = await fetchDashboardData(
-          airconLatest?.ac_id ?? airconSettingsId
+          airconLatest?.ac_id ?? airconSettingsId,
+          sensorDeviceIds
         );
         setLatestByDevice(data.latestByDevice);
         setLatestData(data.latest);
@@ -379,7 +385,7 @@ export function MyRoomDashboard() {
         if (showChartLoading) setChartLoading(false);
       }
     },
-    [resetAndLoad, airconLatest?.ac_id, airconSettingsId]
+    [resetAndLoad, airconLatest?.ac_id, airconSettingsId, sensorDeviceIds]
   );
 
   useEffect(() => {
@@ -406,13 +412,13 @@ export function MyRoomDashboard() {
 
   const maxDailyStatsDays = useMemo(() => {
     const dates = new Set<string>();
-    for (const deviceId of [...DASHBOARD_SENSOR_DEVICE_IDS, AIRCON_CHART_DEVICE_ID]) {
+    for (const deviceId of [...sensorDeviceIds, AIRCON_CHART_DEVICE_ID]) {
       for (const day of dailyStatsByDevice[deviceId] ?? []) {
         dates.add(String(day.date).slice(0, 10));
       }
     }
     return dates.size;
-  }, [dailyStatsByDevice]);
+  }, [dailyStatsByDevice, sensorDeviceIds]);
 
   const dailyStatsDeviceIds = useMemo(() => {
     const ids: number[] = [];
@@ -669,6 +675,7 @@ export function MyRoomDashboard() {
         open={chartColorOpen}
         colors={chartColors}
         deviceNames={deviceNames}
+        sensorDeviceIds={sensorDeviceIds}
         outdoorName={outdoorLocation?.name}
         airconName={airconTitle}
         onClose={() => setChartColorOpen(false)}

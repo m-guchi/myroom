@@ -19,6 +19,18 @@ def test_device_config_save_and_list(data_dir):
     ]
 
 
+def test_device_config_ensure_registers_new_device(data_dir):
+    created = device_config.ensure_device(4, "書斎")
+    assert created == {"id": 4, "name": "書斎"}
+
+    devices = device_config.list_devices(discovered_ids=[4])
+    assert any(device["id"] == 4 and device["name"] == "書斎" for device in devices)
+
+    # 既存デバイスは上書きしない
+    again = device_config.ensure_device(4, "別名")
+    assert again["name"] == "書斎"
+
+
 def test_device_config_rejects_invalid_name(data_dir):
     try:
         device_config.save_device_name(1, "  ")

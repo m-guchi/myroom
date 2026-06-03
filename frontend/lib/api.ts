@@ -1,6 +1,7 @@
 import {
   AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
+  FALLBACK_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
   hasAirconData,
   type AirconData,
@@ -251,11 +252,14 @@ export async function fetchLatestBatch(
   return latestByDevice;
 }
 
-export async function fetchDashboardData(acId = 1) {
+export async function fetchDashboardData(
+  acId = 1,
+  sensorDeviceIds: readonly number[] = FALLBACK_SENSOR_DEVICE_IDS
+) {
   const [latestByDevice, dailyStatsByDevice, airconDailyStats, airconLatest] =
     await Promise.allSettled([
-      fetchLatestBatch(DASHBOARD_SENSOR_DEVICE_IDS),
-      fetchDailyStatsBatch(DASHBOARD_SENSOR_DEVICE_IDS),
+      fetchLatestBatch(sensorDeviceIds),
+      fetchDailyStatsBatch(sensorDeviceIds),
       fetchAirconDailyStats(acId),
       fetchAirconLatest(acId),
     ]);

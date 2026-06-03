@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.6.0",
+    date: "2026-05",
+    changes: [
+      "SwitchBot センサーを複数台対応（CO2・防水温湿度計）",
+      "新しい device_id は初回送信時に自動登録",
+      "ダッシュボードが API のデバイス一覧からセンサーを表示",
+    ],
+  },
+  {
     version: "1.5.1",
     date: "2026-05",
     changes: [
