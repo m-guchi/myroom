@@ -798,7 +798,7 @@ export function EnvironmentChart({
                   type="linear"
                   dataKey={outdoorKey as string}
                   stroke={outdoorLineColor}
-                  strokeWidth={2}
+                  strokeWidth={1.5}
                   dot={false}
                   name="屋外"
                   isAnimationActive={false}
@@ -812,7 +812,7 @@ export function EnvironmentChart({
                   type="linear"
                   dataKey={deviceMetricKey(deviceId, chartMetric)}
                   stroke={getDeviceChartColor(chartColors, deviceId)}
-                  strokeWidth={3}
+                  strokeWidth={1.5}
                   dot={false}
                   name={deviceNames[deviceId] ?? `デバイス ${deviceId}`}
                   isAnimationActive={false}
