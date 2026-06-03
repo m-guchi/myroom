@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildDefaultDisplayOrder,
   getChartDeviceSeriesOrder,
+  loadDisplayOrder,
   moveDisplayOrderItem,
   normalizeDisplayOrder,
   orderItemKey,
+  saveDisplayOrder,
 } from "@/lib/display-order";
 
 describe("display-order", () => {
@@ -42,6 +44,37 @@ describe("display-order", () => {
       "outdoor",
       "aircon",
     ]);
+  });
+
+  it("loads saved order from localStorage", () => {
+    const backing: Record<string, string> = {};
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => backing[key] ?? null,
+        setItem: (key: string, value: string) => {
+          backing[key] = value;
+        },
+        removeItem: (key: string) => {
+          delete backing[key];
+        },
+      },
+    });
+
+    saveDisplayOrder([
+      { type: "device", deviceId: 2 },
+      { type: "outdoor" },
+      { type: "device", deviceId: 1 },
+      { type: "aircon" },
+    ]);
+
+    expect(loadDisplayOrder([1, 2]).map(orderItemKey)).toEqual([
+      "device:2",
+      "outdoor",
+      "device:1",
+      "aircon",
+    ]);
+
+    vi.unstubAllGlobals();
   });
 
   it("derives chart device order", () => {

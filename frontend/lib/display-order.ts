@@ -10,6 +10,11 @@ export type DisplayOrderItem =
 
 const STORAGE_KEY = "myroom_display_order";
 
+function getOrderStorage(): Pick<Storage, "getItem" | "setItem"> | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage;
+}
+
 export function orderItemKey(item: DisplayOrderItem): string {
   if (item.type === "device") return `device:${item.deviceId}`;
   return item.type;
@@ -64,12 +69,13 @@ export function normalizeDisplayOrder(
 export function loadDisplayOrder(
   sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
 ): DisplayOrderItem[] {
-  if (typeof window === "undefined") {
+  const storage = getOrderStorage();
+  if (!storage) {
     return buildDefaultDisplayOrder(sensorDeviceIds);
   }
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return buildDefaultDisplayOrder(sensorDeviceIds);
 
     const parsed = JSON.parse(raw) as unknown;
@@ -86,8 +92,9 @@ export function loadDisplayOrder(
 }
 
 export function saveDisplayOrder(order: DisplayOrderItem[]): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(order.map(orderItemKey)));
+  const storage = getOrderStorage();
+  if (!storage) return;
+  storage.setItem(STORAGE_KEY, JSON.stringify(order.map(orderItemKey)));
 }
 
 export function getChartDeviceSeriesOrder(order: DisplayOrderItem[]): number[] {

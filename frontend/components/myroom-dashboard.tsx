@@ -28,7 +28,7 @@ import { fetchDashboardData, fetchDevices, fetchOutdoorLocation, fetchAirconUnit
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
   buildDefaultDisplayOrder,
-  normalizeDisplayOrder,
+  loadDisplayOrder,
   saveDisplayOrder,
   type DisplayOrderItem,
 } from "@/lib/display-order";
@@ -304,6 +304,7 @@ export function MyRoomDashboard() {
     "エアコン";
 
   const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
+  const sensorDeviceIdsKey = sensorDeviceIds.join(",");
 
   const chartDeviceIds = useMemo(
     () => [...sensorDeviceIds, AIRCON_CHART_DEVICE_ID],
@@ -344,8 +345,8 @@ export function MyRoomDashboard() {
   }, []);
 
   useEffect(() => {
-    setDisplayOrder((prev) => normalizeDisplayOrder(prev, sensorDeviceIds));
-  }, [sensorDeviceIds]);
+    setDisplayOrder(loadDisplayOrder(sensorDeviceIds));
+  }, [sensorDeviceIdsKey]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
