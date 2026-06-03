@@ -1,27 +1,41 @@
 export interface ChangelogEntry {
   version: string;
+  /** ISO 形式: YYYY-MM-DD（推奨）または YYYY-MM */
   date?: string;
   changes: string[];
+}
+
+/** 更新履歴の日付を表示用に整形（YYYY-MM-DD → 2026年6月4日） */
+export function formatChangelogDate(date: string): string {
+  const full = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (full) {
+    return `${Number(full[1])}年${Number(full[2])}月${Number(full[3])}日`;
+  }
+  const monthOnly = /^(\d{4})-(\d{2})$/.exec(date);
+  if (monthOnly) {
+    return `${Number(monthOnly[1])}年${Number(monthOnly[2])}月`;
+  }
+  return date;
 }
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.6.2",
-    date: "2026-06",
+    date: "2026-06-04",
     changes: [
       "Raspberry Pi エアコン収集で .env の Permission denied を修正（install.sh の所有者設定）",
     ],
   },
   {
     version: "1.6.1",
-    date: "2026-05",
+    date: "2026-06-03",
     changes: [
       "センサーカードの表示順をリロード後も保持",
     ],
   },
   {
     version: "1.6.0",
-    date: "2026-05",
+    date: "2026-06-03",
     changes: [
       "SwitchBot センサーを複数台対応（CO2・防水温湿度計）",
       "新しい device_id は初回送信時に自動登録",
@@ -30,7 +44,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.5.1",
-    date: "2026-05",
+    date: "2026-05-31",
     changes: [
       "グラフを30秒ごとに自動更新して最新データを表示",
       "エアコン停止中は設定温度グラフを表示しない（補完なし）",
@@ -38,7 +52,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.5.0",
-    date: "2026-05",
+    date: "2026-05-31",
     changes: [
       "グラフの色を24色パレットから自由に設定",
       "エアコンの室温と設定温度を別々の色で設定可能に",
@@ -49,7 +63,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.4.0",
-    date: "2026-05",
+    date: "2026-05-31",
     changes: [
       "最近の記録を複数センサー（リビング・寝室）対応",
       "エアコン室温の日次集計を最近の記録に追加",
@@ -61,7 +75,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.3.1",
-    date: "2026-05",
+    date: "2026-05-31",
     changes: [
       "エアコン履歴をグラフに表示（室温・設定温度）",
       "グラフ凡例の表示切替（目のアイコン）",
@@ -71,7 +85,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.3.0",
-    date: "2026-05",
+    date: "2026-05-31",
     changes: [
       "AirCloud Home（白くまくん）連携でエアコン状態を取得",
       "ダッシュボードにエアコンカードを追加",
@@ -80,10 +94,12 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.2.0",
+    date: "2026-05-31",
     changes: ["ダークモードに対応"],
   },
   {
     version: "1.1.0",
+    date: "2026-05-31",
     changes: [
       "複数センサー（リビング・寝室）のグラフ表示",
       "屋外気象データの表示",
@@ -92,6 +108,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.0.0",
+    date: "2026-05-30",
     changes: [
       "温度・湿度・気圧・CO2 のダッシュボード",
       "履歴グラフと日次記録",
