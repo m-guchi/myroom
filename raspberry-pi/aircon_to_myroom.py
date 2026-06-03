@@ -92,8 +92,14 @@ def post_to_myroom(
     return response.json()
 
 
+def _load_dotenv_if_readable() -> None:
+    env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.isfile(env_file) and os.access(env_file, os.R_OK):
+        load_dotenv(env_file)
+
+
 def load_config() -> argparse.Namespace:
-    load_dotenv()
+    _load_dotenv_if_readable()
 
     parser = argparse.ArgumentParser(description="AirCloud Home (白くまくん) -> MyRoom")
     parser.add_argument(

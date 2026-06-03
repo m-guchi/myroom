@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.6.2",
+    date: "2026-06",
+    changes: [
+      "Raspberry Pi エアコン収集で .env の Permission denied を修正（install.sh の所有者設定）",
+    ],
+  },
+  {
     version: "1.6.1",
     date: "2026-05",
     changes: [
