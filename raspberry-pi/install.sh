@@ -20,14 +20,27 @@ cp "${SCRIPT_DIR}/aircloudhome_client.py" "${INSTALL_DIR}/"
 cp "${SCRIPT_DIR}/run-aircon-collector.sh" "${INSTALL_DIR}/"
 cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
 
+# 作業ディレクトリの .env / sensors.json を優先（無ければ *.example）
+_env_source="${SCRIPT_DIR}/.env"
+if [[ ! -f "${_env_source}" ]]; then
+  _env_source="${SCRIPT_DIR}/.env.example"
+fi
 if [[ ! -f "${INSTALL_DIR}/.env" ]]; then
-  cp "${SCRIPT_DIR}/.env.example" "${INSTALL_DIR}/.env"
-  echo "Created ${INSTALL_DIR}/.env — edit before running."
+  cp "${_env_source}" "${INSTALL_DIR}/.env"
+  echo "Created ${INSTALL_DIR}/.env from $(basename "${_env_source}")."
+else
+  echo "Keeping existing ${INSTALL_DIR}/.env"
 fi
 
+_sensors_source="${SCRIPT_DIR}/sensors.json"
+if [[ ! -f "${_sensors_source}" ]]; then
+  _sensors_source="${SCRIPT_DIR}/sensors.json.example"
+fi
 if [[ ! -f "${INSTALL_DIR}/sensors.json" ]]; then
-  cp "${SCRIPT_DIR}/sensors.json.example" "${INSTALL_DIR}/sensors.json"
-  echo "Created ${INSTALL_DIR}/sensors.json — edit MAC addresses and device_id."
+  cp "${_sensors_source}" "${INSTALL_DIR}/sensors.json"
+  echo "Created ${INSTALL_DIR}/sensors.json from $(basename "${_sensors_source}")."
+else
+  echo "Keeping existing ${INSTALL_DIR}/sensors.json"
 fi
 
 if ! id switchbot >/dev/null 2>&1; then
@@ -118,7 +131,7 @@ echo
 echo "Installed."
 echo
 echo "SwitchBot CO2:"
-echo "  1. Edit ${INSTALL_DIR}/sensors.json (MAC + device_id per sensor) and .env (MYROOM_API_URL)"
+echo "  1. If needed, edit ${INSTALL_DIR}/sensors.json and .env (copied from this directory when missing)"
 echo "  2. Test: sudo ${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/switchbot_to_myroom.py --dry-run --debug"
 echo "  3. Start: sudo systemctl start ${SWITCHBOT_SERVICE}.timer"
 echo "  4. Logs: journalctl -u ${SWITCHBOT_SERVICE}.service -f"

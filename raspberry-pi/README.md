@@ -50,7 +50,8 @@ SwitchBot CO2 ──BLE──► Raspberry Pi Zero W ──HTTPS──► myroom
 
 ### `.env` と `sensors.json` の作成
 
-`.env.example` を複製して `.env` にリネームし、`sensors.json.example` を `sensors.json` にコピーして編集します（`install.sh` でも自動作成されます）。
+作業ディレクトリ（`~/myroom-api` 等）に **`.env` と `sensors.json` を用意**してから `install.sh` を実行するのがおすすめです。  
+初回インストール時、`/opt/myroom-pi/` に無いファイルだけ、**同ディレクトリの実ファイル → 無ければ `*.example`** の順でコピーされます。既にある設定は上書きしません。
 
 **複数台（推奨）** — `sensors.json`:
 
