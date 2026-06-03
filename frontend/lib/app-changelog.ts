@@ -20,6 +20,14 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.7.0",
+    date: "2026-06-04",
+    changes: [
+      "更新履歴の日付を年月日で表示（例: 2026年6月4日）",
+      "環境グラフのセンサー・屋外気温の線を細く表示（1.5px）",
+    ],
+  },
+  {
     version: "1.6.2",
     date: "2026-06-04",
     changes: [
