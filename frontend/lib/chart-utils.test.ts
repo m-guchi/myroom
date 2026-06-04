@@ -5,6 +5,7 @@ import {
   buildAirconTargetChartSeries,
   clampDomainOffset,
   computeChartDomain,
+  computeDomainOffsetForSelectionTime,
   downsampleHistoryForChart,
   downsampleMultiDeviceHistoryForChart,
   filterHistoryForDomain,
@@ -67,6 +68,29 @@ describe("computeChartDomain", () => {
     const selectionTime = getSelectionTime(history, domain);
 
     expect(selectionTime).toBe(3000);
+  });
+});
+
+describe("computeDomainOffsetForSelectionTime", () => {
+  it("places the selection cursor at the requested timestamp", () => {
+    const history = [makePoint(1000, 20), makePoint(3000, 22)];
+    const viewRange = "day" as const;
+    const offset = computeDomainOffsetForSelectionTime(history, viewRange, 3000);
+    const domain = computeChartDomain(history, viewRange, offset) as [number, number];
+
+    expect(getSelectionTime(history, domain)).toBe(3000);
+  });
+
+  it("keeps the same selection time after switching view range", () => {
+    const history = [makePoint(1000, 20), makePoint(5000, 22)];
+    const selectionTime = 2500;
+    const dayOffset = computeDomainOffsetForSelectionTime(history, "day", selectionTime);
+    const dayDomain = computeChartDomain(history, "day", dayOffset) as [number, number];
+    expect(getSelectionTime(history, dayDomain)).toBe(selectionTime);
+
+    const weekOffset = computeDomainOffsetForSelectionTime(history, "week", selectionTime);
+    const weekDomain = computeChartDomain(history, "week", weekOffset) as [number, number];
+    expect(getSelectionTime(history, weekDomain)).toBe(selectionTime);
   });
 });
 

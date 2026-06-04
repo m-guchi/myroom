@@ -28,6 +28,7 @@ import {
 import {
   clampDomainOffset,
   computeChartDomain,
+  computeDomainOffsetForSelectionTime,
   computeVisibleYDomain,
   buildAirconTargetChartSegments,
   type AirconTargetChartPoint,
@@ -271,6 +272,7 @@ export function EnvironmentChart({
   const chartRef = useRef<HTMLDivElement>(null);
   const dragDomainRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const preservedSelectionTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
     setOutdoorVisible(false);
@@ -282,7 +284,14 @@ export function EnvironmentChart({
   }, [domainOffset]);
 
   useEffect(() => {
-    const nextOffset = getMaxPositiveDomainOffset(viewRange);
+    const preserved = preservedSelectionTimeRef.current;
+    const nextOffset =
+      preserved != null && historyData.length
+        ? computeDomainOffsetForSelectionTime(historyData, viewRange, preserved, {
+            allowPastExtension: !noMoreOlderData,
+            noMoreOlderData,
+          })
+        : getMaxPositiveDomainOffset(viewRange);
     dragDomainRef.current = nextOffset;
     setDomainOffset(nextOffset);
   }, [viewRange, historyEpoch]);
@@ -301,14 +310,22 @@ export function EnvironmentChart({
     []
   );
 
-  const scheduleDomainOffset = useCallback((nextOffset: number) => {
-    dragDomainRef.current = nextOffset;
-    if (rafRef.current != null) return;
-    rafRef.current = requestAnimationFrame(() => {
-      setDomainOffset(dragDomainRef.current);
-      rafRef.current = null;
-    });
-  }, []);
+  const scheduleDomainOffset = useCallback(
+    (nextOffset: number) => {
+      dragDomainRef.current = nextOffset;
+      if (historyData.length) {
+        const domain = computeChartDomain(historyData, viewRange, nextOffset);
+        const t = getSelectionTime(historyData, domain);
+        if (t != null) preservedSelectionTimeRef.current = t;
+      }
+      if (rafRef.current != null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        setDomainOffset(dragDomainRef.current);
+        rafRef.current = null;
+      });
+    },
+    [historyData, viewRange]
+  );
 
   const currentDomain = useMemo(
     () => computeChartDomain(historyData, viewRange, domainOffset),
@@ -583,9 +600,10 @@ export function EnvironmentChart({
   const unit = METRIC_UNITS[chartMetric];
 
   const handleViewRangeChange = (range: ChartViewRange) => {
-    const nextOffset = getMaxPositiveDomainOffset(range);
-    dragDomainRef.current = nextOffset;
-    setDomainOffset(nextOffset);
+    if (historyData.length && currentDomain[0] !== "dataMin") {
+      const t = getSelectionTime(historyData, currentDomain);
+      if (t != null) preservedSelectionTimeRef.current = t;
+    }
     onViewRangeChange(range);
   };
 
