@@ -20,6 +20,13 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.7.1",
+    date: "2026-06-05",
+    changes: [
+      "表示時間範囲（日・週・月・年）を切り替えても、グラフで選択した日時を保持",
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-06-04",
     changes: [

@@ -34,6 +34,27 @@ export function getMaxPositiveDomainOffset(viewRange: ChartViewRange): number {
   return Math.max(0, windowMs * (1 - SELECTION_TIME_RATIO) - rightPadding);
 }
 
+/** 指定した選択時刻がカーソル位置（90%）に来る domainOffset を求める */
+export function computeDomainOffsetForSelectionTime(
+  historyData: HistoryPoint[],
+  viewRange: ChartViewRange,
+  selectionTime: number,
+  options?: { allowPastExtension?: boolean; noMoreOlderData?: boolean }
+): number {
+  if (!historyData.length) return 0;
+
+  const dataMaxTime = historyData[historyData.length - 1].datetimeObj;
+  const windowMs = getViewRangeMs(viewRange);
+  const rightPadding = windowMs * 0.03;
+  const rawOffset =
+    selectionTime -
+    dataMaxTime -
+    rightPadding +
+    windowMs * (1 - SELECTION_TIME_RATIO);
+
+  return clampDomainOffset(historyData, viewRange, rawOffset, 0, options);
+}
+
 export function computeChartDomain(
   historyData: HistoryPoint[],
   viewRange: ChartViewRange,
