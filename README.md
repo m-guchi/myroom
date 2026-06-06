@@ -281,7 +281,7 @@ python3 migrate_db.py   # aircon テーブルを作成
 - **死活監視用 API**: `/api/health` が `GET` / `HEAD` で `200 OK` を返す
 - **ログイン管理**:
   - デフォルトパスワード: `admin`
-  - デプロイ時の変更: GitHub Secrets の `VITE_APP_PASSWORD`（ビルド時に `NEXT_PUBLIC_APP_PASSWORD` として埋め込み）
+  - デプロイ時の変更: 1Password の `app-password`（ビルド時に `NEXT_PUBLIC_APP_PASSWORD` として埋め込み）
 
 ## API 概要
 
@@ -336,13 +336,39 @@ python3 migrate_pressure_to_hpa.py
 
 ## 本番環境へのデプロイ
 
-### 1. GitHub Secrets の設定
+### 1. 1Password の設定
 
-以下の変数をリポジトリの Secrets に設定してください。
+デプロイ用の秘密情報は 1Password で管理し、GitHub Actions から `1password/load-secrets-action` で読み込みます。
 
-- `VITE_APP_PASSWORD`: 画面ログイン用のパスワード
-- `SSH_PRIVATE_KEY`: サーバー接続用秘密鍵
-- `HOST` / `USERNAME` / `SSH_PORT` / `TARGET_DIR`: サーバー接続情報
+#### 1-1. 1Password にデプロイ用アイテムを作成
+
+保管庫名 `apps` に、アイテム名 `MyRoom` を作成し、以下のフィールドを登録してください。
+
+| フィールド名 | 内容 |
+|-------------|------|
+| `app-password` | 画面ログイン用パスワード |
+| `ssh-private-key` | サーバー接続用 SSH 秘密鍵（OpenSSH 形式） |
+| `host` | サーバーのホスト名または IP |
+| `username` | SSH ユーザー名 |
+| `ssh-port` | SSH ポート番号 |
+| `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
+
+Vault 名やアイテム名を変える場合は、`.github/deploy.env.tpl` の `op://...` 参照も合わせて更新してください。
+
+#### 1-2. Service Account を作成
+
+1. 1Password で Service Account を作成し、`apps` 保管庫への読み取り権限を付与
+2. 発行されたトークンを GitHub リポジトリの Secret に登録
+
+| GitHub Secret | 内容 |
+|---------------|------|
+| `OP_SERVICE_ACCOUNT_TOKEN` | 1Password Service Account のトークン（これだけ GitHub に残す） |
+
+以前 GitHub Secrets に登録していた `VITE_APP_PASSWORD` / `SSH_PRIVATE_KEY` / `HOST` などは、1Password へ移行後に削除できます。
+
+#### 1-3. 本番サーバーの `.env`
+
+rsync では `.env` を転送しません。DB 接続情報などサーバー固有の設定は、引き続き本番サーバー上の `.env` で管理してください。
 
 ### 2. デプロイフロー
 

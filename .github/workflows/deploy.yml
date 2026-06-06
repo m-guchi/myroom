@@ -10,6 +10,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: ".github/deploy.env.tpl"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -20,7 +28,7 @@ jobs:
       - name: Install dependencies and Build Frontend
         working-directory: ./frontend
         env:
-          NEXT_PUBLIC_APP_PASSWORD: ${{ secrets.VITE_APP_PASSWORD }}
+          NEXT_PUBLIC_APP_PASSWORD: ${{ env.NEXT_PUBLIC_APP_PASSWORD }}
         run: |
           npm ci
           npm run build
@@ -28,21 +36,21 @@ jobs:
       - name: Install SSH Key
         uses: shimataro/ssh-key-action@v2
         with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
           known_hosts: 'placeholder'
           if_key_exists: replace
 
       - name: Add Known Hosts
-        run: ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+        run: ssh-keyscan -p "${SSH_PORT}" -H "${HOST}" >> ~/.ssh/known_hosts
 
       - name: Deploy with rsync
         run: |
           # Ensure target directory exists
-          ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no ${{ secrets.USERNAME }}@${{ secrets.HOST }} "mkdir -p ${{ secrets.TARGET_DIR }}"
+          ssh -p "${SSH_PORT}" -o StrictHostKeyChecking=no "${USERNAME}@${HOST}" "mkdir -p ${TARGET_DIR}"
 
           # Sync files (using -rltDvz instead of -avz to avoid permission errors on owner/group)
           rsync -rlDvz \
-            -e "ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no" \
+            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=no" \
             --exclude '.git' \
             --exclude '.github' \
             --exclude '.env' \
@@ -54,15 +62,15 @@ jobs:
             --exclude 'frontend/.env' \
             --exclude 'frontend-react/node_modules' \
             --exclude 'frontend-react/.env' \
-            ./ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.TARGET_DIR }}/
+            ./ "${USERNAME}@${HOST}:${TARGET_DIR}/"
 
       - name: Restart Backend Service
         run: |
-          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'EOF'
+          ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" << EOF
             set -e
-            echo "Current directory: $(pwd)"
-            cd ${{ secrets.TARGET_DIR }}
-            echo "Working directory: $(pwd)"
+            echo "Current directory: \$(pwd)"
+            cd ${TARGET_DIR}
+            echo "Working directory: \$(pwd)"
             
             # Create venv if not exists
             if [ ! -d "venv" ]; then
