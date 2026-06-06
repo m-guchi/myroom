@@ -20,6 +20,13 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.7.2",
+    date: "2026-06-07",
+    changes: [
+      "エアコンの設定温度を室温の表示・非表示と独立して切り替え可能に",
+    ],
+  },
+  {
     version: "1.7.1",
     date: "2026-06-05",
     changes: [
