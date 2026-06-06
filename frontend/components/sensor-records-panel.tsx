@@ -3,19 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Settings, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  deleteSensorRecord,
-  fetchSensorRecords,
-  type SensorRecordsRange,
-} from "@/lib/api";
+import { deleteSensorRecord, fetchSensorRecords } from "@/lib/api";
 import type { SensorRecord } from "@/lib/types";
-import { cn } from "@/lib/utils";
-
-const RANGE_LABELS: Record<SensorRecordsRange, string> = {
-  day: "24時間",
-  week: "7日",
-  month: "30日",
-};
 
 interface SensorRecordsPanelProps {
   open: boolean;
@@ -51,7 +40,6 @@ export function SensorRecordsPanel({
   onOpenSettings,
   onChanged,
 }: SensorRecordsPanelProps) {
-  const [range, setRange] = useState<SensorRecordsRange>("week");
   const [records, setRecords] = useState<SensorRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -68,7 +56,7 @@ export function SensorRecordsPanel({
       }
       setError("");
       try {
-        const data = await fetchSensorRecords(deviceId, range, offset);
+        const data = await fetchSensorRecords(deviceId, offset);
         setTotal(data.total);
         setRecords((prev) => (append ? [...prev, ...data.records] : data.records));
       } catch (err) {
@@ -82,13 +70,13 @@ export function SensorRecordsPanel({
         setLoadingMore(false);
       }
     },
-    [deviceId, range]
+    [deviceId]
   );
 
   useEffect(() => {
     if (!open) return;
     loadPage(0, false);
-  }, [open, deviceId, range, loadPage]);
+  }, [open, deviceId, loadPage]);
 
   const handleDelete = async (record: SensorRecord) => {
     const label = formatRecordDatetime(record.datetime);
@@ -142,30 +130,12 @@ export function SensorRecordsPanel({
           </div>
         </div>
 
-        <div className="flex gap-1 border-b px-5 py-3">
-          {(Object.keys(RANGE_LABELS) as SensorRecordsRange[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setRange(item)}
-              className={cn(
-                "flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors",
-                range === item
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              {RANGE_LABELS[item]}
-            </button>
-          ))}
-        </div>
-
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
           {loading ? (
             <p className="py-10 text-center text-sm text-muted-foreground">読み込み中...</p>
           ) : records.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              この期間の記録はありません
+              記録がありません
             </p>
           ) : (
             <div className="space-y-2">
