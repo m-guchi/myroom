@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
   pull_request:
     branches: [main, develop]
 
@@ -60,26 +60,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: ".github/ci.env.tpl"
-
       - name: Determine workflow status
         id: status
         run: |
           backend="${{ needs.backend.result }}"
           frontend="${{ needs.frontend.result }}"
           if [ "$backend" = "success" ] && [ "$frontend" = "success" ]; then
-            echo "result=success" >> "$GITHUB_OUTPUT"
+            result=success
           elif [ "$backend" = "cancelled" ] || [ "$frontend" = "cancelled" ]; then
-            echo "result=cancelled" >> "$GITHUB_OUTPUT"
+            result=cancelled
           else
-            echo "result=failure" >> "$GITHUB_OUTPUT"
+            result=failure
           fi
+          echo "result=$result" >> "$GITHUB_OUTPUT"
           jobs=()
           [ "$backend" != "success" ] && jobs+=("backend: $backend")
           [ "$frontend" != "success" ] && jobs+=("frontend: $frontend")
@@ -89,8 +82,26 @@ jobs:
             printf -v joined '%s, ' "${jobs[@]}"
             echo "jobs=${joined%, }" >> "$GITHUB_OUTPUT"
           fi
+          # develop push: failure only. main PR: success, failure, and cancelled.
+          if [ "$result" = "failure" ]; then
+            echo "should_notify=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" = "main" ]; then
+            echo "should_notify=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_notify=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Load secrets from 1Password
+        if: steps.status.outputs.should_notify == 'true'
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: ".github/ci.env.tpl"
 
       - name: Notify Discord
+        if: steps.status.outputs.should_notify == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ env.DISCORD_CI_WEBHOOK_URL }}
           NOTIFY_STATUS: ${{ steps.status.outputs.result }}
