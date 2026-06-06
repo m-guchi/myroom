@@ -347,13 +347,15 @@ python3 migrate_pressure_to_hpa.py
 | フィールド名 | 内容 |
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード |
-| `ssh-private-key` | サーバー接続用 SSH 秘密鍵（OpenSSH 形式） |
+| `ssh-private-key` | サーバー接続用 SSH 秘密鍵（OpenSSH 形式のテキストフィールド） |
 | `host` | サーバーのホスト名または IP |
 | `username` | SSH ユーザー名 |
 | `ssh-port` | SSH ポート番号 |
 | `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
 
 Vault 名やアイテム名を変える場合は、`.github/deploy.env.tpl` の `op://...` 参照も合わせて更新してください。
+
+`ssh-private-key` はセキュアノートのテキストフィールドとして登録してください。1Password の「SSH 鍵」アイテム型を使う場合のみ、参照に `?ssh-format=openssh` を付けます。
 
 #### 1-2. Service Account を作成
 
