@@ -56,6 +56,13 @@ import {
   getOutdoorChartColor,
   type ChartColorSettings,
 } from "@/lib/chart-colors";
+import {
+  AIRCON_TARGET_VISIBILITY_KEY,
+  deviceVisibilityKey,
+  isChartLineVisible,
+  OUTDOOR_VISIBILITY_KEY,
+  type ChartLineVisibilitySettings,
+} from "@/lib/chart-line-visibility";
 import { cn } from "@/lib/utils";
 import type { DisplayOrderItem } from "@/lib/display-order";
 import { buildDefaultDisplayOrder, getChartDeviceSeriesOrder } from "@/lib/display-order";
@@ -90,6 +97,8 @@ interface EnvironmentChartProps {
   outdoorLocationName?: string;
   legendOrder?: readonly DisplayOrderItem[];
   chartColors: ChartColorSettings;
+  lineVisibility: ChartLineVisibilitySettings;
+  onLineVisibilityChange: (key: string, visible: boolean) => void;
 }
 
 interface ChartSeriesRow {
@@ -98,7 +107,7 @@ interface ChartSeriesRow {
   color: string;
   value: number | undefined;
   visible: boolean;
-  toggle: () => void;
+  visibilityKey: string;
 }
 
 function getMetricKeys(metric: ChartMetric) {
@@ -196,6 +205,8 @@ export function EnvironmentChart({
   outdoorLocationName,
   legendOrder,
   chartColors,
+  lineVisibility,
+  onLineVisibilityChange,
 }: EnvironmentChartProps) {
   const resolvedLegendOrder = legendOrder ?? buildDefaultDisplayOrder(deviceIds.filter(
     (id) => id !== AIRCON_CHART_DEVICE_ID
@@ -224,11 +235,11 @@ export function EnvironmentChart({
     chartMetric === "temperature" &&
     airconTargetDeviceId != null &&
     hasDeviceTargetMetricData(historyData, airconTargetDeviceId);
-  const [outdoorVisible, setOutdoorVisible] = useState(false);
-  const [airconTargetVisible, setAirconTargetVisible] = useState(true);
-  const [deviceLineVisible, setDeviceLineVisible] = useState<Record<number, boolean>>({});
-  const showOutdoorLine = canShowOutdoor && outdoorVisible;
-  const showTargetLine = showAirconTargetLine && airconTargetVisible;
+  const showOutdoorLine =
+    canShowOutdoor && isChartLineVisible(lineVisibility, OUTDOOR_VISIBILITY_KEY);
+  const showTargetLine =
+    showAirconTargetLine &&
+    isChartLineVisible(lineVisibility, AIRCON_TARGET_VISIBILITY_KEY);
   const targetDeviceIds =
     showTargetLine && airconTargetDeviceId != null
       ? ([airconTargetDeviceId] as const)
@@ -236,10 +247,10 @@ export function EnvironmentChart({
 
   const plottedDeviceIds = useMemo(
     () =>
-      visibleDeviceIds.filter(
-        (deviceId) => deviceLineVisible[deviceId] !== false
+      visibleDeviceIds.filter((deviceId) =>
+        isChartLineVisible(lineVisibility, deviceVisibilityKey(deviceId))
       ),
-    [visibleDeviceIds, deviceLineVisible]
+    [visibleDeviceIds, lineVisibility]
   );
 
   const orderedPlottedDeviceIds = useMemo(() => {
@@ -251,16 +262,10 @@ export function EnvironmentChart({
   }, [deviceSeriesOrder, plottedDeviceIds]);
 
   const isDeviceLineVisible = useCallback(
-    (deviceId: number) => deviceLineVisible[deviceId] !== false,
-    [deviceLineVisible]
+    (deviceId: number) =>
+      isChartLineVisible(lineVisibility, deviceVisibilityKey(deviceId)),
+    [lineVisibility]
   );
-
-  const toggleDeviceLine = useCallback((deviceId: number) => {
-    setDeviceLineVisible((prev) => ({
-      ...prev,
-      [deviceId]: prev[deviceId] === false,
-    }));
-  }, []);
 
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [domainOffset, setDomainOffset] = useState(0);
@@ -268,11 +273,6 @@ export function EnvironmentChart({
   const dragDomainRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const preservedSelectionTimeRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    setOutdoorVisible(false);
-    setAirconTargetVisible(true);
-  }, [chartMetric]);
 
   useEffect(() => {
     dragDomainRef.current = domainOffset;
@@ -516,7 +516,7 @@ export function EnvironmentChart({
                   selectionTime
                 ),
           visible: isDeviceLineVisible(deviceId),
-          toggle: () => toggleDeviceLine(deviceId),
+          visibilityKey: deviceVisibilityKey(deviceId),
         });
 
         if (
@@ -529,8 +529,8 @@ export function EnvironmentChart({
             name: `${deviceNames[airconTargetDeviceId] ?? "エアコン"}（設定温度）`,
             color: airconTargetColor,
             value: activeTargetValue,
-            visible: airconTargetVisible,
-            toggle: () => setAirconTargetVisible((visible) => !visible),
+            visible: isChartLineVisible(lineVisibility, AIRCON_TARGET_VISIBILITY_KEY),
+            visibilityKey: AIRCON_TARGET_VISIBILITY_KEY,
           });
         }
         continue;
@@ -542,8 +542,8 @@ export function EnvironmentChart({
           name: outdoorLocationName ?? "屋外",
           color: outdoorLineColor,
           value: activeOutdoor,
-          visible: outdoorVisible,
-          toggle: () => setOutdoorVisible((visible) => !visible),
+          visible: isChartLineVisible(lineVisibility, OUTDOOR_VISIBILITY_KEY),
+          visibilityKey: OUTDOOR_VISIBILITY_KEY,
         });
       }
     }
@@ -558,18 +558,16 @@ export function EnvironmentChart({
     selectionTime,
     chartPlotData,
     isDeviceLineVisible,
-    toggleDeviceLine,
     airconTargetDeviceId,
     showAirconTargetLine,
     activeTargetValue,
-    airconTargetVisible,
     airconTargetColor,
     canShowOutdoor,
     chartColors,
     outdoorLineColor,
     outdoorLocationName,
     activeOutdoor,
-    outdoorVisible,
+    lineVisibility,
   ]);
 
   const selectionLabel =
@@ -707,7 +705,7 @@ export function EnvironmentChart({
           )}
           <div className="flex flex-col gap-2">
             {chartSeriesRows.map((row) => (
-              <div key={row.id} className="flex items-center justify-between gap-3">
+              <div key={row.id} className="flex items-center justify-between gap-3 px-1">
                 <p
                   className={cn(
                     "min-w-0 flex-1 text-lg font-bold",
@@ -719,7 +717,9 @@ export function EnvironmentChart({
                 </p>
                 <button
                   type="button"
-                  onClick={row.toggle}
+                  onClick={() =>
+                    onLineVisibilityChange(row.visibilityKey, !row.visible)
+                  }
                   aria-pressed={row.visible}
                   aria-label={`${row.name}の表示切替`}
                   className="shrink-0 rounded-full p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -776,7 +776,7 @@ export function EnvironmentChart({
         ) : (
           <ResponsiveContainer width="100%" height="100%" className="pointer-events-none">
             <ComposedChart
-              key={`${chartMetric}-${viewRange}-${plottedDeviceIds.join("-")}-${outdoorVisible}-${airconTargetVisible}`}
+              key={`${chartMetric}-${viewRange}-${plottedDeviceIds.join("-")}-${showOutdoorLine}-${showTargetLine}`}
               data={chartPlotData}
               margin={{ top: PLOT_INSET.top, right: PLOT_INSET.right, left: 0, bottom: 0 }}
             >

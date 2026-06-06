@@ -568,13 +568,15 @@ def get_sensor_records(
         offset = 0
 
     end_time = get_now_jst()
-    start_time = end_time - datetime.timedelta(days=7)
-    if start and end:
+    use_date_filter = bool(start and end)
+    if use_date_filter:
         try:
             start_time = _parse_record_datetime(start)
             end_time = _parse_record_datetime(end)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="invalid start or end datetime") from exc
+    else:
+        start_time = end_time - datetime.timedelta(days=365)
 
     if database.DB_MOCK:
         rows = database.generate_mock_history_for_range(start_time, end_time, device)
@@ -594,22 +596,19 @@ def get_sensor_records(
         ]
         return {"records": records, "total": total, "limit": limit, "offset": offset}
 
-    total = (
-        db.query(database.DHTRecord)
-        .filter(
-            database.DHTRecord.device_id == device,
-            database.DHTRecord.datetime >= start_time,
-            database.DHTRecord.datetime <= end_time,
+    filters = [database.DHTRecord.device_id == device]
+    if use_date_filter:
+        filters.extend(
+            [
+                database.DHTRecord.datetime >= start_time,
+                database.DHTRecord.datetime <= end_time,
+            ]
         )
-        .count()
-    )
+
+    total = db.query(database.DHTRecord).filter(*filters).count()
     rows = (
         db.query(database.DHTRecord)
-        .filter(
-            database.DHTRecord.device_id == device,
-            database.DHTRecord.datetime >= start_time,
-            database.DHTRecord.datetime <= end_time,
-        )
+        .filter(*filters)
         .order_by(database.DHTRecord.datetime.desc())
         .offset(offset)
         .limit(limit)

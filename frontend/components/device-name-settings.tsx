@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Thermometer, X } from "lucide-react";
+import { ChartColorPicker } from "@/components/chart-color-picker";
+import { ChartLineVisibilityToggle } from "@/components/chart-line-visibility-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +14,10 @@ import { cn } from "@/lib/utils";
 interface DeviceNameSettingsProps {
   open: boolean;
   deviceId: number;
+  chartColor: string;
+  onChartColorChange: (color: string) => void;
+  chartLineVisible: boolean;
+  onChartLineVisibleChange: (visible: boolean) => void;
   onClose: () => void;
   onSaved: (device: DeviceInfo) => void;
 }
@@ -19,6 +25,10 @@ interface DeviceNameSettingsProps {
 export function DeviceNameSettings({
   open,
   deviceId,
+  chartColor,
+  onChartColorChange,
+  chartLineVisible,
+  onChartLineVisibleChange,
   onClose,
   onSaved,
 }: DeviceNameSettingsProps) {
@@ -71,11 +81,11 @@ export function DeviceNameSettings({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-[20px] bg-card p-5 shadow-lg">
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[20px] bg-card p-5 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Thermometer className="size-5 text-muted-foreground" />
-            <h2 className="text-lg font-bold">デバイスの表示名</h2>
+            <h2 className="text-lg font-bold">デバイスの設定</h2>
           </div>
           <button
             type="button"
@@ -88,7 +98,7 @@ export function DeviceNameSettings({
         </div>
 
         <p className="mb-4 text-sm text-muted-foreground">
-          ダッシュボードのカードとセクション見出しに表示される名前です。
+          表示名、グラフの色、表示有無を設定します。
         </p>
 
         {loading ? (
@@ -115,6 +125,19 @@ export function DeviceNameSettings({
                 className="rounded-xl"
               />
             </div>
+
+            <ChartColorPicker
+              id={`device-${deviceId}-chart-color`}
+              label="グラフの色"
+              color={chartColor}
+              onChange={onChartColorChange}
+            />
+
+            <ChartLineVisibilityToggle
+              id={`device-${deviceId}-chart-visible`}
+              visible={chartLineVisible}
+              onChange={onChartLineVisibleChange}
+            />
 
             {error && (
               <p className={cn("rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive")}>

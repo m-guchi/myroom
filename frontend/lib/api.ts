@@ -196,32 +196,13 @@ export async function searchOutdoorLocations(
   return data.results;
 }
 
-export type SensorRecordsRange = "day" | "week" | "month";
-
-function getSensorRecordsWindow(range: SensorRecordsRange): { start: Date; end: Date } {
-  const end = new Date();
-  const start = new Date(end);
-  if (range === "day") {
-    start.setDate(start.getDate() - 1);
-  } else if (range === "week") {
-    start.setDate(start.getDate() - 7);
-  } else {
-    start.setDate(start.getDate() - 30);
-  }
-  return { start, end };
-}
-
 export async function fetchSensorRecords(
   deviceId: number,
-  range: SensorRecordsRange,
   offset = 0,
   limit = 100
 ): Promise<SensorRecordsResponse> {
-  const { start, end } = getSensorRecordsWindow(range);
   const params = new URLSearchParams({
     device: String(deviceId),
-    start: toApiDateTime(start),
-    end: toApiDateTime(end),
     limit: String(limit),
     offset: String(offset),
   });
