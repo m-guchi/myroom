@@ -20,6 +20,14 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.3",
+    date: "2026-06-07",
+    changes: [
+      "main への push では CI を実行せず、PR CI と Deploy のみに整理",
+      "Discord CI 通知: develop push は失敗時のみ、main 向け PR は成功・失敗どちらも通知",
+    ],
+  },
+  {
     version: "2.0.2",
     date: "2026-06-07",
     changes: [
