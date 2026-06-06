@@ -356,11 +356,18 @@ python3 migrate_pressure_to_hpa.py
 
 **アイテム `githubaction-sshkey`**（「SSH 鍵」アイテム型）
 
-| フィールド名 | 内容 |
+| フィールド ID | 内容 |
 |-------------|------|
-| `private key` | サーバー接続用 SSH 秘密鍵 |
+| `private_key` | サーバー接続用 SSH 秘密鍵（UI 表示は「秘密鍵」だが参照は ID を使う） |
 
-Vault 名やアイテム名を変える場合は、`.github/deploy.env.tpl` の `op://...` 参照も合わせて更新してください。
+Vault 名やアイテム名を変える場合は、`.github/deploy.env.tpl` の `op://...` 参照も合わせて更新してください。日本語ラベル（`秘密鍵`）は secret reference に使えません。
+
+正しい参照の確認:
+
+```bash
+op item get githubaction-sshkey --vault apps --format json | jq '.fields[] | {id, label, reference}'
+op read "op://apps/githubaction-sshkey/private_key?ssh-format=openssh"
+```
 
 #### 1-2. Service Account を作成
 
