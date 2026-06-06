@@ -160,7 +160,19 @@ npm run build
 | `tests/test_config.py` | デバイス名・屋外地点の設定ファイル読み書き |
 | `frontend/lib/chart-utils.test.ts` | グラフ計算・快適度・履歴マージのユニットテスト |
 
-`main` / `develop` への push と PR では [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が自動実行されます。`main` への push 時は、CI 通過後にデプロイ（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）が続きます。
+`develop` / `main` / `product` への push と PR では [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が自動実行されます。
+
+### ブランチとデプロイ
+
+| ブランチ | 役割 | デプロイ先 |
+|----------|------|------------|
+| `develop` | 開発 | なし（ローカル） |
+| `main` | 疑似本番（UI 確認） | [GitHub Pages](https://m-guchi.github.io/insight-myroom/)（[`.github/workflows/pages.yml`](.github/workflows/pages.yml)） |
+| `product` | 本番 | https://myroom.gucchii.com/（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)） |
+
+**マージの流れ**: `develop` → `main` → `product`
+
+GitHub Pages は静的フロントエンドのみ配信します。API（センサー POST・履歴取得など）は FastAPI が必要なため、Pages 単体では本番と同等の動作にはなりません。疑似本番でデータ表示まで確認する場合は、GitHub リポジトリの **Variables** に `STAGING_API_BASE`（例: 将来の `https://staging.myroom.gucchii.com`）を設定してください。未設定の場合は UI のみ確認できます。
 
 ## システム仕様
 
@@ -386,7 +398,7 @@ rsync では `.env` を転送しません。DB 接続情報などサーバー固
 
 ### 2. デプロイフロー
 
-`main` ブランチにプッシュすると GitHub Actions が起動し、以下を自動実行します。
+`product` ブランチにプッシュすると GitHub Actions が起動し、以下を自動実行します。
 
 1. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力、パスワード埋め込み含む）
 2. ファイルの転送 (`rsync`)

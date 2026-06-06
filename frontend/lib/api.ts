@@ -19,8 +19,14 @@ import {
 import { processHistoryData, processAirconHistoryData } from "@/lib/chart-utils";
 import { toApiDateTime, type AirconHistoryPoint } from "@/lib/history-loader";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "";
+
+function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(apiUrl(url));
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -125,7 +131,7 @@ export async function updateDeviceName(
   deviceId: number,
   name: string
 ): Promise<DeviceInfo> {
-  const res = await fetch(`/api/devices/${deviceId}`, {
+  const res = await fetch(apiUrl(`/api/devices/${deviceId}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -146,7 +152,7 @@ export async function updateAirconUnitName(
   acId: number,
   name: string
 ): Promise<AirconUnitInfo> {
-  const res = await fetch(`/api/aircon/units/${acId}`, {
+  const res = await fetch(apiUrl(`/api/aircon/units/${acId}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -165,7 +171,7 @@ export async function fetchOutdoorLocation(): Promise<OutdoorLocation> {
 export async function updateOutdoorLocation(
   location: OutdoorLocation
 ): Promise<OutdoorLocation> {
-  const res = await fetch("/api/outdoor-location", {
+  const res = await fetch(apiUrl("/api/outdoor-location"), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(location),
@@ -227,7 +233,7 @@ export async function deleteSensorRecord(
     device: String(deviceId),
     datetime,
   });
-  const res = await fetch(`/api/records?${params.toString()}`, {
+  const res = await fetch(apiUrl(`/api/records?${params.toString()}`), {
     method: "DELETE",
   });
   if (!res.ok) {
