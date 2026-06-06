@@ -1,0 +1,5 @@
+# Optional: legacy Streamlit UI (frontend/app.py). Not needed for ./scripts/start.sh
+-r requirements.txt
+streamlit
+plotly
+streamlit-javascript

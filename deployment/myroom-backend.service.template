@@ -1,0 +1,13 @@
+[Unit]
+Description=MyRoom Backend
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory={{APP_DIR}}
+ExecStart={{PYTHON_PATH}} -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

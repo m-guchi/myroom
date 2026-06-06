@@ -1,15 +1,27 @@
 #!/bin/bash
+# SSH tunnel only (foreground). For full stack use: ./scripts/start.sh prod
 
-# SSH Tunnel for production database access
-# Maps local 3307 to production 3306
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/tunnel.sh
+source "${SCRIPT_DIR}/lib/tunnel.sh"
 
 echo "Starting SSH tunnel to production database..."
-echo "Local port: 3307 -> Remote port: 3306"
+echo "Local port: ${TUNNEL_LOCAL_PORT} -> Remote port: ${TUNNEL_REMOTE_PORT}"
 
-# Check if port 3307 is already in use
-if ss -tuln | grep -q :3307; then
-    echo "Error: Port 3307 is already in use. Is the tunnel already running?"
-    exit 1
+if tunnel_is_listening; then
+  echo "Error: Port ${TUNNEL_LOCAL_PORT} is already in use. Is the tunnel already running?"
+  exit 1
 fi
 
-ssh -i ~/.ssh/shinvps-20260215 -L 3307:localhost:3306 guchi@162.43.74.7 -p 19622 -N
+if [[ ! -f "${TUNNEL_SSH_KEY}" ]]; then
+  echo "Error: SSH key not found: ${TUNNEL_SSH_KEY}"
+  exit 1
+fi
+
+ssh -i "${TUNNEL_SSH_KEY}" \
+  -L "${TUNNEL_LOCAL_PORT}:localhost:${TUNNEL_REMOTE_PORT}" \
+  "${TUNNEL_SSH_HOST}" \
+  -p "${TUNNEL_SSH_PORT}" \
+  -N \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=60

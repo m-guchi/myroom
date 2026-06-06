@@ -1,0 +1,383 @@
+import { describe, expect, it } from "vitest";
+import {
+  calcDiscomfortIndex,
+  buildAirconTargetChartSegments,
+  buildAirconTargetChartSeries,
+  clampDomainOffset,
+  computeChartDomain,
+  computeDomainOffsetForSelectionTime,
+  downsampleHistoryForChart,
+  downsampleMultiDeviceHistoryForChart,
+  filterHistoryForDomain,
+  getComfortAdvice,
+  getDeviceMetricValueAtTime,
+  getMaxPositiveDomainOffset,
+  getOutdoorMetricValueAtTime,
+  getSelectionTime,
+  getViewRangeMs,
+  isAggregatedRange,
+} from "@/lib/chart-utils";
+import type { HistoryPoint } from "@/lib/types";
+import {
+  getHistoryChunkMs,
+  getHistoryInitialSpanMs,
+  mergeAirconIntoHistory,
+  mergeHistoryPoints,
+  toApiDateTime,
+} from "@/lib/history-loader";
+import { getDeviceTargetMetricValue } from "@/lib/types";
+
+function makePoint(
+  datetimeObj: number,
+  temperature: number,
+  humidity = 50,
+  pressure = 1013
+): HistoryPoint {
+  return {
+    datetimeObj,
+    temperature,
+    humidity,
+    pressure,
+  };
+}
+
+describe("getViewRangeMs", () => {
+  it("returns expected window sizes", () => {
+    expect(getViewRangeMs("day")).toBe(86400000);
+    expect(getViewRangeMs("week")).toBe(7 * 86400000);
+  });
+});
+
+describe("computeChartDomain", () => {
+  it("builds a sliding window from the latest point", () => {
+    const history = [
+      makePoint(1000, 20),
+      makePoint(2000, 21),
+      makePoint(3000, 22),
+    ];
+    const domain = computeChartDomain(history, "day", 0);
+    expect(domain[0]).not.toBe("dataMin");
+    expect(domain[1]).toBeGreaterThan(domain[0] as number);
+  });
+
+  it("aligns the latest point with the selection cursor at max positive offset", () => {
+    const history = [makePoint(1000, 20), makePoint(3000, 22)];
+    const viewRange = "day" as const;
+    const offset = getMaxPositiveDomainOffset(viewRange);
+    const domain = computeChartDomain(history, viewRange, offset) as [number, number];
+    const selectionTime = getSelectionTime(history, domain);
+
+    expect(selectionTime).toBe(3000);
+  });
+});
+
+describe("computeDomainOffsetForSelectionTime", () => {
+  it("places the selection cursor at the requested timestamp", () => {
+    const history = [makePoint(1000, 20), makePoint(3000, 22)];
+    const viewRange = "day" as const;
+    const offset = computeDomainOffsetForSelectionTime(history, viewRange, 3000);
+    const domain = computeChartDomain(history, viewRange, offset) as [number, number];
+
+    expect(getSelectionTime(history, domain)).toBe(3000);
+  });
+
+  it("keeps the same selection time after switching view range", () => {
+    const history = [makePoint(1000, 20), makePoint(5000, 22)];
+    const selectionTime = 2500;
+    const dayOffset = computeDomainOffsetForSelectionTime(history, "day", selectionTime);
+    const dayDomain = computeChartDomain(history, "day", dayOffset) as [number, number];
+    expect(getSelectionTime(history, dayDomain)).toBe(selectionTime);
+
+    const weekOffset = computeDomainOffsetForSelectionTime(history, "week", selectionTime);
+    const weekDomain = computeChartDomain(history, "week", weekOffset) as [number, number];
+    expect(getSelectionTime(history, weekDomain)).toBe(selectionTime);
+  });
+});
+
+describe("clampDomainOffset", () => {
+  it("allows positive offset up to the selection alignment limit", () => {
+    const history = [makePoint(1000, 20), makePoint(3000, 22)];
+    const viewRange = "day" as const;
+    const maxOffset = getMaxPositiveDomainOffset(viewRange);
+
+    expect(
+      clampDomainOffset(history, viewRange, 0, maxOffset + 1000)
+    ).toBeCloseTo(maxOffset);
+    expect(clampDomainOffset(history, viewRange, maxOffset, 1000)).toBeCloseTo(
+      maxOffset
+    );
+  });
+});
+
+describe("filterHistoryForDomain", () => {
+  it("returns points inside the visible domain", () => {
+    const history = [
+      makePoint(1000, 20),
+      makePoint(2000, 21),
+      makePoint(3000, 22),
+    ];
+    const filtered = filterHistoryForDomain(history, [1500, 2500], 0);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].datetimeObj).toBe(2000);
+  });
+});
+
+describe("downsampleHistoryForChart", () => {
+  it("reduces large datasets while keeping extrema", () => {
+    const history = Array.from({ length: 1000 }, (_, index) =>
+      makePoint(index, index % 2 === 0 ? 10 : 30)
+    );
+    const downsampled = downsampleHistoryForChart(history, "temperature", 40);
+    expect(downsampled.length).toBeLessThanOrEqual(80);
+    expect(downsampled.length).toBeGreaterThan(0);
+  });
+});
+
+describe("downsampleMultiDeviceHistoryForChart", () => {
+  it("keeps outdoor values when downsampling device series", () => {
+    const history: HistoryPoint[] = Array.from({ length: 500 }, (_, index) => ({
+      datetimeObj: index * 60_000,
+      d1_temperature: 20 + (index % 10),
+      outdoor_temperature: 10 + (index % 8),
+    })) as HistoryPoint[];
+
+    const downsampled = downsampleMultiDeviceHistoryForChart(
+      history,
+      "temperature",
+      40,
+      [1]
+    );
+
+    expect(downsampled.length).toBeLessThan(history.length);
+    expect(downsampled.some((point) => point.outdoor_temperature != null)).toBe(true);
+  });
+});
+
+describe("comfort helpers", () => {
+  it("calculates discomfort index", () => {
+    const di = calcDiscomfortIndex(25, 50);
+    expect(di).toBeGreaterThan(60);
+    expect(di).toBeLessThan(80);
+  });
+
+  it("returns advice for comfortable conditions", () => {
+    const advice = getComfortAdvice(22, 50);
+    expect(advice.mainAdvice).toContain("快適");
+  });
+});
+
+describe("history-loader", () => {
+  it("formats API datetime strings", () => {
+    const formatted = toApiDateTime(new Date("2026-05-30T12:34:56"));
+    expect(formatted).toBe("2026-05-30T12:34:56");
+  });
+
+  it("merges history without duplicates", () => {
+    const existing = [makePoint(1000, 20)];
+    const incoming = [makePoint(1000, 20), makePoint(2000, 21)];
+    const merged = mergeHistoryPoints(existing, incoming);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((point) => point.datetimeObj)).toEqual([1000, 2000]);
+  });
+
+  it("returns larger initial spans for year view", () => {
+    expect(getHistoryInitialSpanMs("year")).toBeGreaterThan(
+      getHistoryInitialSpanMs("day")
+    );
+    expect(getHistoryChunkMs("year")).toBeGreaterThan(getHistoryChunkMs("day"));
+  });
+});
+
+describe("interpolateDeviceMetricAtTime", () => {
+  it("interpolates between bracketing points", () => {
+    const history: HistoryPoint[] = [
+      {
+        datetimeObj: 1000,
+        d1_temperature: 20,
+        d2_temperature: 18,
+      } as HistoryPoint,
+      {
+        datetimeObj: 3000,
+        d1_temperature: 24,
+        d2_temperature: 22,
+      } as HistoryPoint,
+    ];
+
+    expect(getDeviceMetricValueAtTime(history, 1, "temperature", 2000)).toBe(22);
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2000)).toBe(20);
+  });
+
+  it("returns the most recent value when the target is after the last point", () => {
+    const history: HistoryPoint[] = [
+      {
+        datetimeObj: 1000,
+        d1_temperature: 20,
+        d2_temperature: 18,
+      } as HistoryPoint,
+      {
+        datetimeObj: 2000,
+        d1_temperature: 22,
+      } as HistoryPoint,
+      {
+        datetimeObj: 3000,
+        d1_temperature: 24,
+        d2_temperature: 19,
+      } as HistoryPoint,
+    ];
+
+    expect(getDeviceMetricValueAtTime(history, 1, "temperature", 3500)).toBe(24);
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2500)).toBeCloseTo(18.75);
+  });
+  it("returns undefined before the first data point", () => {
+    const history: HistoryPoint[] = [
+      {
+        datetimeObj: 2358000,
+        d2_temperature: 22,
+      } as HistoryPoint,
+    ];
+
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2211000)).toBeUndefined();
+    expect(getDeviceMetricValueAtTime(history, 2, "temperature", 2358000)).toBe(22);
+  });
+});
+
+describe("getOutdoorMetricValueAtTime", () => {
+  it("returns the most recent outdoor value at or before the target time", () => {
+    const history: HistoryPoint[] = [
+      { datetimeObj: 1000, outdoor_temperature: 10 } as HistoryPoint,
+      { datetimeObj: 2000, outdoor_temperature: 12 } as HistoryPoint,
+    ];
+
+    expect(getOutdoorMetricValueAtTime(history, "temperature", 1500)).toBe(11);
+    expect(getOutdoorMetricValueAtTime(history, "temperature", 2000)).toBe(12);
+  });
+});
+
+describe("isAggregatedRange", () => {
+  it("aggregates only year view", () => {
+    expect(isAggregatedRange("year")).toBe(true);
+    expect(isAggregatedRange("month")).toBe(false);
+  });
+});
+
+describe("mergeAirconIntoHistory", () => {
+  const chartDeviceId = 3;
+
+  it("does not forward-fill target temperature while aircon is on", () => {
+    const merged = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 28,
+          power: "ON",
+        },
+        {
+          datetimeObj: 2000,
+          temperature: 29.5,
+          power: "ON",
+        },
+        {
+          datetimeObj: 3000,
+          temperature: 30,
+          power: "ON",
+        },
+      ],
+      chartDeviceId
+    );
+
+    expect(merged).toHaveLength(3);
+    expect(getDeviceTargetMetricValue(merged[0], chartDeviceId)).toBe(28);
+    expect(getDeviceTargetMetricValue(merged[1], chartDeviceId)).toBeUndefined();
+    expect(getDeviceTargetMetricValue(merged[2], chartDeviceId)).toBeUndefined();
+  });
+
+  it("clears target temperature while aircon is off", () => {
+    const merged = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 28,
+          power: "ON",
+        },
+        {
+          datetimeObj: 2000,
+          temperature: 29.5,
+          power: "OFF",
+        },
+      ],
+      chartDeviceId
+    );
+
+    expect(getDeviceTargetMetricValue(merged[0], chartDeviceId)).toBe(28);
+    expect(getDeviceTargetMetricValue(merged[1], chartDeviceId)).toBeUndefined();
+  });
+});
+
+describe("buildAirconTargetChartSeries", () => {
+  it("returns a continuous target series even when mixed with other device rows", () => {
+    const history = mergeAirconIntoHistory(
+      [],
+      Array.from({ length: 30 }, (_, index) => ({
+        datetimeObj: 1_000_000 + index * 300_000,
+        temperature: 29 + index * 0.01,
+        target_temperature: 28,
+        power: "ON",
+      })),
+      3
+    );
+
+    const interleaved = history.flatMap((point, index) => {
+      const rows: HistoryPoint[] = [point];
+      if (index % 2 === 0) {
+        rows.unshift({
+          datetimeObj: point.datetimeObj - 60_000,
+          temperature: 20,
+        } as HistoryPoint);
+      }
+      return rows;
+    });
+
+    const series = buildAirconTargetChartSeries(interleaved, 3, 320);
+    expect(series).toHaveLength(30);
+    expect(series.every((point) => point.airconTarget === 28)).toBe(true);
+  });
+
+  it("splits target series when aircon is off", () => {
+    const history = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 28,
+          power: "ON",
+        },
+        {
+          datetimeObj: 2000,
+          temperature: 29.5,
+          power: "OFF",
+        },
+        {
+          datetimeObj: 3000,
+          temperature: 30,
+          target_temperature: 26,
+          power: "ON",
+        },
+      ],
+      3
+    );
+
+    const segments = buildAirconTargetChartSegments(history, 3, 320);
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toEqual([
+      { datetimeObj: 1000, airconTarget: 28 },
+    ]);
+    expect(segments[1]).toEqual([
+      { datetimeObj: 3000, airconTarget: 26 },
+    ]);
+  });
+});

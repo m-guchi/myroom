@@ -2,7 +2,7 @@ name: Build and Deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "product" ]
 
 jobs:
   deploy:
@@ -10,17 +10,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: ".github/deploy.env.tpl"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
-          cache-dependency-path: frontend-react/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies and Build Frontend
-        working-directory: ./frontend-react
+        working-directory: ./frontend
         env:
-          VITE_APP_PASSWORD: ${{ secrets.VITE_APP_PASSWORD }}
+          NEXT_PUBLIC_APP_PASSWORD: ${{ env.NEXT_PUBLIC_APP_PASSWORD }}
         run: |
           npm ci
           npm run build
@@ -28,38 +36,41 @@ jobs:
       - name: Install SSH Key
         uses: shimataro/ssh-key-action@v2
         with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
           known_hosts: 'placeholder'
           if_key_exists: replace
 
       - name: Add Known Hosts
-        run: ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+        run: ssh-keyscan -p "${SSH_PORT}" -H "${HOST}" >> ~/.ssh/known_hosts
 
       - name: Deploy with rsync
         run: |
           # Ensure target directory exists
-          ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no ${{ secrets.USERNAME }}@${{ secrets.HOST }} "mkdir -p ${{ secrets.TARGET_DIR }}"
+          ssh -p "${SSH_PORT}" -o StrictHostKeyChecking=no "${USERNAME}@${HOST}" "mkdir -p ${TARGET_DIR}"
 
           # Sync files (using -rltDvz instead of -avz to avoid permission errors on owner/group)
           rsync -rlDvz \
-            -e "ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no" \
+            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=no" \
             --exclude '.git' \
             --exclude '.github' \
             --exclude '.env' \
             --exclude 'venv' \
             --exclude '__pycache__' \
             --exclude '*.pyc' \
+            --exclude 'frontend/node_modules' \
+            --exclude 'frontend/.next' \
+            --exclude 'frontend/.env' \
             --exclude 'frontend-react/node_modules' \
             --exclude 'frontend-react/.env' \
-            ./ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.TARGET_DIR }}/
+            ./ "${USERNAME}@${HOST}:${TARGET_DIR}/"
 
       - name: Restart Backend Service
         run: |
-          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'EOF'
+          ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" << EOF
             set -e
-            echo "Current directory: $(pwd)"
-            cd ${{ secrets.TARGET_DIR }}
-            echo "Working directory: $(pwd)"
+            echo "Current directory: \$(pwd)"
+            cd ${TARGET_DIR}
+            echo "Working directory: \$(pwd)"
             
             # Create venv if not exists
             if [ ! -d "venv" ]; then
@@ -91,8 +102,11 @@ jobs:
             # Restart service using PM2 (No sudo required)
             # Ensure PM2 is installed on the server: 'npm install -g pm2'
             echo "Managing PM2 process..."
-            if npx pm2 list | grep -q "insight-backend"; then
-              npx pm2 restart insight-backend
+            if npx pm2 list | grep -q "myroom-backend"; then
+              npx pm2 restart myroom-backend
+            elif npx pm2 list | grep -q "insight-backend"; then
+              npx pm2 delete insight-backend || true
+              npx pm2 start ecosystem.config.js
             else
               npx pm2 start ecosystem.config.js
             fi
