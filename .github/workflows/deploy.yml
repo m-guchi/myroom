@@ -143,3 +143,12 @@ jobs:
               npx pm2 start ecosystem.config.js
             fi
           EOF
+
+      - name: Notify Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ env.DISCORD_CI_WEBHOOK_URL }}
+          NOTIFY_STATUS: ${{ job.status }}
+          NOTIFY_WORKFLOW: Build and Deploy
+          NOTIFY_JOB: deploy
+        run: bash .github/scripts/discord-notify.sh

@@ -292,6 +292,7 @@ python3 migrate_db.py   # aircon テーブルを作成
   - デフォルトパスワード: `admin`（ローカル開発時）
   - 本番: 1Password の `app-password` を `APP_PASSWORD` としてサーバー `.env` に同期
   - ログイン成功時: Discord Webhook（1Password の `discord-webhook-url`）へ通知
+  - GitHub Actions（CI / デプロイ）の成功・失敗: 別チャンネル（1Password の `discord-webhook-url-ci`）へ通知
 
 ## API 概要
 
@@ -360,7 +361,8 @@ python3 migrate_pressure_to_hpa.py
 | フィールド名 | 内容 |
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
-| `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` として同期） |
+| `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` としてサーバー `.env` に同期） |
+| `discord-webhook-url-ci` | CI / デプロイ通知用 Discord Webhook URL（GitHub Actions のみ。サーバーには同期しない） |
 | `db-name` | 接続先データベース名（`DB_NAME` として同期） |
 | `host` | サーバーのホスト名または IP |
 | `username` | SSH ユーザー名 |
@@ -432,5 +434,6 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / DB 接続情報をサーバー `.env` に同期
 4. DB マイグレーション (`migrate_db.py`)
 5. バックエンドの依存関係更新と PM2 による再起動
+6. CI 用 Webhook へデプロイ結果を Discord 通知
 
 本番では FastAPI が `frontend/out` を配信し、API と UI を同一オリジンで提供します。
