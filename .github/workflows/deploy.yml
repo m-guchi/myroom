@@ -66,9 +66,20 @@ jobs:
         env:
           APP_PASSWORD: ${{ env.APP_PASSWORD }}
           DISCORD_WEBHOOK_URL: ${{ env.DISCORD_WEBHOOK_URL }}
+          DB_USER: ${{ env.DB_USER }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          DB_HOST: ${{ env.DB_HOST }}
+          DB_PORT: ${{ env.DB_PORT }}
+          DB_NAME: ${{ env.DB_NAME }}
         run: |
-          APP_PASSWORD_B64=$(printf '%s' "$APP_PASSWORD" | base64 -w 0)
-          DISCORD_WEBHOOK_URL_B64=$(printf '%s' "$DISCORD_WEBHOOK_URL" | base64 -w 0)
+          b64() { printf '%s' "$1" | base64 -w 0; }
+          APP_PASSWORD_B64=$(b64 "$APP_PASSWORD")
+          DISCORD_WEBHOOK_URL_B64=$(b64 "$DISCORD_WEBHOOK_URL")
+          DB_USER_B64=$(b64 "$DB_USER")
+          DB_PASSWORD_B64=$(b64 "$DB_PASSWORD")
+          DB_HOST_B64=$(b64 "$DB_HOST")
+          DB_PORT_B64=$(b64 "$DB_PORT")
+          DB_NAME_B64=$(b64 "$DB_NAME")
           ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" << EOF
             set -e
             echo "Current directory: \$(pwd)"
@@ -87,6 +98,11 @@ jobs:
 
             sync_env_var APP_PASSWORD '${APP_PASSWORD_B64}'
             sync_env_var DISCORD_WEBHOOK_URL '${DISCORD_WEBHOOK_URL_B64}'
+            sync_env_var DB_USER '${DB_USER_B64}'
+            sync_env_var DB_PASSWORD '${DB_PASSWORD_B64}'
+            sync_env_var DB_HOST '${DB_HOST_B64}'
+            sync_env_var DB_PORT '${DB_PORT_B64}'
+            sync_env_var DB_NAME '${DB_NAME_B64}'
             
             # Create venv if not exists
             if [ ! -d "venv" ]; then

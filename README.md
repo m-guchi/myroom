@@ -353,7 +353,7 @@ python3 migrate_pressure_to_hpa.py
 
 #### 1-1. 1Password にデプロイ用アイテムを作成
 
-保管庫名 `apps` に、次の 2 アイテムを作成してください。
+保管庫名 `apps` に、次のアイテムを作成してください。
 
 **アイテム `MyRoom`**（セキュアノート等）
 
@@ -361,10 +361,20 @@ python3 migrate_pressure_to_hpa.py
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
 | `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` として同期） |
+| `db-name` | 接続先データベース名（`DB_NAME` として同期） |
 | `host` | サーバーのホスト名または IP |
 | `username` | SSH ユーザー名 |
 | `ssh-port` | SSH ポート番号 |
 | `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
+
+**アイテム `DB`**（セキュアノート等）
+
+| フィールド名 | 内容 |
+|-------------|------|
+| `db-user` | MySQL ユーザー名（`DB_USER` として同期） |
+| `db-password` | MySQL パスワード（`DB_PASSWORD` として同期） |
+| `db-host` | MySQL ホスト（`DB_HOST` として同期） |
+| `db-port` | MySQL ポート（`DB_PORT` として同期） |
 
 **アイテム `githubaction-sshkey`**（「SSH 鍵」アイテム型）
 
@@ -394,14 +404,24 @@ op read "op://apps/githubaction-sshkey/private_key?ssh-format=openssh"
 
 #### 1-3. 本番サーバーの `.env`
 
-rsync では `.env` を転送しません。DB 接続情報などサーバー固有の設定は、引き続き本番サーバー上の `.env` で管理してください。
+rsync では `.env` を転送しません。サーバー上の `.env` には、1Password から同期しない設定も残します。
+
+| 環境変数 | 管理方法 |
+|----------|----------|
+| `DB_MOCK` | サーバー `.env` に手動設定（本番は `false`） |
+| `DB_ADMIN_USER` / `DB_ADMIN_PASSWORD` | 必要な場合のみサーバー `.env` に手動設定 |
 
 デプロイ時に 1Password から次の値が自動で `.env` に書き込まれます（既存の同名キーは上書き）。
 
-| 環境変数 | 1Password フィールド |
-|----------|---------------------|
-| `APP_PASSWORD` | `app-password` |
-| `DISCORD_WEBHOOK_URL` | `discord-webhook-url` |
+| 環境変数 | 1Password アイテム | フィールド |
+|----------|-------------------|-----------|
+| `APP_PASSWORD` | MyRoom | `app-password` |
+| `DISCORD_WEBHOOK_URL` | MyRoom | `discord-webhook-url` |
+| `DB_NAME` | MyRoom | `db-name` |
+| `DB_USER` | DB | `db-user` |
+| `DB_PASSWORD` | DB | `db-password` |
+| `DB_HOST` | DB | `db-host` |
+| `DB_PORT` | DB | `db-port` |
 
 ### 2. デプロイフロー
 
@@ -409,7 +429,7 @@ rsync では `.env` を転送しません。DB 接続情報などサーバー固
 
 1. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力）
 2. ファイルの転送 (`rsync`)
-3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` をサーバー `.env` に同期
+3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / DB 接続情報をサーバー `.env` に同期
 4. DB マイグレーション (`migrate_db.py`)
 5. バックエンドの依存関係更新と PM2 による再起動
 
