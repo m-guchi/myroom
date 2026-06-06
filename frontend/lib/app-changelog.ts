@@ -20,6 +20,16 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.1.0",
+    date: "2026-06-07",
+    changes: [
+      "グラフのデフォルト表示/非表示を各デバイスの設定画面で変更可能に（凡例での切り替えはセッションのみ）",
+      "エアコンの現在値（室温）と設定温度で表示・色を個別に設定可能に",
+      "グラフの色を各デバイスの歯車設定内で変更可能に",
+      "センサー記録一覧から期間切り替え（24時間/7日/30日）を削除",
+    ],
+  },
+  {
     version: "2.0.3",
     date: "2026-06-07",
     changes: [
