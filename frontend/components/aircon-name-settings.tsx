@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Snowflake, X } from "lucide-react";
+import { ChartColorPicker } from "@/components/chart-color-picker";
 import { ChartLineVisibilityToggle } from "@/components/chart-line-visibility-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,10 @@ import { cn } from "@/lib/utils";
 interface AirconNameSettingsProps {
   open: boolean;
   acId: number;
+  roomChartColor: string;
+  targetChartColor: string;
+  onRoomChartColorChange: (color: string) => void;
+  onTargetChartColorChange: (color: string) => void;
   roomChartLineVisible: boolean;
   targetChartLineVisible: boolean;
   onRoomChartLineVisibleChange: (visible: boolean) => void;
@@ -24,6 +29,10 @@ interface AirconNameSettingsProps {
 export function AirconNameSettings({
   open,
   acId,
+  roomChartColor,
+  targetChartColor,
+  onRoomChartColorChange,
+  onTargetChartColorChange,
   roomChartLineVisible,
   targetChartLineVisible,
   onRoomChartLineVisibleChange,
@@ -80,7 +89,7 @@ export function AirconNameSettings({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-[20px] bg-card p-5 shadow-lg">
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[20px] bg-card p-5 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Snowflake className="size-5 text-[#1abc9c]" />
@@ -97,7 +106,7 @@ export function AirconNameSettings({
         </div>
 
         <p className="mb-4 text-sm text-muted-foreground">
-          表示名と環境グラフでの表示有無を設定します。
+          表示名、グラフの色、表示有無を設定します。
         </p>
 
         {loading ? (
@@ -124,6 +133,20 @@ export function AirconNameSettings({
                 className="rounded-xl"
               />
             </div>
+
+            <ChartColorPicker
+              id={`aircon-${acId}-room-chart-color`}
+              label="現在値（室温）"
+              color={roomChartColor}
+              onChange={onRoomChartColorChange}
+            />
+
+            <ChartColorPicker
+              id={`aircon-${acId}-target-chart-color`}
+              label="設定温度"
+              color={targetChartColor}
+              onChange={onTargetChartColorChange}
+            />
 
             <ChartLineVisibilityToggle
               id={`aircon-${acId}-room-chart-visible`}

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { MapPin, Search, X } from "lucide-react";
+import { ChartColorPicker } from "@/components/chart-color-picker";
 import { ChartLineVisibilityToggle } from "@/components/chart-line-visibility-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,8 @@ import { cn } from "@/lib/utils";
 
 interface OutdoorLocationSettingsProps {
   open: boolean;
+  chartColor: string;
+  onChartColorChange: (color: string) => void;
   chartLineVisible: boolean;
   onChartLineVisibleChange: (visible: boolean) => void;
   onClose: () => void;
@@ -24,6 +27,8 @@ interface OutdoorLocationSettingsProps {
 
 export function OutdoorLocationSettings({
   open,
+  chartColor,
+  onChartColorChange,
   chartLineVisible,
   onChartLineVisibleChange,
   onClose,
@@ -149,7 +154,7 @@ export function OutdoorLocationSettings({
         </div>
 
         <p className="mb-4 text-sm text-muted-foreground">
-          Open-Meteo の天気データを取得する地点です。グラフのグレー点線（屋外）に反映されます。
+          地点、グラフの色、表示有無を設定します。
         </p>
 
         {loading ? (
@@ -223,6 +228,13 @@ export function OutdoorLocationSettings({
                 />
               </div>
             </div>
+
+            <ChartColorPicker
+              id="outdoor-chart-color"
+              label="グラフの色"
+              color={chartColor}
+              onChange={onChartColorChange}
+            />
 
             <ChartLineVisibilityToggle
               id="outdoor-chart-visible"
