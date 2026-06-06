@@ -228,12 +228,7 @@ export function EnvironmentChart({
   const [airconTargetVisible, setAirconTargetVisible] = useState(true);
   const [deviceLineVisible, setDeviceLineVisible] = useState<Record<number, boolean>>({});
   const showOutdoorLine = canShowOutdoor && outdoorVisible;
-  const isAirconChartDeviceVisible =
-    airconTargetDeviceId == null ||
-    deviceLineVisible[airconTargetDeviceId] !== false;
-  const effectiveAirconTargetVisible =
-    airconTargetVisible && isAirconChartDeviceVisible;
-  const showTargetLine = showAirconTargetLine && effectiveAirconTargetVisible;
+  const showTargetLine = showAirconTargetLine && airconTargetVisible;
   const targetDeviceIds =
     showTargetLine && airconTargetDeviceId != null
       ? ([airconTargetDeviceId] as const)
@@ -534,7 +529,7 @@ export function EnvironmentChart({
             name: `${deviceNames[airconTargetDeviceId] ?? "エアコン"}（設定温度）`,
             color: airconTargetColor,
             value: activeTargetValue,
-            visible: effectiveAirconTargetVisible,
+            visible: airconTargetVisible,
             toggle: () => setAirconTargetVisible((visible) => !visible),
           });
         }
@@ -567,7 +562,7 @@ export function EnvironmentChart({
     airconTargetDeviceId,
     showAirconTargetLine,
     activeTargetValue,
-    effectiveAirconTargetVisible,
+    airconTargetVisible,
     airconTargetColor,
     canShowOutdoor,
     chartColors,
