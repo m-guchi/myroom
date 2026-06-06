@@ -20,6 +20,14 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.8.0",
+    date: "2026-06-07",
+    changes: [
+      "GitHub Actions のデプロイ用秘密情報を 1Password から読み込むように変更",
+      "1Password（保管庫 apps / アイテム MyRoom）の設定手順を README に追加",
+    ],
+  },
+  {
     version: "1.7.2",
     date: "2026-06-07",
     changes: [
