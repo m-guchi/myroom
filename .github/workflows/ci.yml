@@ -52,3 +52,48 @@ jobs:
       - name: Build frontend
         working-directory: ./frontend
         run: npm run build
+
+  notify:
+    needs: [backend, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: ".github/ci.env.tpl"
+
+      - name: Determine workflow status
+        id: status
+        run: |
+          backend="${{ needs.backend.result }}"
+          frontend="${{ needs.frontend.result }}"
+          if [ "$backend" = "success" ] && [ "$frontend" = "success" ]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+          elif [ "$backend" = "cancelled" ] || [ "$frontend" = "cancelled" ]; then
+            echo "result=cancelled" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+          fi
+          jobs=()
+          [ "$backend" != "success" ] && jobs+=("backend: $backend")
+          [ "$frontend" != "success" ] && jobs+=("frontend: $frontend")
+          if [ "${#jobs[@]}" -eq 0 ]; then
+            echo "jobs=backend, frontend" >> "$GITHUB_OUTPUT"
+          else
+            printf -v joined '%s, ' "${jobs[@]}"
+            echo "jobs=${joined%, }" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ env.DISCORD_CI_WEBHOOK_URL }}
+          NOTIFY_STATUS: ${{ steps.status.outputs.result }}
+          NOTIFY_WORKFLOW: CI
+          NOTIFY_JOB: ${{ steps.status.outputs.jobs }}
+        run: bash .github/scripts/discord-notify.sh

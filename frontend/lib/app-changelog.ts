@@ -20,6 +20,14 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.2",
+    date: "2026-06-07",
+    changes: [
+      "GitHub Actions（CI / デプロイ）の成功・失敗を Discord へ通知（ログイン通知とは別チャンネル）",
+      "デプロイ用 SSH 接続情報（host / username / ssh-port）を 1Password の Server アイテムから参照",
+    ],
+  },
+  {
     version: "2.0.1",
     date: "2026-06-07",
     changes: [
