@@ -289,14 +289,16 @@ python3 migrate_db.py   # aircon テーブルを作成
 - **モバイルアプリ対応 (PWA)**: ホーム画面に追加して全画面起動可能。専用アプリアイコン設定済み
 - **死活監視用 API**: `/api/health` が `GET` / `HEAD` で `200 OK` を返す
 - **ログイン管理**:
-  - デフォルトパスワード: `admin`
-  - デプロイ時の変更: 1Password の `app-password`（ビルド時に `NEXT_PUBLIC_APP_PASSWORD` として埋め込み）
+  - デフォルトパスワード: `admin`（ローカル開発時）
+  - 本番: 1Password の `app-password` を `APP_PASSWORD` としてサーバー `.env` に同期
+  - ログイン成功時: Discord Webhook（1Password の `discord-webhook-url`）へ通知
 
 ## API 概要
 
 | メソッド | パス | 説明 |
 |----------|------|------|
 | GET/HEAD | `/api/health` | 死活監視 |
+| POST | `/api/login` | ログイン（成功時に Discord 通知） |
 | GET | `/api/latest?device=1` | 最新の屋内＋屋外データ |
 | GET | `/api/history?range=day&device=1` | 履歴（`range`: day/week/month/year、または `start`/`end`） |
 | GET | `/api/daily-stats?device=1` | 日次統計（最近の記録） |
@@ -357,7 +359,8 @@ python3 migrate_pressure_to_hpa.py
 
 | フィールド名 | 内容 |
 |-------------|------|
-| `app-password` | 画面ログイン用パスワード |
+| `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
+| `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` として同期） |
 | `host` | サーバーのホスト名または IP |
 | `username` | SSH ユーザー名 |
 | `ssh-port` | SSH ポート番号 |
@@ -393,13 +396,21 @@ op read "op://apps/githubaction-sshkey/private_key?ssh-format=openssh"
 
 rsync では `.env` を転送しません。DB 接続情報などサーバー固有の設定は、引き続き本番サーバー上の `.env` で管理してください。
 
+デプロイ時に 1Password から次の値が自動で `.env` に書き込まれます（既存の同名キーは上書き）。
+
+| 環境変数 | 1Password フィールド |
+|----------|---------------------|
+| `APP_PASSWORD` | `app-password` |
+| `DISCORD_WEBHOOK_URL` | `discord-webhook-url` |
+
 ### 2. デプロイフロー
 
 `main` ブランチにプッシュすると GitHub Actions が起動し、以下を自動実行します。
 
-1. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力、パスワード埋め込み含む）
+1. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力）
 2. ファイルの転送 (`rsync`)
-3. DB マイグレーション (`migrate_db.py`)
-4. バックエンドの依存関係更新と PM2 による再起動
+3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` をサーバー `.env` に同期
+4. DB マイグレーション (`migrate_db.py`)
+5. バックエンドの依存関係更新と PM2 による再起動
 
 本番では FastAPI が `frontend/out` を配信し、API と UI を同一オリジンで提供します。

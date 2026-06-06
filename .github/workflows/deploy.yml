@@ -27,8 +27,6 @@ jobs:
 
       - name: Install dependencies and Build Frontend
         working-directory: ./frontend
-        env:
-          NEXT_PUBLIC_APP_PASSWORD: ${{ env.NEXT_PUBLIC_APP_PASSWORD }}
         run: |
           npm ci
           npm run build
@@ -65,12 +63,30 @@ jobs:
             ./ "${USERNAME}@${HOST}:${TARGET_DIR}/"
 
       - name: Restart Backend Service
+        env:
+          APP_PASSWORD: ${{ env.APP_PASSWORD }}
+          DISCORD_WEBHOOK_URL: ${{ env.DISCORD_WEBHOOK_URL }}
         run: |
+          APP_PASSWORD_B64=$(printf '%s' "$APP_PASSWORD" | base64 -w 0)
+          DISCORD_WEBHOOK_URL_B64=$(printf '%s' "$DISCORD_WEBHOOK_URL" | base64 -w 0)
           ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" << EOF
             set -e
             echo "Current directory: \$(pwd)"
             cd ${TARGET_DIR}
             echo "Working directory: \$(pwd)"
+
+            sync_env_var() {
+              key="\$1"
+              value="\$(printf '%s' "\$2" | base64 -d)"
+              touch .env
+              if grep -q "^\${key}=" .env; then
+                grep -v "^\${key}=" .env > .env.tmp && mv .env.tmp .env
+              fi
+              printf '%s=%s\n' "\$key" "\$value" >> .env
+            }
+
+            sync_env_var APP_PASSWORD '${APP_PASSWORD_B64}'
+            sync_env_var DISCORD_WEBHOOK_URL '${DISCORD_WEBHOOK_URL_B64}'
             
             # Create venv if not exists
             if [ ! -d "venv" ]; then

@@ -20,6 +20,16 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.0",
+    date: "2026-06-07",
+    changes: [
+      "ログイン成功時に Discord へ通知（日時・IP・User-Agent）",
+      "ログイン認証をサーバー API（POST /api/login）に移行",
+      "APP_PASSWORD と DISCORD_WEBHOOK_URL を 1Password から本番 .env に自動同期",
+      "フロントエンドへのパスワード埋め込み（NEXT_PUBLIC_APP_PASSWORD）を廃止",
+    ],
+  },
+  {
     version: "1.8.2",
     date: "2026-06-07",
     changes: [

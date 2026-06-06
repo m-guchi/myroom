@@ -15,19 +15,25 @@ import {
 import { cn } from "@/lib/utils";
 
 interface LoginScreenProps {
-  onLogin: (password: string) => boolean;
+  onLogin: (password: string) => Promise<boolean>;
 }
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (onLogin(password)) {
-      setError("");
-      return;
+  const handleLogin = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      if (await onLogin(password)) {
+        return;
+      }
+      setError("パスワードを入力してください");
+    } finally {
+      setLoading(false);
     }
-    setError("パスワードを入力してください");
   };
 
   return (
@@ -60,8 +66,9 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <Button
             className="h-12 w-full rounded-xl bg-foreground text-base text-background hover:bg-foreground/90"
             onClick={handleLogin}
+            disabled={loading}
           >
-            ログイン
+            {loading ? "ログイン中..." : "ログイン"}
           </Button>
         </CardContent>
       </Card>

@@ -7,9 +7,6 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
-  env: {
-    NEXT_PUBLIC_APP_PASSWORD: process.env.NEXT_PUBLIC_APP_PASSWORD,
-  },
   async rewrites() {
     if (process.env.NODE_ENV === "development") {
       return [
