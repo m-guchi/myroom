@@ -342,20 +342,25 @@ python3 migrate_pressure_to_hpa.py
 
 #### 1-1. 1Password にデプロイ用アイテムを作成
 
-保管庫名 `apps` に、アイテム名 `MyRoom` を作成し、以下のフィールドを登録してください。
+保管庫名 `apps` に、次の 2 アイテムを作成してください。
+
+**アイテム `MyRoom`**（セキュアノート等）
 
 | フィールド名 | 内容 |
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード |
-| `ssh-private-key` | サーバー接続用 SSH 秘密鍵（OpenSSH 形式のテキストフィールド） |
 | `host` | サーバーのホスト名または IP |
 | `username` | SSH ユーザー名 |
 | `ssh-port` | SSH ポート番号 |
 | `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
 
-Vault 名やアイテム名を変える場合は、`.github/deploy.env.tpl` の `op://...` 参照も合わせて更新してください。
+**アイテム `githubaction-sshkey`**（「SSH 鍵」アイテム型）
 
-`ssh-private-key` はセキュアノートのテキストフィールドとして登録してください。1Password の「SSH 鍵」アイテム型を使う場合のみ、参照に `?ssh-format=openssh` を付けます。
+| フィールド名 | 内容 |
+|-------------|------|
+| `private key` | サーバー接続用 SSH 秘密鍵 |
+
+Vault 名やアイテム名を変える場合は、`.github/deploy.env.tpl` の `op://...` 参照も合わせて更新してください。
 
 #### 1-2. Service Account を作成
 
