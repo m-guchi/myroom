@@ -20,6 +20,13 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.8.1",
+    date: "2026-06-07",
+    changes: [
+      "1Password の SSH 鍵参照を githubaction-sshkey アイテムに修正",
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-06-07",
     changes: [
