@@ -364,10 +364,15 @@ python3 migrate_pressure_to_hpa.py
 | `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` としてサーバー `.env` に同期） |
 | `discord-webhook-url-ci` | CI / デプロイ通知用 Discord Webhook URL（GitHub Actions のみ。サーバーには同期しない） |
 | `db-name` | 接続先データベース名（`DB_NAME` として同期） |
-| `host` | サーバーのホスト名または IP |
+| `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
+
+**アイテム `Server`**（セキュアノート等）
+
+| フィールド名 | 内容 |
+|-------------|------|
+| `host` | サーバーのホスト名または IP（GitHub Actions の SSH / rsync 用） |
 | `username` | SSH ユーザー名 |
 | `ssh-port` | SSH ポート番号 |
-| `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
 
 **アイテム `DB`**（セキュアノート等）
 
