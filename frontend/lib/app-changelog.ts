@@ -20,6 +20,15 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.1",
+    date: "2026-06-07",
+    changes: [
+      "DB 接続情報（DB_USER / DB_PASSWORD / DB_HOST / DB_PORT）を 1Password の DB アイテムから本番 .env に同期",
+      "DB_NAME を 1Password の MyRoom アイテムから同期",
+      "DB_MOCK はサーバー .env の手動設定のまま（1Password 同期対象外）",
+    ],
+  },
+  {
     version: "2.0.0",
     date: "2026-06-07",
     changes: [
