@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -8,7 +8,7 @@ from typing import List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, weather, outdoor_config, device_config, aircon_config
+from . import database, weather, outdoor_config, device_config, aircon_config, discord_notify
 from pydantic import BaseModel, model_validator
 
 load_dotenv()
@@ -60,6 +60,9 @@ class DeviceNameUpdate(BaseModel):
 
 class AirconNameUpdate(BaseModel):
     name: str
+
+class LoginRequest(BaseModel):
+    password: str
 
 class AirconData(BaseModel):
     datetime: str
@@ -175,6 +178,26 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
 @app.get("/api/health")
 @app.head("/api/health")
 async def health_check():
+    return {"status": "ok"}
+
+
+@app.post("/api/login")
+async def login(body: LoginRequest, request: Request):
+    app_password = os.getenv("APP_PASSWORD", "admin")
+    if body.password != app_password:
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+    elif request.client:
+        client_ip = request.client.host
+    else:
+        client_ip = "unknown"
+
+    user_agent = request.headers.get("User-Agent", "unknown")
+    timestamp = get_now_jst().strftime("%Y-%m-%d %H:%M:%S")
+    discord_notify.send_login_notification(timestamp, client_ip, user_agent)
     return {"status": "ok"}
 
 

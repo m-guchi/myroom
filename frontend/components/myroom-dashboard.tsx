@@ -24,7 +24,13 @@ import { ChartColorSettings as ChartColorSettingsDialog } from "@/components/cha
 import { SensorRecordsPanel } from "@/components/sensor-records-panel";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
-import { fetchDashboardData, fetchDevices, fetchOutdoorLocation, fetchAirconUnits } from "@/lib/api";
+import {
+  fetchDashboardData,
+  fetchDevices,
+  fetchOutdoorLocation,
+  fetchAirconUnits,
+  login,
+} from "@/lib/api";
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
   buildDefaultDisplayOrder,
@@ -396,9 +402,9 @@ export function MyRoomDashboard() {
     return () => clearInterval(interval);
   }, [isAuthenticated, fetchData]);
 
-  const handleLogin = (password: string) => {
-    const envPassword = process.env.NEXT_PUBLIC_APP_PASSWORD || "admin";
-    if (password === envPassword) {
+  const handleLogin = async (password: string) => {
+    const ok = await login(password);
+    if (ok) {
       setIsAuthenticated(true);
       localStorage.setItem(AUTH_KEY, "true");
       return true;
