@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { MapPin, Search, X } from "lucide-react";
+import { ChartLineVisibilityToggle } from "@/components/chart-line-visibility-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,12 +16,16 @@ import { cn } from "@/lib/utils";
 
 interface OutdoorLocationSettingsProps {
   open: boolean;
+  chartLineVisible: boolean;
+  onChartLineVisibleChange: (visible: boolean) => void;
   onClose: () => void;
   onSaved: (location: OutdoorLocation) => void;
 }
 
 export function OutdoorLocationSettings({
   open,
+  chartLineVisible,
+  onChartLineVisibleChange,
   onClose,
   onSaved,
 }: OutdoorLocationSettingsProps) {
@@ -218,6 +223,12 @@ export function OutdoorLocationSettings({
                 />
               </div>
             </div>
+
+            <ChartLineVisibilityToggle
+              id="outdoor-chart-visible"
+              visible={chartLineVisible}
+              onChange={onChartLineVisibleChange}
+            />
 
             {error && (
               <p className={cn("rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive")}>

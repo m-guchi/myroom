@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Snowflake, X } from "lucide-react";
+import { ChartLineVisibilityToggle } from "@/components/chart-line-visibility-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,10 @@ import { cn } from "@/lib/utils";
 interface AirconNameSettingsProps {
   open: boolean;
   acId: number;
+  roomChartLineVisible: boolean;
+  targetChartLineVisible: boolean;
+  onRoomChartLineVisibleChange: (visible: boolean) => void;
+  onTargetChartLineVisibleChange: (visible: boolean) => void;
   onClose: () => void;
   onSaved: (unit: AirconUnitInfo) => void;
 }
@@ -19,6 +24,10 @@ interface AirconNameSettingsProps {
 export function AirconNameSettings({
   open,
   acId,
+  roomChartLineVisible,
+  targetChartLineVisible,
+  onRoomChartLineVisibleChange,
+  onTargetChartLineVisibleChange,
   onClose,
   onSaved,
 }: AirconNameSettingsProps) {
@@ -75,7 +84,7 @@ export function AirconNameSettings({
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Snowflake className="size-5 text-[#1abc9c]" />
-            <h2 className="text-lg font-bold">エアコンの表示名</h2>
+            <h2 className="text-lg font-bold">エアコンの設定</h2>
           </div>
           <button
             type="button"
@@ -88,7 +97,7 @@ export function AirconNameSettings({
         </div>
 
         <p className="mb-4 text-sm text-muted-foreground">
-          ダッシュボードのエアコンカードに表示される名前です。
+          表示名と環境グラフでの表示有無を設定します。
         </p>
 
         {loading ? (
@@ -115,6 +124,26 @@ export function AirconNameSettings({
                 className="rounded-xl"
               />
             </div>
+
+            <ChartLineVisibilityToggle
+              id={`aircon-${acId}-room-chart-visible`}
+              label="現在値（室温）"
+              description=""
+              visible={roomChartLineVisible}
+              onChange={onRoomChartLineVisibleChange}
+            />
+
+            <ChartLineVisibilityToggle
+              id={`aircon-${acId}-target-chart-visible`}
+              label="設定温度"
+              description=""
+              visible={targetChartLineVisible}
+              onChange={onTargetChartLineVisibleChange}
+            />
+
+            <p className="text-xs text-muted-foreground">
+              画面を開いたときのグラフ表示（凡例での切り替えは次回起動まで保持されません）
+            </p>
 
             {error && (
               <p className={cn("rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive")}>

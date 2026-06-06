@@ -45,6 +45,18 @@ import {
   saveChartColors,
   type ChartColorSettings,
 } from "@/lib/chart-colors";
+import {
+  buildDefaultChartLineVisibility,
+  deviceVisibilityKey,
+  isChartLineVisible,
+  loadChartLineVisibility,
+  mergeEffectiveChartLineVisibility,
+  AIRCON_TARGET_VISIBILITY_KEY,
+  OUTDOOR_VISIBILITY_KEY,
+  saveChartLineVisibility,
+  type ChartLineVisibilityOverrides,
+  type ChartLineVisibilitySettings,
+} from "@/lib/chart-line-visibility";
 import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
@@ -297,6 +309,15 @@ export function MyRoomDashboard() {
   const [chartColors, setChartColors] = useState<ChartColorSettings>(() =>
     buildDefaultChartColors()
   );
+  const [defaultLineVisibility, setDefaultLineVisibility] =
+    useState<ChartLineVisibilitySettings>(() => buildDefaultChartLineVisibility());
+  const [sessionLineOverrides, setSessionLineOverrides] =
+    useState<ChartLineVisibilityOverrides>({});
+
+  const effectiveLineVisibility = useMemo(
+    () => mergeEffectiveChartLineVisibility(defaultLineVisibility, sessionLineOverrides),
+    [defaultLineVisibility, sessionLineOverrides]
+  );
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
@@ -352,6 +373,8 @@ export function MyRoomDashboard() {
 
   useEffect(() => {
     setDisplayOrder(loadDisplayOrder(sensorDeviceIds));
+    setDefaultLineVisibility(loadChartLineVisibility(sensorDeviceIds));
+    setSessionLineOverrides({});
   }, [sensorDeviceIdsKey]);
 
   useEffect(() => {
@@ -452,6 +475,24 @@ export function MyRoomDashboard() {
     saveChartColors(colors);
   };
 
+  const handleDefaultChartLineVisibleChange = (key: string, visible: boolean) => {
+    setDefaultLineVisibility((prev) => {
+      const next = { ...prev, [key]: visible };
+      saveChartLineVisibility(next);
+      return next;
+    });
+    setSessionLineOverrides((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const handleSessionChartLineVisibleChange = (key: string, visible: boolean) => {
+    setSessionLineOverrides((prev) => ({ ...prev, [key]: visible }));
+  };
+
   const latestForDailyStats = useMemo(() => {
     const merged = { ...latestByDevice };
     if (airconLatest?.room_temperature != null) {
@@ -526,6 +567,8 @@ export function MyRoomDashboard() {
             outdoorLocationName={outdoorLocation?.name}
             legendOrder={displayOrder}
             chartColors={chartColors}
+            lineVisibility={effectiveLineVisibility}
+            onLineVisibilityChange={handleSessionChartLineVisibleChange}
           />
         </section>
 
@@ -593,6 +636,7 @@ export function MyRoomDashboard() {
                         strokeWidth={1.75}
                       />
                     }
+                    onSettingsClick={() => setOutdoorSettingsOpen(true)}
                     onClick={() => setOutdoorSettingsOpen(true)}
                   />
                 );
@@ -609,6 +653,10 @@ export function MyRoomDashboard() {
                       strokeWidth={1.75}
                     />
                   }
+                  onSettingsClick={() => {
+                    setAirconSettingsId(activeAirconId);
+                    setAirconSettingsOpen(true);
+                  }}
                   onClick={() => {
                     setAirconSettingsId(activeAirconId);
                     setAirconSettingsOpen(true);
@@ -692,6 +740,13 @@ export function MyRoomDashboard() {
       <DeviceNameSettings
         open={deviceSettingsOpen}
         deviceId={deviceSettingsId}
+        chartLineVisible={isChartLineVisible(
+          defaultLineVisibility,
+          deviceVisibilityKey(deviceSettingsId)
+        )}
+        onChartLineVisibleChange={(visible) =>
+          handleDefaultChartLineVisibleChange(deviceVisibilityKey(deviceSettingsId), visible)
+        }
         onClose={() => setDeviceSettingsOpen(false)}
         onSaved={(device) => {
           setDevices((prev) => {
@@ -716,6 +771,10 @@ export function MyRoomDashboard() {
 
       <OutdoorLocationSettings
         open={outdoorSettingsOpen}
+        chartLineVisible={isChartLineVisible(defaultLineVisibility, OUTDOOR_VISIBILITY_KEY)}
+        onChartLineVisibleChange={(visible) =>
+          handleDefaultChartLineVisibleChange(OUTDOOR_VISIBILITY_KEY, visible)
+        }
         onClose={() => setOutdoorSettingsOpen(false)}
         onSaved={(location) => {
           setOutdoorLocation(location);
@@ -726,6 +785,23 @@ export function MyRoomDashboard() {
       <AirconNameSettings
         open={airconSettingsOpen}
         acId={airconSettingsId}
+        roomChartLineVisible={isChartLineVisible(
+          defaultLineVisibility,
+          deviceVisibilityKey(AIRCON_CHART_DEVICE_ID)
+        )}
+        targetChartLineVisible={isChartLineVisible(
+          defaultLineVisibility,
+          AIRCON_TARGET_VISIBILITY_KEY
+        )}
+        onRoomChartLineVisibleChange={(visible) =>
+          handleDefaultChartLineVisibleChange(
+            deviceVisibilityKey(AIRCON_CHART_DEVICE_ID),
+            visible
+          )
+        }
+        onTargetChartLineVisibleChange={(visible) =>
+          handleDefaultChartLineVisibleChange(AIRCON_TARGET_VISIBILITY_KEY, visible)
+        }
         onClose={() => setAirconSettingsOpen(false)}
         onSaved={(unit: AirconUnitInfo) => {
           setAirconUnits((prev) => {

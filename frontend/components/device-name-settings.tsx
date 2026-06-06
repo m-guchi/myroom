@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Thermometer, X } from "lucide-react";
+import { ChartLineVisibilityToggle } from "@/components/chart-line-visibility-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,8 @@ import { cn } from "@/lib/utils";
 interface DeviceNameSettingsProps {
   open: boolean;
   deviceId: number;
+  chartLineVisible: boolean;
+  onChartLineVisibleChange: (visible: boolean) => void;
   onClose: () => void;
   onSaved: (device: DeviceInfo) => void;
 }
@@ -19,6 +22,8 @@ interface DeviceNameSettingsProps {
 export function DeviceNameSettings({
   open,
   deviceId,
+  chartLineVisible,
+  onChartLineVisibleChange,
   onClose,
   onSaved,
 }: DeviceNameSettingsProps) {
@@ -75,7 +80,7 @@ export function DeviceNameSettings({
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Thermometer className="size-5 text-muted-foreground" />
-            <h2 className="text-lg font-bold">デバイスの表示名</h2>
+            <h2 className="text-lg font-bold">デバイスの設定</h2>
           </div>
           <button
             type="button"
@@ -88,7 +93,7 @@ export function DeviceNameSettings({
         </div>
 
         <p className="mb-4 text-sm text-muted-foreground">
-          ダッシュボードのカードとセクション見出しに表示される名前です。
+          表示名と環境グラフでの表示有無を設定します。
         </p>
 
         {loading ? (
@@ -115,6 +120,12 @@ export function DeviceNameSettings({
                 className="rounded-xl"
               />
             </div>
+
+            <ChartLineVisibilityToggle
+              id={`device-${deviceId}-chart-visible`}
+              visible={chartLineVisible}
+              onChange={onChartLineVisibleChange}
+            />
 
             {error && (
               <p className={cn("rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive")}>
