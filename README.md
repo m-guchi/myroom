@@ -160,7 +160,7 @@ npm run build
 | `tests/test_config.py` | デバイス名・屋外地点の設定ファイル読み書き |
 | `frontend/lib/chart-utils.test.ts` | グラフ計算・快適度・履歴マージのユニットテスト |
 
-`main` / `develop` への push と PR では [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が自動実行されます。`main` への push 時は、CI 通過後にデプロイ（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）が続きます。
+`main` / `develop` 向け PR と `develop` への push では [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が自動実行されます（`main` への直接 push では CI は走りません）。`main` への push 時はデプロイ（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）のみ実行されます。
 
 ### ブランチとデプロイ
 
