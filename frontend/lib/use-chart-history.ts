@@ -19,6 +19,12 @@ export interface UseChartHistoryOptions {
   airconChartDeviceId?: number;
   /** グラフ履歴の自動更新間隔（ms）。0 で無効。既定 30 秒 */
   pollIntervalMs?: number;
+  /** オフライン時に表示するキャッシュ済み履歴 */
+  offlineHistory?: HistoryPoint[] | null;
+  /** オフラインキャッシュの識別子（cachedAt など） */
+  offlineCacheKey?: string | null;
+  /** true の間はネットワークから履歴を読み込まない */
+  offlineMode?: boolean;
 }
 
 export function useChartHistory(
@@ -29,6 +35,11 @@ export function useChartHistory(
   const airconAcId = options?.airconAcId ?? null;
   const airconChartDeviceId = options?.airconChartDeviceId ?? AIRCON_CHART_DEVICE_ID;
   const pollIntervalMs = options?.pollIntervalMs ?? 30000;
+  const offlineHistory = options?.offlineHistory ?? null;
+  const offlineCacheKey = options?.offlineCacheKey ?? null;
+  const offlineMode = options?.offlineMode ?? false;
+  const offlineHistoryRef = useRef<HistoryPoint[] | null>(null);
+  offlineHistoryRef.current = offlineHistory;
 
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -90,9 +101,23 @@ export function useChartHistory(
     }
   }, [fetchMergedWindow, viewRange]);
 
+  const hydrateFromCache = useCallback((points: HistoryPoint[]) => {
+    setHistoryLoading(false);
+    setNoMoreOlderData(true);
+    setHistoryData(points);
+    loadedRangeRef.current = points.length ? getLoadedRange(points) : null;
+    setHistoryEpoch((epoch) => epoch + 1);
+  }, []);
+
   useEffect(() => {
+    if (offlineMode) {
+      if (offlineHistoryRef.current?.length) {
+        hydrateFromCache(offlineHistoryRef.current);
+      }
+      return;
+    }
     resetAndLoad();
-  }, [resetAndLoad, deviceIdsKey, airconKey]);
+  }, [resetAndLoad, deviceIdsKey, airconKey, offlineMode, offlineCacheKey, hydrateFromCache]);
 
   const ensureVisibleRangeLoaded = useCallback(
     async (visibleMin: number, visibleMax: number) => {
@@ -192,12 +217,12 @@ export function useChartHistory(
   }, [fetchMergedWindow]);
 
   useEffect(() => {
-    if (pollIntervalMs <= 0) return;
+    if (offlineMode || pollIntervalMs <= 0) return;
     const id = setInterval(() => {
       void refreshLatest();
     }, pollIntervalMs);
     return () => clearInterval(id);
-  }, [pollIntervalMs, refreshLatest]);
+  }, [pollIntervalMs, refreshLatest, offlineMode]);
 
   return {
     historyData,
@@ -207,5 +232,6 @@ export function useChartHistory(
     resetAndLoad,
     refreshLatest,
     ensureVisibleRangeLoaded,
+    hydrateFromCache,
   };
 }
