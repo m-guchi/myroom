@@ -29,6 +29,13 @@ import {
   fetchAirconUnits,
   login,
 } from "@/lib/api";
+import {
+  buildDashboardOfflineSnapshot,
+  isOffline,
+  loadDashboardOfflineSnapshot,
+  saveDashboardOfflineSnapshot,
+  type DashboardOfflineSnapshot,
+} from "@/lib/offline-cache";
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
   buildDefaultDisplayOrder,
@@ -326,6 +333,10 @@ export function MyRoomDashboard() {
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
   const [airconSettingsOpen, setAirconSettingsOpen] = useState(false);
   const [airconSettingsId, setAirconSettingsId] = useState(1);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [offlineSnapshot, setOfflineSnapshot] = useState<DashboardOfflineSnapshot | null>(
+    null
+  );
 
   const activeAirconId = airconLatest?.ac_id ?? airconSettingsId;
   const airconChartTitle =
@@ -353,7 +364,22 @@ export function MyRoomDashboard() {
     airconAcId: activeAirconId,
     airconChartDeviceId: AIRCON_CHART_DEVICE_ID,
     pollIntervalMs: 30000,
+    offlineMode: isOfflineMode,
+    offlineHistory: offlineSnapshot?.historyData ?? null,
+    offlineCacheKey: offlineSnapshot?.cachedAt ?? null,
   });
+
+  const applyOfflineSnapshot = useCallback((snapshot: DashboardOfflineSnapshot) => {
+    setLatestByDevice(snapshot.latestByDevice);
+    setLatestData(snapshot.latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? null);
+    setDailyStatsByDevice(snapshot.dailyStatsByDevice);
+    setAirconLatest(snapshot.airconLatest);
+    setDevices(snapshot.devices);
+    setAirconUnits(snapshot.airconUnits);
+    setOutdoorLocation(snapshot.outdoorLocation);
+    setOfflineSnapshot(snapshot);
+    setIsOfflineMode(true);
+  }, []);
 
   const deviceNames = useMemo(() => {
     const names: Record<number, string> = {};
@@ -400,10 +426,20 @@ export function MyRoomDashboard() {
       setRefreshing(true);
       if (showChartLoading) setChartLoading(true);
       try {
+        if (isOffline()) {
+          const snapshot = await loadDashboardOfflineSnapshot();
+          if (snapshot) {
+            applyOfflineSnapshot(snapshot);
+            return;
+          }
+        }
+
         const data = await fetchDashboardData(
           airconLatest?.ac_id ?? airconSettingsId,
           sensorDeviceIds
         );
+        setIsOfflineMode(false);
+        setOfflineSnapshot(null);
         setLatestByDevice(data.latestByDevice);
         setLatestData(data.latest);
         setDailyStatsByDevice(data.dailyStatsByDevice);
@@ -413,13 +449,68 @@ export function MyRoomDashboard() {
         }
       } catch (err) {
         console.error(err);
+        const snapshot = await loadDashboardOfflineSnapshot();
+        if (snapshot) {
+          applyOfflineSnapshot(snapshot);
+        }
       } finally {
         setRefreshing(false);
         if (showChartLoading) setChartLoading(false);
       }
     },
-    [resetAndLoad, airconLatest?.ac_id, airconSettingsId, sensorDeviceIds]
+    [
+      resetAndLoad,
+      airconLatest?.ac_id,
+      airconSettingsId,
+      sensorDeviceIds,
+      applyOfflineSnapshot,
+    ]
   );
+
+  useEffect(() => {
+    if (!isAuthenticated || isOfflineMode || isOffline()) return;
+    if (!historyData.length || Object.keys(latestByDevice).length === 0) return;
+
+    const snapshot = buildDashboardOfflineSnapshot({
+      sensorDeviceIds,
+      airconAcId: activeAirconId,
+      latestByDevice,
+      dailyStatsByDevice,
+      airconLatest,
+      historyData,
+      devices,
+      airconUnits,
+      outdoorLocation,
+    });
+
+    if (!snapshot) return;
+    void saveDashboardOfflineSnapshot(snapshot);
+  }, [
+    isAuthenticated,
+    isOfflineMode,
+    sensorDeviceIds,
+    activeAirconId,
+    latestByDevice,
+    dailyStatsByDevice,
+    airconLatest,
+    historyData,
+    devices,
+    airconUnits,
+    outdoorLocation,
+  ]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handleOnline = () => {
+      setIsOfflineMode(false);
+      setOfflineSnapshot(null);
+      void fetchData({ showChartLoading: true, reloadHistory: true });
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [isAuthenticated, fetchData]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -533,10 +624,25 @@ export function MyRoomDashboard() {
         minute: "2-digit",
       })
     : "--";
+  const offlineCachedAt = offlineSnapshot?.dataLatestAt
+    ? new Date(offlineSnapshot.dataLatestAt).toLocaleString("ja-JP", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
 
   return (
     <div className="pb-10">
       <div className="space-y-6 px-5 pt-12">
+        {isOfflineMode && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+            オフライン表示中
+            {offlineCachedAt ? `（${offlineCachedAt} 時点・直近24時間）` : "（直近24時間）"}
+          </div>
+        )}
         <section>
           <div className="mb-3 flex items-center justify-between px-0.5">
             <div>
@@ -546,10 +652,12 @@ export function MyRoomDashboard() {
             <button
               type="button"
               onClick={() => {
+                if (isOfflineMode) return;
                 fetchData({ showChartLoading: true });
                 void refreshLatest();
               }}
-              className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent"
+              disabled={isOfflineMode}
+              className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="更新"
             >
               <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} />

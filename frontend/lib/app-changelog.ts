@@ -20,6 +20,14 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.2.0",
+    date: "2026-06-07",
+    changes: [
+      "PWA用アイコンを追加（ホーム画面への追加に対応）",
+      "オフライン時に最新値と直近24時間のグラフを表示（IndexedDB + Service Worker）",
+    ],
+  },
+  {
     version: "2.1.0",
     date: "2026-06-07",
     changes: [
