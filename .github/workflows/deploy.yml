@@ -80,6 +80,7 @@ jobs:
           DB_HOST_B64=$(b64 "$DB_HOST")
           DB_PORT_B64=$(b64 "$DB_PORT")
           DB_NAME_B64=$(b64 "$DB_NAME")
+          DB_MOCK_B64=$(b64 "false")
           ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" << EOF
             set -e
             echo "Current directory: \$(pwd)"
@@ -103,6 +104,7 @@ jobs:
             sync_env_var DB_HOST '${DB_HOST_B64}'
             sync_env_var DB_PORT '${DB_PORT_B64}'
             sync_env_var DB_NAME '${DB_NAME_B64}'
+            sync_env_var DB_MOCK '${DB_MOCK_B64}'
             
             # Create venv if not exists (Ubuntu may need python3-venv)
             bash deployment/ensure_venv.sh

@@ -178,7 +178,7 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
 @app.get("/api/health")
 @app.head("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "db_mock": database.DB_MOCK}
 
 
 @app.post("/api/login")
