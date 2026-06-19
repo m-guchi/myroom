@@ -462,4 +462,38 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 5. バックエンドの依存関係更新と PM2 による再起動
 6. CI 用 Webhook へデプロイ結果を Discord 通知
 
+**Discord 通知（CI / デプロイ）:** 共通フォーマット・新規プロジェクトへの追加手順は [apps/.github/README.md](../.github/README.md)（Discord 通知設定）を参照してください。
+
 本番では FastAPI が `frontend/out` を配信し、API と UI を同一オリジンで提供します。
+
+### 3. バージョン管理（npm version）
+
+アプリのバージョンは `frontend/package.json` が正です。UI の表示と更新履歴はここから同期されます。
+
+| ファイル | 役割 |
+|----------|------|
+| `frontend/package.json` | バージョン番号（`npm version` で更新） |
+| `frontend/lib/app-version.ts` | package.json を読み込み表示 |
+| `frontend/lib/app-changelog.ts` | 更新履歴（`npm version` 時に先頭へ枠を自動追加） |
+
+リポジトリルートから実行します（`git` のコミット・タグも自動作成されます）。
+
+```bash
+# patch: 2.2.0 → 2.2.1
+npm run version:patch -- -m "Release v%s: 修正内容の要約"
+
+# minor: 2.2.0 → 2.3.0
+npm run version:minor -- -m "Release v%s: 機能追加の要約"
+
+# major: 2.2.0 → 3.0.0
+npm run version:major -- -m "Release v%s: 破壊的変更の要約"
+```
+
+`npm version` 実行時の流れ:
+
+1. `typecheck` と `test`（`preversion`）
+2. `package.json` / `package-lock.json` のバージョン更新
+3. `app-changelog.ts` 先頭に新バージョンの枠を追加（変更内容は手動で追記）
+4. 上記をまとめて git commit + タグ `vX.Y.Z` 作成
+
+changelog の「（変更内容を追記してください）」を実際の文言に直してから `main` へマージしてください。

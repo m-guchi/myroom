@@ -1,0 +1,9 @@
+{
+  "name": "myroom",
+  "private": true,
+  "scripts": {
+    "version:patch": "npm version patch --prefix frontend",
+    "version:minor": "npm version minor --prefix frontend",
+    "version:major": "npm version major --prefix frontend"
+  }
+}
