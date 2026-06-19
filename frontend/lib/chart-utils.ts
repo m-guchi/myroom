@@ -8,6 +8,8 @@ import {
   deviceTargetMetricKey,
   getDeviceMetricValue,
   getDeviceTargetMetricValue,
+  getDeviceTargetMetricRawValue,
+  isAirconAutoTarget,
   isAirconPowerOff,
   AIRCON_TARGET_CHART_KEY,
 } from "@/lib/types";
@@ -318,49 +320,80 @@ export interface AirconTargetChartPoint {
   airconTarget: number;
 }
 
+export interface AirconTargetChartSegment {
+  /** true のとき設定温度 0（自動）で、室温と同じ値を点線表示する */
+  auto: boolean;
+  points: AirconTargetChartPoint[];
+}
+
+function resolveAirconTargetChartPoint(
+  point: HistoryPoint,
+  deviceId: number
+): { value: number; auto: boolean } | null {
+  const raw = getDeviceTargetMetricRawValue(point, deviceId);
+  if (raw == null) return null;
+  if (isAirconAutoTarget(raw)) {
+    const roomTemp = getDeviceMetricValue(point, deviceId, "temperature");
+    if (roomTemp == null) return null;
+    return { value: roomTemp, auto: true };
+  }
+  const fixed = getDeviceTargetMetricValue(point, deviceId);
+  if (fixed == null) return null;
+  return { value: fixed, auto: false };
+}
+
 /** 設定温度だけを連続した系列にして Recharts で描画する（OFF 区間で分割） */
 export function buildAirconTargetChartSeries(
   historyData: HistoryPoint[],
   deviceId: number,
   maxPoints = 320
 ): AirconTargetChartPoint[] {
-  return buildAirconTargetChartSegments(historyData, deviceId, maxPoints).flat();
+  return buildAirconTargetChartSegments(historyData, deviceId, maxPoints).flatMap(
+    (segment) => segment.points
+  );
 }
 
 export function buildAirconTargetChartSegments(
   historyData: HistoryPoint[],
   deviceId: number,
   maxPoints = 320
-): AirconTargetChartPoint[][] {
+): AirconTargetChartSegment[] {
   const powerKey = deviceAirconPowerKey(deviceId);
   const sorted = [...historyData].sort((a, b) => a.datetimeObj - b.datetimeObj);
-  const segments: AirconTargetChartPoint[][] = [];
-  let currentSegment: AirconTargetChartPoint[] = [];
+  const segments: AirconTargetChartSegment[] = [];
+  let currentPoints: AirconTargetChartPoint[] = [];
+  let currentAuto: boolean | null = null;
+
+  const flush = () => {
+    if (currentPoints.length > 0 && currentAuto != null) {
+      segments.push({ auto: currentAuto, points: currentPoints });
+    }
+    currentPoints = [];
+    currentAuto = null;
+  };
 
   for (const point of sorted) {
     const record = point as unknown as Record<string, unknown>;
-    const power = record[powerKey];
-    if (isAirconPowerOff(power)) {
-      if (currentSegment.length > 0) {
-        segments.push(currentSegment);
-        currentSegment = [];
-      }
+    if (isAirconPowerOff(record[powerKey])) {
+      flush();
       continue;
     }
 
-    const value = getDeviceTargetMetricValue(point, deviceId);
-    if (value == null) continue;
+    const resolved = resolveAirconTargetChartPoint(point, deviceId);
+    if (resolved == null) continue;
 
-    currentSegment.push({
+    if (currentAuto != null && currentAuto !== resolved.auto) {
+      flush();
+    }
+    currentAuto = resolved.auto;
+    currentPoints.push({
       datetimeObj: point.datetimeObj,
       datetime: point.datetime,
-      airconTarget: value,
+      airconTarget: resolved.value,
     });
   }
 
-  if (currentSegment.length > 0) {
-    segments.push(currentSegment);
-  }
+  flush();
 
   if (maxPoints <= 0) {
     return segments;
@@ -368,22 +401,25 @@ export function buildAirconTargetChartSegments(
 
   return segments
     .map((segment) => {
-      if (segment.length <= maxPoints) return segment;
+      if (segment.points.length <= maxPoints) return segment;
       const sampled = downsampleMetricSeries(
-        segment.map((entry) => ({
+        segment.points.map((entry) => ({
           datetimeObj: entry.datetimeObj,
           datetime: entry.datetime,
           value: entry.airconTarget,
         })),
         maxPoints
       );
-      return sampled.map((entry) => ({
-        datetimeObj: entry.datetimeObj,
-        datetime: entry.datetime,
-        airconTarget: entry.value,
-      }));
+      return {
+        auto: segment.auto,
+        points: sampled.map((entry) => ({
+          datetimeObj: entry.datetimeObj,
+          datetime: entry.datetime,
+          airconTarget: entry.value,
+        })),
+      };
     })
-    .filter((segment) => segment.length > 0);
+    .filter((segment) => segment.points.length > 0);
 }
 
 function downsampleTargetSeriesForDevice(
@@ -487,10 +523,32 @@ export function hasDeviceTargetMetricData(
   historyData: HistoryPoint[],
   deviceId: number
 ): boolean {
-  const key = deviceTargetMetricKey(deviceId);
+  return historyData.some((point) => getDeviceTargetMetricValue(point, deviceId) != null);
+}
+
+/** 設定温度の状態（固定温度または自動=0）が記録されているか */
+export function hasDeviceTargetStateData(
+  historyData: HistoryPoint[],
+  deviceId: number
+): boolean {
+  const powerKey = deviceAirconPowerKey(deviceId);
   return historyData.some((point) => {
-    const value = (point as unknown as Record<string, unknown>)[key];
-    return typeof value === "number" && !Number.isNaN(value);
+    const record = point as unknown as Record<string, unknown>;
+    if (isAirconPowerOff(record[powerKey])) return false;
+    return getDeviceTargetMetricRawValue(point, deviceId) != null;
+  });
+}
+
+/** 設定温度の線（固定の実線または自動の点線）を描画できるデータがあるか */
+export function hasDeviceTargetChartData(
+  historyData: HistoryPoint[],
+  deviceId: number
+): boolean {
+  const powerKey = deviceAirconPowerKey(deviceId);
+  return historyData.some((point) => {
+    const record = point as unknown as Record<string, unknown>;
+    if (isAirconPowerOff(record[powerKey])) return false;
+    return resolveAirconTargetChartPoint(point, deviceId) != null;
   });
 }
 
@@ -746,6 +804,36 @@ export function getDeviceTargetMetricValueAtTime(
     return prev.v;
   }
   return undefined;
+}
+
+/** カーソル位置の設定温度状態（0 = 自動を含む。グラフの線は描かない） */
+export function getDeviceTargetMetricStateAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): number | undefined {
+  if (isAirconOffAtTime(historyData, deviceId, targetTime)) {
+    return undefined;
+  }
+
+  const powerKey = deviceAirconPowerKey(deviceId);
+  const sorted = [...historyData].sort((a, b) => a.datetimeObj - b.datetimeObj);
+  let lastState: number | undefined;
+
+  for (const point of sorted) {
+    if (point.datetimeObj > targetTime) break;
+    const record = point as unknown as Record<string, unknown>;
+    if (isAirconPowerOff(record[powerKey])) {
+      lastState = undefined;
+      continue;
+    }
+    const raw = getDeviceTargetMetricRawValue(point, deviceId);
+    if (raw != null) {
+      lastState = raw;
+    }
+  }
+
+  return lastState;
 }
 
 /** 指定時刻の屋外指標値（線形補間。データがなければ直前の値） */

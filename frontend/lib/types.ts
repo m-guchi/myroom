@@ -191,6 +191,24 @@ export function getDeviceTargetMetricValue(
   point: HistoryPoint,
   deviceId: number
 ): number | undefined {
+  const raw = getDeviceTargetMetricRawValue(point, deviceId);
+  if (raw == null || isAirconAutoTarget(raw)) return undefined;
+  return raw;
+}
+
+export function isAirconPowerOff(power: unknown): boolean {
+  return typeof power === "string" && power.toUpperCase() === "OFF";
+}
+
+/** AirCloud Home が eco / 自動運転時に返す設定温度 0（0℃ ではない） */
+export function isAirconAutoTarget(value: unknown): boolean {
+  return typeof value === "number" && value === 0;
+}
+
+export function getDeviceTargetMetricRawValue(
+  point: HistoryPoint,
+  deviceId: number
+): number | undefined {
   const key = deviceTargetMetricKey(deviceId);
   const row = point as unknown as Record<string, unknown>;
   const value = row[key];
@@ -202,8 +220,14 @@ export function getDeviceTargetMetricValue(
   return undefined;
 }
 
-export function isAirconPowerOff(power: unknown): boolean {
-  return typeof power === "string" && power.toUpperCase() === "OFF";
+export function formatAirconTargetTemperature(
+  value: number | null | undefined,
+  options?: { withUnit?: boolean }
+): string {
+  if (value == null) return "--";
+  if (isAirconAutoTarget(value)) return "自動";
+  const formatted = value.toFixed(1);
+  return options?.withUnit === false ? formatted : `${formatted}°C`;
 }
 
 /** Recharts 用の設定温度系列キー */

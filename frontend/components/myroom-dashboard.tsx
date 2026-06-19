@@ -72,6 +72,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
   formatAirconMode,
+  formatAirconTargetTemperature,
   getSensorDeviceIds,
   isAirconPowerOff,
   PRIMARY_SENSOR_DEVICE_ID,
@@ -165,7 +166,7 @@ function buildAirconMetrics(
     const modeLabel = powerOff ? "停止" : formatAirconMode(data.mode);
     const value =
       !powerOff && data.target_temperature != null
-        ? `${modeLabel} ${data.target_temperature.toFixed(1)}°C`
+        ? `${modeLabel} ${formatAirconTargetTemperature(data.target_temperature)}`
         : modeLabel;
     metrics.push({
       key: "mode_target",
