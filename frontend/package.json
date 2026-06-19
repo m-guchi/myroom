@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev --port 5173",
     "build": "next build",
+    "postbuild": "node scripts/sync-sw-cache.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",

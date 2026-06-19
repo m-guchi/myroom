@@ -129,16 +129,12 @@ jobs:
             fi
             
             # Restart service using PM2 (No sudo required)
-            # Ensure PM2 is installed on the server: 'npm install -g pm2'
+            # Always start from TARGET_DIR: pm2 restart keeps the original cwd.
             echo "Managing PM2 process..."
-            if npx pm2 list | grep -q "myroom-backend"; then
-              npx pm2 restart myroom-backend
-            elif npx pm2 list | grep -q "insight-backend"; then
-              npx pm2 delete insight-backend || true
-              npx pm2 start ecosystem.config.js
-            else
-              npx pm2 start ecosystem.config.js
-            fi
+            npx pm2 delete myroom-backend 2>/dev/null || true
+            npx pm2 delete insight-backend 2>/dev/null || true
+            npx pm2 start ecosystem.config.js
+            npx pm2 save
           EOF
 
       - name: Notify Discord

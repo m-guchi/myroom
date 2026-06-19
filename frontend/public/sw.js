@@ -1,4 +1,4 @@
-const CACHE_NAME = "myroom-shell-v1";
+const CACHE_NAME = "myroom-shell-v2-2-1";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());

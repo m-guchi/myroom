@@ -464,7 +464,7 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 2. ファイルの転送 (`rsync`)
 3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / DB 接続情報をサーバー `.env` に同期
 4. DB マイグレーション (`migrate_db.py`)
-5. バックエンドの依存関係更新と PM2 による再起動
+5. バックエンドの依存関係更新と PM2 による再起動（`pm2 restart` では cwd が変わらないため、毎回 `delete` → `start`）
 6. CI 用 Webhook へデプロイ結果を Discord 通知
 
 **Discord 通知（CI / デプロイ）:** 共通フォーマット・新規プロジェクトへの追加手順は [apps/.github/README.md](../.github/README.md)（Discord 通知設定）を参照してください。
