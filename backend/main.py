@@ -821,6 +821,7 @@ def get_aircon_history(
                 daily_map[date_str]["room_temps"].append(row["room_temperature"])
             if (
                 row.get("target_temperature") is not None
+                and row.get("target_temperature") != 0
                 and row.get("power") is not None
                 and str(row.get("power")).upper() != "OFF"
             ):

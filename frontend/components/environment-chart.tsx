@@ -20,7 +20,9 @@ import {
   ChartViewRange,
   deviceMetricKey,
   deviceTargetMetricKey,
+  formatAirconTargetTemperature,
   HistoryPoint,
+  isAirconAutoTarget,
   METRIC_COLORS,
   METRIC_LABELS,
   METRIC_UNITS,
@@ -31,7 +33,7 @@ import {
   computeDomainOffsetForSelectionTime,
   computeVisibleYDomain,
   buildAirconTargetChartSegments,
-  type AirconTargetChartPoint,
+  type AirconTargetChartSegment,
   downsampleMultiDeviceHistoryForChart,
   filterHistoryForDomain,
   formatActivePointLabel,
@@ -39,14 +41,17 @@ import {
   getAvailableChartMetrics,
   getChartTicksForDomain,
   getDeviceMetricValueAtTime,
+  getDeviceTargetMetricStateAtTime,
   getDeviceTargetMetricValueAtTime,
   getDevicesWithMetricData,
   getMaxPositiveDomainOffset,
   getOutdoorMetricValueAtTime,
   getSelectionTime,
   hasDeviceMetricData,
-  hasDeviceTargetMetricData,
+  hasDeviceTargetChartData,
+  hasDeviceTargetStateData,
   hasOutdoorMetricData,
+  isAirconOffAtTime,
   isAggregatedRange,
   withSelectionEndPoints,
 } from "@/lib/chart-utils";
@@ -127,8 +132,11 @@ function formatSeriesRowValue(
   metric: ChartMetric,
   unit: string
 ): string {
+  if (row.id === "aircon-target") {
+    return formatAirconTargetTemperature(row.value);
+  }
   if (row.value == null) {
-    return row.id === "aircon-target" ? "--" : `--${unit}`;
+    return `--${unit}`;
   }
   return `${formatMetricValue(row.value, metric)}${unit}`;
 }
@@ -234,11 +242,13 @@ export function EnvironmentChart({
   const showAirconTargetLine =
     chartMetric === "temperature" &&
     airconTargetDeviceId != null &&
-    hasDeviceTargetMetricData(historyData, airconTargetDeviceId);
+    hasDeviceTargetStateData(historyData, airconTargetDeviceId);
   const showOutdoorLine =
     canShowOutdoor && isChartLineVisible(lineVisibility, OUTDOOR_VISIBILITY_KEY);
   const showTargetLine =
     showAirconTargetLine &&
+    airconTargetDeviceId != null &&
+    hasDeviceTargetChartData(historyData, airconTargetDeviceId) &&
     isChartLineVisible(lineVisibility, AIRCON_TARGET_VISIBILITY_KEY);
   const targetDeviceIds =
     showTargetLine && airconTargetDeviceId != null
@@ -401,7 +411,7 @@ export function EnvironmentChart({
 
   const airconTargetSegments = useMemo(() => {
     if (!showTargetLine || airconTargetDeviceId == null || chartMetric !== "temperature") {
-      return [] as AirconTargetChartPoint[][];
+      return [] as AirconTargetChartSegment[];
     }
 
     const source = historySource;
@@ -409,25 +419,48 @@ export function EnvironmentChart({
     let segments = buildAirconTargetChartSegments(source, airconTargetDeviceId, maxPoints);
 
     if (selectionTime != null) {
-      const value = getDeviceTargetMetricValueAtTime(
+      const state = getDeviceTargetMetricStateAtTime(
         source,
         airconTargetDeviceId,
         selectionTime
       );
-      if (value != null) {
-        segments = segments.map((segment) => {
-          if (segment.some((point) => point.datetimeObj === selectionTime)) {
-            return segment;
-          }
-          const first = segment[0]?.datetimeObj;
-          const last = segment[segment.length - 1]?.datetimeObj;
-          if (first == null || last == null) return segment;
-          if (selectionTime < first || selectionTime > last) return segment;
-          return [
-            ...segment,
-            { datetimeObj: selectionTime, airconTarget: value },
-          ].sort((a, b) => a.datetimeObj - b.datetimeObj);
-        });
+      if (
+        state != null &&
+        !isAirconOffAtTime(source, airconTargetDeviceId, selectionTime)
+      ) {
+        const isAuto = isAirconAutoTarget(state);
+        const value = isAuto
+          ? getDeviceMetricValueAtTime(
+              source,
+              airconTargetDeviceId,
+              "temperature",
+              selectionTime
+            )
+          : getDeviceTargetMetricValueAtTime(
+              source,
+              airconTargetDeviceId,
+              selectionTime
+            );
+
+        if (value != null) {
+          segments = segments.map((segment) => {
+            if (segment.auto !== isAuto) return segment;
+            if (segment.points.some((point) => point.datetimeObj === selectionTime)) {
+              return segment;
+            }
+            const first = segment.points[0]?.datetimeObj;
+            const last = segment.points[segment.points.length - 1]?.datetimeObj;
+            if (first == null || last == null) return segment;
+            if (selectionTime < first || selectionTime > last) return segment;
+            return {
+              ...segment,
+              points: [
+                ...segment.points,
+                { datetimeObj: selectionTime, airconTarget: value },
+              ].sort((a, b) => a.datetimeObj - b.datetimeObj),
+            };
+          });
+        }
       }
     }
 
@@ -442,7 +475,7 @@ export function EnvironmentChart({
   ]);
 
   const airconTargetPointCount = airconTargetSegments.reduce(
-    (count, segment) => count + segment.length,
+    (count, segment) => count + segment.points.length,
     0
   );
 
@@ -477,7 +510,7 @@ export function EnvironmentChart({
     return getOutdoorMetricValueAtTime(chartPlotData, chartMetric, selectionTime);
   }, [selectionTime, chartPlotData, chartMetric]);
 
-  const activeTargetValue = useMemo(() => {
+  const activeTargetState = useMemo(() => {
     if (
       selectionTime == null ||
       !showAirconTargetLine ||
@@ -485,7 +518,7 @@ export function EnvironmentChart({
     ) {
       return undefined;
     }
-    return getDeviceTargetMetricValueAtTime(
+    return getDeviceTargetMetricStateAtTime(
       historySource,
       airconTargetDeviceId,
       selectionTime
@@ -528,7 +561,7 @@ export function EnvironmentChart({
             id: "aircon-target",
             name: `${deviceNames[airconTargetDeviceId] ?? "エアコン"}（設定温度）`,
             color: airconTargetColor,
-            value: activeTargetValue,
+            value: activeTargetState,
             visible: isChartLineVisible(lineVisibility, AIRCON_TARGET_VISIBILITY_KEY),
             visibilityKey: AIRCON_TARGET_VISIBILITY_KEY,
           });
@@ -560,7 +593,7 @@ export function EnvironmentChart({
     isDeviceLineVisible,
     airconTargetDeviceId,
     showAirconTargetLine,
-    activeTargetValue,
+    activeTargetState,
     airconTargetColor,
     canShowOutdoor,
     chartColors,
@@ -655,7 +688,7 @@ export function EnvironmentChart({
     chartPlotData.length > 0 &&
     (plottedDeviceIds.length > 0 ||
       (showOutdoorLine && activeOutdoor != null) ||
-      (airconTargetPointCount > 0 && activeTargetValue != null));
+      (showAirconTargetLine && activeTargetState != null));
 
   const hasPlottedLines =
     plottedDeviceIds.length > 0 ||
@@ -833,14 +866,15 @@ export function EnvironmentChart({
                 />
               ))}
               {airconTargetSegments.map((segment, index) =>
-                segment.length > 0 ? (
+                segment.points.length > 0 ? (
                   <Line
-                    key={`aircon-target-${index}`}
-                    data={segment}
+                    key={`aircon-target-${segment.auto ? "auto" : "fixed"}-${index}`}
+                    data={segment.points}
                     type="linear"
                     dataKey={AIRCON_TARGET_CHART_KEY}
                     stroke={airconTargetColor}
                     strokeWidth={1.5}
+                    strokeDasharray={segment.auto ? "6 4" : undefined}
                     dot={false}
                     name={index === 0 ? "設定温度" : undefined}
                     legendType={index === 0 ? "line" : "none"}

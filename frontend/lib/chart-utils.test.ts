@@ -11,10 +11,14 @@ import {
   filterHistoryForDomain,
   getComfortAdvice,
   getDeviceMetricValueAtTime,
+  getDeviceTargetMetricStateAtTime,
   getMaxPositiveDomainOffset,
   getOutdoorMetricValueAtTime,
   getSelectionTime,
   getViewRangeMs,
+  hasDeviceTargetChartData,
+  hasDeviceTargetMetricData,
+  hasDeviceTargetStateData,
   isAggregatedRange,
 } from "@/lib/chart-utils";
 import type { HistoryPoint } from "@/lib/types";
@@ -315,6 +319,23 @@ describe("mergeAirconIntoHistory", () => {
     expect(getDeviceTargetMetricValue(merged[0], chartDeviceId)).toBe(28);
     expect(getDeviceTargetMetricValue(merged[1], chartDeviceId)).toBeUndefined();
   });
+
+  it("treats target temperature 0 as automatic (not plottable)", () => {
+    const merged = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 0,
+          power: "ON",
+        },
+      ],
+      chartDeviceId
+    );
+
+    expect(getDeviceTargetMetricValue(merged[0], chartDeviceId)).toBeUndefined();
+  });
 });
 
 describe("buildAirconTargetChartSeries", () => {
@@ -373,11 +394,49 @@ describe("buildAirconTargetChartSeries", () => {
 
     const segments = buildAirconTargetChartSegments(history, 3, 320);
     expect(segments).toHaveLength(2);
-    expect(segments[0]).toEqual([
-      { datetimeObj: 1000, airconTarget: 28 },
+    expect(segments[0]).toEqual({
+      auto: false,
+      points: [{ datetimeObj: 1000, airconTarget: 28 }],
+    });
+    expect(segments[1]).toEqual({
+      auto: false,
+      points: [{ datetimeObj: 3000, airconTarget: 26 }],
+    });
+  });
+
+  it("plots automatic target as dashed line at room temperature", () => {
+    const history = mergeAirconIntoHistory(
+      [],
+      [
+        {
+          datetimeObj: 1000,
+          temperature: 29,
+          target_temperature: 0,
+          power: "ON",
+        },
+        {
+          datetimeObj: 2000,
+          temperature: 29.5,
+          target_temperature: 26,
+          power: "ON",
+        },
+      ],
+      3
+    );
+
+    expect(hasDeviceTargetStateData(history, 3)).toBe(true);
+    expect(hasDeviceTargetChartData(history, 3)).toBe(true);
+    expect(hasDeviceTargetMetricData(history, 3)).toBe(true);
+    expect(buildAirconTargetChartSegments(history, 3, 320)).toEqual([
+      {
+        auto: true,
+        points: [{ datetimeObj: 1000, airconTarget: 29 }],
+      },
+      {
+        auto: false,
+        points: [{ datetimeObj: 2000, airconTarget: 26 }],
+      },
     ]);
-    expect(segments[1]).toEqual([
-      { datetimeObj: 3000, airconTarget: 26 },
-    ]);
+    expect(getDeviceTargetMetricStateAtTime(history, 3, 1500)).toBe(0);
   });
 });
