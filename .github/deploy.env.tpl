@@ -2,7 +2,7 @@
 # Vault: apps — MyRoom / Server / DB (deploy vars) + githubaction-sshkey (SSH key). See README.md.
 APP_PASSWORD=op://apps/MyRoom/app-password
 DISCORD_WEBHOOK_URL=op://apps/MyRoom/discord-webhook-url
-DISCORD_CI_WEBHOOK_URL=op://apps/MyRoom/discord-webhook-url-ci
+DISCORD_CI_WEBHOOK_URL=op://apps/discord_webhook/CI_URL
 DB_NAME=op://apps/MyRoom/db-name
 DB_USER=op://apps/DB/db-user
 DB_PASSWORD=op://apps/DB/db-password

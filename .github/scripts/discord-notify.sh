@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Send a GitHub Actions result to Discord via webhook.
 # Requires: DISCORD_WEBHOOK_URL, NOTIFY_STATUS (success|failure|cancelled)
+# Optional: NOTIFY_APP, NOTIFY_KIND (e.g. デプロイ / CI), NOTIFY_JOB, NOTIFY_WORKFLOW
 set -euo pipefail
 
 if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
@@ -9,8 +10,11 @@ if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
 fi
 
 status="${NOTIFY_STATUS:-unknown}"
+app_name="${NOTIFY_APP:-}"
+kind="${NOTIFY_KIND:-}"
 workflow_name="${NOTIFY_WORKFLOW:-${GITHUB_WORKFLOW:-GitHub Actions}}"
 job_name="${NOTIFY_JOB:-${GITHUB_JOB:-}}"
+repository="${GITHUB_REPOSITORY:-}"
 ref_name="${GITHUB_REF_NAME:-}"
 sha="${GITHUB_SHA:-}"
 sha_short="${sha:0:7}"
@@ -39,14 +43,22 @@ case "$status" in
     ;;
 esac
 
-title="${emoji} ${workflow_name} ${status_label}"
+if [[ -n "$app_name" && -n "$kind" ]]; then
+  title="${emoji} [${app_name}] ${kind} ${status_label}"
+elif [[ -n "$app_name" ]]; then
+  title="${emoji} [${app_name}] ${workflow_name} ${status_label}"
+else
+  title="${emoji} ${workflow_name} ${status_label}"
+fi
 
 export NOTIFY_STATUS="$status"
+export NOTIFY_APP="$app_name"
+export NOTIFY_KIND="$kind"
 export NOTIFY_WORKFLOW="$workflow_name"
 export NOTIFY_JOB="$job_name"
+export REPOSITORY="$repository"
 export SHA_SHORT="$sha_short"
 export RUN_URL="$run_url"
-export EMOJI="$emoji"
 export COLOR="$color"
 export TITLE="$title"
 
@@ -54,9 +66,11 @@ payload=$(python3 - <<'PY'
 import json
 import os
 
-workflow_name = os.environ["NOTIFY_WORKFLOW"]
+app_name = os.environ.get("NOTIFY_APP", "")
+kind = os.environ.get("NOTIFY_KIND", "")
 job_name = os.environ.get("NOTIFY_JOB", "")
 event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+repository = os.environ.get("REPOSITORY", "")
 ref_name = os.environ.get("GITHUB_REF_NAME", "")
 sha_short = os.environ.get("SHA_SHORT", "")
 actor = os.environ.get("GITHUB_ACTOR", "")
@@ -65,16 +79,22 @@ color = int(os.environ["COLOR"])
 title = os.environ["TITLE"]
 
 fields = []
-if job_name:
-    fields.append({"name": "Job", "value": job_name, "inline": True})
-if event_name:
-    fields.append({"name": "Event", "value": event_name, "inline": True})
+if app_name:
+    fields.append({"name": "App", "value": app_name, "inline": True})
+if kind:
+    fields.append({"name": "Type", "value": kind, "inline": True})
+if repository:
+    fields.append({"name": "Repository", "value": f"`{repository}`", "inline": True})
 if ref_name:
     fields.append({"name": "Branch", "value": ref_name, "inline": True})
 if sha_short:
     fields.append({"name": "Commit", "value": f"`{sha_short}`", "inline": True})
 if actor:
     fields.append({"name": "Actor", "value": actor, "inline": True})
+if job_name:
+    fields.append({"name": "Job", "value": job_name, "inline": True})
+if event_name:
+    fields.append({"name": "Event", "value": event_name, "inline": True})
 fields.append({"name": "Run", "value": f"[Workflow Run]({run_url})", "inline": False})
 
 print(json.dumps({

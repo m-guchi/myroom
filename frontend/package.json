@@ -1,7 +1,7 @@
 {
   "name": "myroom-frontend",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.2.1",
   "engines": {
     "node": ">=20.9.0"
   },
@@ -12,7 +12,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "preversion": "npm run typecheck && npm test",
+    "version": "node scripts/version-changelog.mjs && git add lib/app-changelog.ts"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",

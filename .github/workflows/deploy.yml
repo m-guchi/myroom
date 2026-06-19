@@ -104,11 +104,8 @@ jobs:
             sync_env_var DB_PORT '${DB_PORT_B64}'
             sync_env_var DB_NAME '${DB_NAME_B64}'
             
-            # Create venv if not exists
-            if [ ! -d "venv" ]; then
-              echo "Creating virtual environment..."
-              python3 -m venv venv
-            fi
+            # Create venv if not exists (Ubuntu may need python3-venv)
+            bash deployment/ensure_venv.sh
             
             echo "Ensuring pip is installed..."
             # Try ensurepip (standard lib)

@@ -292,7 +292,7 @@ python3 migrate_db.py   # aircon テーブルを作成
   - デフォルトパスワード: `admin`（ローカル開発時）
   - 本番: 1Password の `app-password` を `APP_PASSWORD` としてサーバー `.env` に同期
   - ログイン成功時: Discord Webhook（1Password の `discord-webhook-url`）へ通知
-  - GitHub Actions（CI / デプロイ）の成功・失敗: 別チャンネル（1Password の `discord-webhook-url-ci`）へ通知
+  - GitHub Actions（CI / デプロイ）の成功・失敗: 共通 Webhook（1Password `discord_webhook` の `CI_URL`）へ通知
 
 ## API 概要
 
@@ -362,9 +362,14 @@ python3 migrate_pressure_to_hpa.py
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
 | `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` としてサーバー `.env` に同期） |
-| `discord-webhook-url-ci` | CI / デプロイ通知用 Discord Webhook URL（GitHub Actions のみ。サーバーには同期しない） |
 | `db-name` | 接続先データベース名（`DB_NAME` として同期） |
 | `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
+
+**アイテム `discord_webhook`**（全アプリ共通・セキュアノート等）
+
+| フィールド名 | 内容 |
+|-------------|------|
+| `CI_URL` | CI / デプロイ通知用 Discord Webhook URL（GitHub Actions のみ。`op://apps/discord_webhook/CI_URL`） |
 
 **アイテム `Server`**（セキュアノート等）
 
@@ -409,7 +414,28 @@ op read "op://apps/githubaction-sshkey/private_key?ssh-format=openssh"
 
 以前 GitHub Secrets に登録していた `VITE_APP_PASSWORD` / `SSH_PRIVATE_KEY` / `HOST` などは、1Password へ移行後に削除できます。
 
-#### 1-3. 本番サーバーの `.env`
+#### 1-3. 本番サーバーの初期セットアップ
+
+デプロイは `github-user` など **sudo 権限のないユーザー** で SSH 接続します。サーバー管理者が初回のみ次を入れておくとスムーズです。
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv nodejs npm
+```
+
+`python3-venv` が無くても、デプロイ時の `deployment/ensure_venv.sh` が **sudo なし** で [virtualenv.pyz](https://bootstrap.pypa.io/virtualenv/virtualenv.pyz) から venv を作成します（Ubuntu 24.04 の PEP 668 でも system への `pip install` は不要）。PM2 はデプロイ workflow が `npx pm2` を使うため、グローバルインストールは必須ではありません（`nodejs` / `npm` は必要）。
+
+手動で venv だけ作る場合（`github-user` で）:
+
+```bash
+cd /apps/myroom
+rm -rf venv
+curl -sS https://bootstrap.pypa.io/virtualenv/virtualenv.pyz -o /tmp/virtualenv.pyz
+python3 /tmp/virtualenv.pyz venv
+./venv/bin/python3 -m pip install -r requirements.txt
+```
+
+#### 1-4. 本番サーバーの `.env`
 
 rsync では `.env` を転送しません。サーバー上の `.env` には、1Password から同期しない設定も残します。
 
@@ -441,4 +467,38 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 5. バックエンドの依存関係更新と PM2 による再起動
 6. CI 用 Webhook へデプロイ結果を Discord 通知
 
+**Discord 通知（CI / デプロイ）:** 共通フォーマット・新規プロジェクトへの追加手順は [apps/.github/README.md](../.github/README.md)（Discord 通知設定）を参照してください。
+
 本番では FastAPI が `frontend/out` を配信し、API と UI を同一オリジンで提供します。
+
+### 3. バージョン管理（npm version）
+
+アプリのバージョンは `frontend/package.json` が正です。UI の表示と更新履歴はここから同期されます。
+
+| ファイル | 役割 |
+|----------|------|
+| `frontend/package.json` | バージョン番号（`npm version` で更新） |
+| `frontend/lib/app-version.ts` | package.json を読み込み表示 |
+| `frontend/lib/app-changelog.ts` | 更新履歴（`npm version` 時に先頭へ枠を自動追加） |
+
+リポジトリルートから実行します（`git` のコミット・タグも自動作成されます）。
+
+```bash
+# patch: 2.2.0 → 2.2.1
+npm run version:patch -- -m "Release v%s: 修正内容の要約"
+
+# minor: 2.2.0 → 2.3.0
+npm run version:minor -- -m "Release v%s: 機能追加の要約"
+
+# major: 2.2.0 → 3.0.0
+npm run version:major -- -m "Release v%s: 破壊的変更の要約"
+```
+
+`npm version` 実行時の流れ:
+
+1. `typecheck` と `test`（`preversion`）
+2. `package.json` / `package-lock.json` のバージョン更新
+3. `app-changelog.ts` 先頭に新バージョンの枠を追加（変更内容は手動で追記）
+4. 上記をまとめて git commit + タグ `vX.Y.Z` 作成
+
+changelog の「（変更内容を追記してください）」を実際の文言に直してから `main` へマージしてください。
