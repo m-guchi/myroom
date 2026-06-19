@@ -9,10 +9,9 @@ echo "Setting up MyRoom on $(hostname)..."
 echo "App Directory: $APP_DIR"
 
 # Create venv if not exists
-if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv venv
-    ./venv/bin/pip install -r requirements.txt
+if [ ! -x "venv/bin/python3" ]; then
+    bash deployment/ensure_venv.sh
+    ./venv/bin/python3 -m pip install -r requirements.txt
 fi
 
 # Install systemd services

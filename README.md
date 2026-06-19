@@ -409,7 +409,28 @@ op read "op://apps/githubaction-sshkey/private_key?ssh-format=openssh"
 
 以前 GitHub Secrets に登録していた `VITE_APP_PASSWORD` / `SSH_PRIVATE_KEY` / `HOST` などは、1Password へ移行後に削除できます。
 
-#### 1-3. 本番サーバーの `.env`
+#### 1-3. 本番サーバーの初期セットアップ
+
+デプロイは `github-user` など **sudo 権限のないユーザー** で SSH 接続します。サーバー管理者が初回のみ次を入れておくとスムーズです。
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv nodejs npm
+```
+
+`python3-venv` が無くても、デプロイ時の `deployment/ensure_venv.sh` が **sudo なし** で [virtualenv.pyz](https://bootstrap.pypa.io/virtualenv/virtualenv.pyz) から venv を作成します（Ubuntu 24.04 の PEP 668 でも system への `pip install` は不要）。PM2 はデプロイ workflow が `npx pm2` を使うため、グローバルインストールは必須ではありません（`nodejs` / `npm` は必要）。
+
+手動で venv だけ作る場合（`github-user` で）:
+
+```bash
+cd /apps/myroom
+rm -rf venv
+curl -sS https://bootstrap.pypa.io/virtualenv/virtualenv.pyz -o /tmp/virtualenv.pyz
+python3 /tmp/virtualenv.pyz venv
+./venv/bin/python3 -m pip install -r requirements.txt
+```
+
+#### 1-4. 本番サーバーの `.env`
 
 rsync では `.env` を転送しません。サーバー上の `.env` には、1Password から同期しない設定も残します。
 
