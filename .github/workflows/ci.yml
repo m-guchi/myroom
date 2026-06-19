@@ -104,7 +104,8 @@ jobs:
         if: steps.status.outputs.should_notify == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ env.DISCORD_CI_WEBHOOK_URL }}
+          NOTIFY_APP: MyRoom
+          NOTIFY_KIND: CI
           NOTIFY_STATUS: ${{ steps.status.outputs.result }}
-          NOTIFY_WORKFLOW: CI
           NOTIFY_JOB: ${{ steps.status.outputs.jobs }}
         run: bash .github/scripts/discord-notify.sh

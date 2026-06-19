@@ -292,7 +292,7 @@ python3 migrate_db.py   # aircon テーブルを作成
   - デフォルトパスワード: `admin`（ローカル開発時）
   - 本番: 1Password の `app-password` を `APP_PASSWORD` としてサーバー `.env` に同期
   - ログイン成功時: Discord Webhook（1Password の `discord-webhook-url`）へ通知
-  - GitHub Actions（CI / デプロイ）の成功・失敗: 別チャンネル（1Password の `discord-webhook-url-ci`）へ通知
+  - GitHub Actions（CI / デプロイ）の成功・失敗: 共通 Webhook（1Password `discord_webhook` の `CI_URL`）へ通知
 
 ## API 概要
 
@@ -362,9 +362,14 @@ python3 migrate_pressure_to_hpa.py
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
 | `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` としてサーバー `.env` に同期） |
-| `discord-webhook-url-ci` | CI / デプロイ通知用 Discord Webhook URL（GitHub Actions のみ。サーバーには同期しない） |
 | `db-name` | 接続先データベース名（`DB_NAME` として同期） |
 | `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
+
+**アイテム `discord_webhook`**（全アプリ共通・セキュアノート等）
+
+| フィールド名 | 内容 |
+|-------------|------|
+| `CI_URL` | CI / デプロイ通知用 Discord Webhook URL（GitHub Actions のみ。`op://apps/discord_webhook/CI_URL`） |
 
 **アイテム `Server`**（セキュアノート等）
 
