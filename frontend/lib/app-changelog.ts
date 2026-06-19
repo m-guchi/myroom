@@ -24,7 +24,6 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     date: "2026-06-19",
     changes: [
       "エアコン自動運転時に設定温度を「自動」と表示し、室温と同じ高さの点線で運転区間を表示",
-      "デプロイ時に sudo 不要で venv を作成（Ubuntu 24.04 / PEP 668 対応）",
       "npm version でバージョンと更新履歴を管理できるように変更",
     ],
   },
