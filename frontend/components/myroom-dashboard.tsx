@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import {
   buildDashboardOfflineSnapshot,
+  getLatestDataTimestamp,
   isOffline,
   loadDashboardOfflineSnapshot,
   saveDashboardOfflineSnapshot,
@@ -616,15 +617,17 @@ export function MyRoomDashboard() {
   const sensorLatest = latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? latestData;
   const outdoorMetrics = buildOutdoorMetrics(sensorLatest);
   const airconTitle = airconChartTitle;
-  const lastUpdated = sensorLatest?.datetime
-    ? new Date(sensorLatest.datetime).toLocaleString("ja-JP", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "--";
+  const lastUpdatedMs = getLatestDataTimestamp(latestByDevice, airconLatest);
+  const lastUpdated =
+    lastUpdatedMs != null
+      ? new Date(lastUpdatedMs).toLocaleString("ja-JP", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "--";
   const offlineCachedAt = offlineSnapshot?.dataLatestAt
     ? new Date(offlineSnapshot.dataLatestAt).toLocaleString("ja-JP", {
         year: "numeric",
