@@ -20,6 +20,24 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.4.0",
+    date: "2026-06-25",
+    changes: [
+      "main マージ時に Git タグ・GitHub Release を自動作成（solitaire と同様）",
+      "CI / デプロイ / リリースの Discord 通知を追加",
+      "リリース通知にバージョン番号を表示",
+    ],
+  },
+  {
+    version: "2.3.0",
+    date: "2026-06-25",
+    changes: [
+      "API 側でセンサーデータの鮮度を監視し、未到達時に Discord / PWA プッシュ通知",
+      "ダッシュボードにセンサー未到達の警告表示と通知設定画面を追加",
+      "VAPID 鍵を 1Password からデプロイ時に本番 .env へ自動同期",
+    ],
+  },
+  {
     version: "2.2.1",
     date: "2026-06-19",
     changes: [

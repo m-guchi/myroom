@@ -22,11 +22,19 @@ sed "s|{{APP_DIR}}|$APP_DIR|g; s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
 sed "s|{{APP_DIR}}|$APP_DIR|g; s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
     deployment/myroom-frontend.service.template > /etc/systemd/system/myroom-frontend.service
 
+sed "s|{{APP_DIR}}|$APP_DIR|g; s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
+    deployment/myroom-sensor-monitor.service.template > /etc/systemd/system/myroom-sensor-monitor.service
+
+sed "s|{{APP_DIR}}|$APP_DIR|g; s|{{PYTHON_PATH}}|$PYTHON_PATH|g" \
+    deployment/myroom-sensor-monitor.timer.template > /etc/systemd/system/myroom-sensor-monitor.timer
+
 systemctl daemon-reload
 systemctl enable myroom-backend
 systemctl enable myroom-frontend
+systemctl enable myroom-sensor-monitor.timer
 systemctl restart myroom-backend
 systemctl restart myroom-frontend
+systemctl restart myroom-sensor-monitor.timer
 
 echo "Service status:"
 systemctl status myroom-backend --no-pager

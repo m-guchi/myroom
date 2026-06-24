@@ -6,5 +6,7 @@ frontend/out/
 data/outdoor_location.json
 data/devices.json
 data/aircon.json
+data/push_subscriptions.json
+data/sensor_alert_state.json
 frontend-react/node_modules/
 frontend-react/dist/

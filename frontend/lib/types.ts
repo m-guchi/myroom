@@ -80,6 +80,26 @@ export interface DeviceInfo {
   name: string;
 }
 
+export interface SensorDeviceStatus {
+  device_id: number;
+  name: string;
+  last_seen: string | null;
+  age_minutes: number | null;
+  stale: boolean;
+  has_data: boolean;
+}
+
+export interface SensorsStatusResponse {
+  threshold_minutes: number;
+  healthy: boolean;
+  devices: SensorDeviceStatus[];
+}
+
+export interface PushVapidPublicKeyResponse {
+  publicKey: string;
+  configured: boolean;
+}
+
 export interface AirconUnitInfo {
   ac_id: number;
   name: string;

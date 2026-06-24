@@ -1,13 +1,14 @@
 {
   "name": "myroom-frontend",
   "private": true,
-  "version": "2.2.1",
+  "version": "2.4.0",
   "engines": {
     "node": ">=20.9.0"
   },
   "scripts": {
     "dev": "next dev --port 5173",
     "build": "next build",
+    "postbuild": "node scripts/sync-sw-cache.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",

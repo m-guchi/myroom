@@ -362,8 +362,19 @@ python3 migrate_pressure_to_hpa.py
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
 | `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` としてサーバー `.env` に同期） |
+| `vapid-private-key` | Web Push 用 VAPID 秘密鍵 PEM（`VAPID_PRIVATE_KEY` として同期） |
+| `vapid-public-key` | Web Push 用 VAPID 公開鍵（`VAPID_PUBLIC_KEY` として同期。`scripts/generate_vapid_keys.py` の `VAPID_PUBLIC_KEY` 行） |
+| `vapid-subject` | Web Push 用 VAPID subject（`VAPID_SUBJECT` として同期。例: `mailto:you@example.com`） |
 | `db-name` | 接続先データベース名（`DB_NAME` として同期） |
 | `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
+
+**VAPID 鍵の初回登録**（PWA プッシュ通知用・1 回だけ）:
+
+```bash
+./venv/bin/python scripts/generate_vapid_keys.py
+```
+
+出力の `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` を、上記フィールド `vapid-private-key` / `vapid-public-key` / `vapid-subject` にそれぞれ保存してください。秘密鍵は **PEM 形式のまま**（`-----BEGIN PRIVATE KEY-----` から改行付きで）貼り付けます。次回以降のデプロイでサーバー `.env` に自動同期されます。
 
 **アイテム `discord_webhook`**（全アプリ共通・セキュアノート等）
 
@@ -441,7 +452,7 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 
 | 環境変数 | 管理方法 |
 |----------|----------|
-| `DB_MOCK` | サーバー `.env` に手動設定（本番は `false`） |
+| `DB_MOCK` | デプロイ時に `false` を自動設定（本番は常に実 DB） |
 | `DB_ADMIN_USER` / `DB_ADMIN_PASSWORD` | 必要な場合のみサーバー `.env` に手動設定 |
 
 デプロイ時に 1Password から次の値が自動で `.env` に書き込まれます（既存の同名キーは上書き）。
@@ -450,6 +461,9 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 |----------|-------------------|-----------|
 | `APP_PASSWORD` | MyRoom | `app-password` |
 | `DISCORD_WEBHOOK_URL` | MyRoom | `discord-webhook-url` |
+| `VAPID_PRIVATE_KEY` | MyRoom | `vapid-private-key` |
+| `VAPID_PUBLIC_KEY` | MyRoom | `vapid-public-key` |
+| `VAPID_SUBJECT` | MyRoom | `vapid-subject` |
 | `DB_NAME` | MyRoom | `db-name` |
 | `DB_USER` | DB | `db-user` |
 | `DB_PASSWORD` | DB | `db-password` |
@@ -458,14 +472,18 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 
 ### 2. デプロイフロー
 
-`main` ブランチにプッシュすると GitHub Actions が起動し、以下を自動実行します。
+`main` ブランチにプッシュすると GitHub Actions（`deploy.yml`）が起動し、以下を自動実行します。
 
-1. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力）
-2. ファイルの転送 (`rsync`)
-3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / DB 接続情報をサーバー `.env` に同期
-4. DB マイグレーション (`migrate_db.py`)
-5. バックエンドの依存関係更新と PM2 による再起動
-6. CI 用 Webhook へデプロイ結果を Discord 通知
+1. `frontend/package.json` のバージョンから Git タグ（`v*`）を作成
+2. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力）
+3. ファイルの転送 (`rsync`)
+4. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / `VAPID_*` / DB 接続情報をサーバー `.env` に同期
+5. DB マイグレーション (`migrate_db.py`)
+6. バックエンドの依存関係更新と PM2 による再起動（`pm2 restart` では cwd が変わらないため、毎回 `delete` → `start`）
+7. **デプロイ成功後** GitHub Release を作成
+8. CI 用 Webhook へデプロイ・リリース結果を Discord 通知
+
+※ Actions の `GITHUB_TOKEN` で push したタグは別ワークフローを起動しないため、Release も `deploy.yml` 内で実行します。手動でタグ push した場合のみ `release.yml` が走ります。
 
 **Discord 通知（CI / デプロイ）:** 共通フォーマット・新規プロジェクトへの追加手順は [apps/.github/README.md](../.github/README.md)（Discord 通知設定）を参照してください。
 
@@ -473,7 +491,7 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 
 ### 3. バージョン管理（npm version）
 
-アプリのバージョンは `frontend/package.json` が正です。UI の表示と更新履歴はここから同期されます。
+アプリのバージョンは `frontend/package.json` が正です。UI の表示と更新履歴はここから同期されます。`main` へのマージ時、GitHub Actions がこの値から `v2.4.0` 形式の Git タグと GitHub Release を自動作成します。
 
 | ファイル | 役割 |
 |----------|------|
@@ -481,16 +499,21 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 | `frontend/lib/app-version.ts` | package.json を読み込み表示 |
 | `frontend/lib/app-changelog.ts` | 更新履歴（`npm version` 時に先頭へ枠を自動追加） |
 
-リポジトリルートから実行します（`git` のコミット・タグも自動作成されます）。
+#### リリース手順
+
+`develop` でバージョンを上げてから `main` にマージします。タグは CI が `main` 上で付けるため、ローカルでは **`--no-git-tag-version`** を付けて `frontend/package.json` / `frontend/package-lock.json` だけ更新してください（ローカルでタグを作ると、マージ後のデプロイが「タグが既に別コミットを指している」として失敗します）。
 
 ```bash
-# patch: 2.2.0 → 2.2.1
+git checkout develop
+git pull
+
+# patch: 2.4.0 → 2.4.1
 npm run version:patch -- -m "Release v%s: 修正内容の要約"
 
-# minor: 2.2.0 → 2.3.0
+# minor: 2.4.0 → 2.5.0
 npm run version:minor -- -m "Release v%s: 機能追加の要約"
 
-# major: 2.2.0 → 3.0.0
+# major: 2.4.0 → 3.0.0
 npm run version:major -- -m "Release v%s: 破壊的変更の要約"
 ```
 
@@ -498,7 +521,19 @@ npm run version:major -- -m "Release v%s: 破壊的変更の要約"
 
 1. `typecheck` と `test`（`preversion`）
 2. `package.json` / `package-lock.json` のバージョン更新
-3. `app-changelog.ts` 先頭に新バージョンの枠を追加（変更内容は手動で追記）
-4. 上記をまとめて git commit + タグ `vX.Y.Z` 作成
+3. `app-changelog.ts` 先頭に新バージョンの枠を追加
+4. 上記をまとめて git commit（**タグは作成しない**）
 
-changelog の「（変更内容を追記してください）」を実際の文言に直してから `main` へマージしてください。
+changelog の「（変更内容を追記してください）」を実際の文言に直してから push してください。
+
+```bash
+# changelog を追記したら amend する例
+git add frontend/lib/app-changelog.ts
+git commit --amend --no-edit
+
+git push origin develop
+
+# PR を作成して main にマージ
+```
+
+同じバージョン番号で再デプロイする場合は、先にバージョンを上げてから `main` にマージする必要があります（タグが既に別コミットを指していると workflow がエラーになります）。

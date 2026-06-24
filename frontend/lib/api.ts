@@ -13,6 +13,8 @@ import {
   type OutdoorLocation,
   type OutdoorLocationSearchResult,
   type SensorRecordsResponse,
+  type SensorsStatusResponse,
+  type PushVapidPublicKeyResponse,
   type TimeRange,
   type ChartViewRange,
 } from "@/lib/types";
@@ -219,6 +221,53 @@ export async function deleteSensorRecord(
   });
   const res = await fetch(`/api/records?${params.toString()}`, {
     method: "DELETE",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+}
+
+export async function fetchSensorsStatus(): Promise<SensorsStatusResponse> {
+  return fetchJson<SensorsStatusResponse>("/api/sensors/status");
+}
+
+export async function fetchPushVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
+  const res = await fetch("/api/push/vapid-public-key");
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<PushVapidPublicKeyResponse>;
+}
+
+export async function subscribePushNotifications(
+  password: string,
+  subscription: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+    expirationTime?: number | null;
+  }
+): Promise<void> {
+  const res = await fetch("/api/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password, subscription }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+}
+
+export async function unsubscribePushNotifications(
+  password: string,
+  endpoint: string
+): Promise<void> {
+  const res = await fetch("/api/push/subscribe", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password, endpoint }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;

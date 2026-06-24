@@ -2,8 +2,8 @@
   "name": "myroom",
   "private": true,
   "scripts": {
-    "version:patch": "npm version patch --prefix frontend",
-    "version:minor": "npm version minor --prefix frontend",
-    "version:major": "npm version major --prefix frontend"
+    "version:patch": "npm version patch --no-git-tag-version --prefix frontend",
+    "version:minor": "npm version minor --no-git-tag-version --prefix frontend",
+    "version:major": "npm version major --no-git-tag-version --prefix frontend"
   }
 }

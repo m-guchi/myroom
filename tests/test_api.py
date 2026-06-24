@@ -1,7 +1,7 @@
 def test_health_get(client):
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "db_mock": True}
 
 
 def test_health_head(client):

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ChevronRight,
+  Bell,
   Droplets,
   Gauge,
   ListOrdered,
@@ -19,6 +20,7 @@ import { DeviceNameSettings } from "@/components/device-name-settings";
 import { AirconNameSettings } from "@/components/aircon-name-settings";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
 import { DisplayOrderSettings } from "@/components/display-order-settings";
+import { NotificationSettings } from "@/components/notification-settings";
 import { SensorRecordsPanel } from "@/components/sensor-records-panel";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
@@ -27,10 +29,12 @@ import {
   fetchDevices,
   fetchOutdoorLocation,
   fetchAirconUnits,
+  fetchSensorsStatus,
   login,
 } from "@/lib/api";
 import {
   buildDashboardOfflineSnapshot,
+  getLatestDataTimestamp,
   isOffline,
   loadDashboardOfflineSnapshot,
   saveDashboardOfflineSnapshot,
@@ -84,6 +88,7 @@ import {
   type DeviceInfo,
   type LatestData,
   type OutdoorLocation,
+  type SensorDeviceStatus,
 } from "@/lib/types";
 
 const AUTH_KEY = "app_auth";
@@ -101,6 +106,7 @@ interface DeviceCardProps {
   action?: React.ReactNode;
   onClick?: () => void;
   onSettingsClick?: () => void;
+  statusNote?: string;
 }
 
 function buildIndoorMetrics(
@@ -215,6 +221,7 @@ function DeviceCard({
   action,
   onClick,
   onSettingsClick,
+  statusNote,
 }: DeviceCardProps) {
   const className = onClick
     ? "device-card cursor-pointer text-left transition-transform active:scale-[0.98]"
@@ -248,6 +255,11 @@ function DeviceCard({
           {action}
         </div>
       </div>
+      {statusNote && (
+        <p className="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+          {statusNote}
+        </p>
+      )}
       {metrics.length > 0 ? (
         <div className="flex flex-col gap-1.5">
           {metrics.map((metric) => (
@@ -314,6 +326,8 @@ export function MyRoomDashboard() {
   const [recordsDeviceId, setRecordsDeviceId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [displayOrderOpen, setDisplayOrderOpen] = useState(false);
+  const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
+  const [sensorStatuses, setSensorStatuses] = useState<SensorDeviceStatus[]>([]);
   const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>(() =>
     buildDefaultDisplayOrder()
   );
@@ -435,16 +449,19 @@ export function MyRoomDashboard() {
           }
         }
 
-        const data = await fetchDashboardData(
-          airconLatest?.ac_id ?? airconSettingsId,
-          sensorDeviceIds
-        );
+        const [data, sensorsStatus] = await Promise.all([
+          fetchDashboardData(airconLatest?.ac_id ?? airconSettingsId, sensorDeviceIds),
+          fetchSensorsStatus().catch(() => null),
+        ]);
         setIsOfflineMode(false);
         setOfflineSnapshot(null);
         setLatestByDevice(data.latestByDevice);
         setLatestData(data.latest);
         setDailyStatsByDevice(data.dailyStatsByDevice);
         setAirconLatest(data.airconLatest);
+        if (sensorsStatus) {
+          setSensorStatuses(sensorsStatus.devices);
+        }
         if (reloadHistory) {
           await resetAndLoad();
         }
@@ -603,6 +620,29 @@ export function MyRoomDashboard() {
     return merged;
   }, [latestByDevice, airconLatest]);
 
+  const staleByDevice = useMemo(() => {
+    const map = new Map<number, SensorDeviceStatus>();
+    for (const status of sensorStatuses) {
+      map.set(status.device_id, status);
+    }
+    return map;
+  }, [sensorStatuses]);
+
+  const hasStaleSensors = useMemo(
+    () => sensorStatuses.some((status) => status.stale),
+    [sensorStatuses]
+  );
+
+  const formatStaleNote = (deviceId: number): string | undefined => {
+    const status = staleByDevice.get(deviceId);
+    if (!status?.stale) return undefined;
+    if (!status.has_data) return "データ未受信";
+    if (status.age_minutes != null) {
+      return `約${Math.round(status.age_minutes)}分間データなし`;
+    }
+    return "データ未到達";
+  };
+
   if (!isAuthenticated) {
     return <LoginScreen onLogin={handleLogin} />;
   }
@@ -616,15 +656,17 @@ export function MyRoomDashboard() {
   const sensorLatest = latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? latestData;
   const outdoorMetrics = buildOutdoorMetrics(sensorLatest);
   const airconTitle = airconChartTitle;
-  const lastUpdated = sensorLatest?.datetime
-    ? new Date(sensorLatest.datetime).toLocaleString("ja-JP", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "--";
+  const lastUpdatedMs = getLatestDataTimestamp(latestByDevice, airconLatest);
+  const lastUpdated =
+    lastUpdatedMs != null
+      ? new Date(lastUpdatedMs).toLocaleString("ja-JP", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "--";
   const offlineCachedAt = offlineSnapshot?.dataLatestAt
     ? new Date(offlineSnapshot.dataLatestAt).toLocaleString("ja-JP", {
         year: "numeric",
@@ -644,25 +686,41 @@ export function MyRoomDashboard() {
             {offlineCachedAt ? `（${offlineCachedAt} 時点・直近24時間）` : "（直近24時間）"}
           </div>
         )}
+        {hasStaleSensors && !isOfflineMode && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+            センサーからのデータがしばらく届いていません。通知設定からプッシュ通知を有効にできます。
+          </div>
+        )}
         <section>
           <div className="mb-3 flex items-center justify-between px-0.5">
             <div>
               <h2 className="section-title">MyRoom</h2>
               <p className="section-subtitle">最終更新: {lastUpdated}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (isOfflineMode) return;
-                fetchData({ showChartLoading: true });
-                void refreshLatest();
-              }}
-              disabled={isOfflineMode}
-              className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="更新"
-            >
-              <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setNotificationSettingsOpen(true)}
+                disabled={isOfflineMode}
+                className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="通知設定"
+              >
+                <Bell className="size-5" strokeWidth={1.75} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isOfflineMode) return;
+                  fetchData({ showChartLoading: true });
+                  void refreshLatest();
+                }}
+                disabled={isOfflineMode}
+                className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="更新"
+              >
+                <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} />
+              </button>
+            </div>
           </div>
 
           <EnvironmentChart
@@ -727,6 +785,7 @@ export function MyRoomDashboard() {
                       setRecordsPanelOpen(true);
                     }}
                     metrics={buildIndoorMetrics(latestByDevice[deviceId], accentColor)}
+                    statusNote={formatStaleNote(deviceId)}
                   />
                 );
               }
@@ -923,6 +982,11 @@ export function MyRoomDashboard() {
           );
           fetchData();
         }}
+      />
+
+      <NotificationSettings
+        open={notificationSettingsOpen}
+        onClose={() => setNotificationSettingsOpen(false)}
       />
 
       <VersionHistoryDialog
