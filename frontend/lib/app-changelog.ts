@@ -20,6 +20,15 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.4.0",
+    date: "2026-06-25",
+    changes: [
+      "main マージ時に Git タグ・GitHub Release を自動作成（solitaire と同様）",
+      "CI / デプロイ / リリースの Discord 通知を追加",
+      "リリース通知にバージョン番号を表示",
+    ],
+  },
+  {
     version: "2.3.0",
     date: "2026-06-25",
     changes: [
