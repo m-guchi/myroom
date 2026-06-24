@@ -8,7 +8,7 @@ from typing import List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, weather, outdoor_config, device_config, aircon_config, discord_notify
+from . import database, weather, outdoor_config, device_config, aircon_config, discord_notify, push_notify, push_subscriptions, sensor_monitor
 from pydantic import BaseModel, model_validator
 
 load_dotenv()
@@ -63,6 +63,23 @@ class AirconNameUpdate(BaseModel):
 
 class LoginRequest(BaseModel):
     password: str
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+class PushSubscriptionBody(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys
+    expirationTime: Optional[int] = None
+
+class PushSubscribeRequest(BaseModel):
+    password: str
+    subscription: PushSubscriptionBody
+
+class PushUnsubscribeRequest(BaseModel):
+    password: str
+    endpoint: str
 
 class AirconData(BaseModel):
     datetime: str
@@ -179,6 +196,57 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
 @app.head("/api/health")
 async def health_check():
     return {"status": "ok", "db_mock": database.DB_MOCK}
+
+
+def _verify_app_password(password: str) -> None:
+    app_password = os.getenv("APP_PASSWORD", "admin")
+    if password != app_password:
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+
+@app.get("/api/sensors/status")
+def get_sensors_status(db: Session = Depends(database.get_db)):
+    statuses = sensor_monitor.collect_sensor_statuses(db)
+    stale_devices = [item for item in statuses if item["stale"]]
+    return {
+        "threshold_minutes": sensor_monitor.stale_threshold_minutes(),
+        "healthy": len(stale_devices) == 0,
+        "devices": statuses,
+    }
+
+
+@app.get("/api/push/vapid-public-key")
+def get_push_vapid_public_key():
+    public_key = push_notify.get_vapid_public_key()
+    if not public_key:
+        raise HTTPException(status_code=503, detail="Web Push is not configured")
+    return {
+        "publicKey": public_key,
+        "configured": push_notify.is_configured(),
+    }
+
+
+@app.post("/api/push/subscribe")
+def subscribe_push(body: PushSubscribeRequest):
+    _verify_app_password(body.password)
+    if not push_notify.is_configured():
+        raise HTTPException(status_code=503, detail="Web Push is not configured")
+
+    try:
+        saved = push_subscriptions.upsert_subscription(body.subscription.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {"status": "ok", "endpoint": saved["endpoint"]}
+
+
+@app.delete("/api/push/subscribe")
+def unsubscribe_push(body: PushUnsubscribeRequest):
+    _verify_app_password(body.password)
+    removed = push_subscriptions.remove_subscription(body.endpoint)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    return {"status": "ok"}
 
 
 @app.post("/api/login")

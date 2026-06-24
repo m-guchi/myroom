@@ -1,0 +1,14 @@
+[Unit]
+Description=MyRoom sensor data freshness monitor
+After=network-online.target myroom-backend.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory={{APP_DIR}}
+EnvironmentFile={{APP_DIR}}/.env
+ExecStart={{PYTHON_PATH}} -m backend.sensor_monitor
+
+[Install]
+WantedBy=multi-user.target

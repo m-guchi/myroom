@@ -362,8 +362,19 @@ python3 migrate_pressure_to_hpa.py
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
 | `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` としてサーバー `.env` に同期） |
+| `vapid-private-key` | Web Push 用 VAPID 秘密鍵 PEM（`VAPID_PRIVATE_KEY` として同期） |
+| `vapid-public-key` | Web Push 用 VAPID 公開鍵（`VAPID_PUBLIC_KEY` として同期。`scripts/generate_vapid_keys.py` の `VAPID_PUBLIC_KEY` 行） |
+| `vapid-subject` | Web Push 用 VAPID subject（`VAPID_SUBJECT` として同期。例: `mailto:you@example.com`） |
 | `db-name` | 接続先データベース名（`DB_NAME` として同期） |
 | `target-dir` | デプロイ先ディレクトリ（例: `/home/guchi/myroom`） |
+
+**VAPID 鍵の初回登録**（PWA プッシュ通知用・1 回だけ）:
+
+```bash
+./venv/bin/python scripts/generate_vapid_keys.py
+```
+
+出力の `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` を、上記フィールド `vapid-private-key` / `vapid-public-key` / `vapid-subject` にそれぞれ保存してください。秘密鍵は **PEM 形式のまま**（`-----BEGIN PRIVATE KEY-----` から改行付きで）貼り付けます。次回以降のデプロイでサーバー `.env` に自動同期されます。
 
 **アイテム `discord_webhook`**（全アプリ共通・セキュアノート等）
 
@@ -450,6 +461,9 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 |----------|-------------------|-----------|
 | `APP_PASSWORD` | MyRoom | `app-password` |
 | `DISCORD_WEBHOOK_URL` | MyRoom | `discord-webhook-url` |
+| `VAPID_PRIVATE_KEY` | MyRoom | `vapid-private-key` |
+| `VAPID_PUBLIC_KEY` | MyRoom | `vapid-public-key` |
+| `VAPID_SUBJECT` | MyRoom | `vapid-subject` |
 | `DB_NAME` | MyRoom | `db-name` |
 | `DB_USER` | DB | `db-user` |
 | `DB_PASSWORD` | DB | `db-password` |
@@ -462,7 +476,7 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 
 1. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力）
 2. ファイルの転送 (`rsync`)
-3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / DB 接続情報をサーバー `.env` に同期
+3. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / `VAPID_*` / DB 接続情報をサーバー `.env` に同期
 4. DB マイグレーション (`migrate_db.py`)
 5. バックエンドの依存関係更新と PM2 による再起動（`pm2 restart` では cwd が変わらないため、毎回 `delete` → `start`）
 6. CI 用 Webhook へデプロイ結果を Discord 通知
