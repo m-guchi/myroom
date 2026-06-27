@@ -115,6 +115,17 @@ def send_sensor_stale_push(
     )
 
 
+def send_test_push() -> int:
+    return broadcast(
+        {
+            "title": "🔔 MyRoom テスト通知",
+            "body": "プッシュ通知は正常に届いています。",
+            "tag": "myroom-push-test",
+            "url": "/",
+        }
+    )
+
+
 def send_sensor_recovered_push(
     *,
     device_name: str,

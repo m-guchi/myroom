@@ -1,12 +1,15 @@
 import {
   AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
+  formatOutdoorApiLabel,
 } from "@/lib/types";
 
 export type DisplayOrderItem =
   | { type: "device"; deviceId: number }
   | { type: "outdoor" }
   | { type: "aircon" };
+
+export const DISPLAY_ORDER_CHANGED_EVENT = "myroom-display-order-changed";
 
 const STORAGE_KEY = "myroom_display_order";
 
@@ -121,7 +124,7 @@ export function getDisplayOrderLabel(
     return deviceNames[item.deviceId] ?? `デバイス ${item.deviceId}`;
   }
   if (item.type === "outdoor") {
-    return outdoorName ?? "屋外";
+    return formatOutdoorApiLabel(outdoorName);
   }
   return airconName ?? "エアコン";
 }

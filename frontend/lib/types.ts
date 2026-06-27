@@ -89,6 +89,20 @@ export interface OutdoorLocation {
 export interface DeviceInfo {
   id: number;
   name: string;
+  inherits_from?: number | null;
+}
+
+/** Open-Meteo 等 API から取得する屋外気象データの表示ラベル */
+export function formatOutdoorApiLabel(locationName?: string | null): string {
+  const trimmed = locationName?.trim();
+  if (trimmed) return `地点データ(${trimmed})`;
+  return "地点データ(未登録)";
+}
+
+export interface UiSettings {
+  display_order: string[];
+  chart_colors: Record<string, string>;
+  hidden_devices: string[];
 }
 
 export interface SensorDeviceStatus {
@@ -109,6 +123,12 @@ export interface SensorsStatusResponse {
 export interface PushVapidPublicKeyResponse {
   publicKey: string;
   configured: boolean;
+}
+
+export interface PushTestResponse {
+  status: string;
+  sent: number;
+  total: number;
 }
 
 export interface AirconUnitInfo {
@@ -157,6 +177,56 @@ export function hasAirconData(data: AirconData | null | undefined): boolean {
   );
 }
 
+/** センサーカードのデータ取得結果 */
+export type DeviceDataLoadStatus = "ok" | "empty" | "error";
+
+export function hasLatestSensorValues(data: LatestData | null | undefined): boolean {
+  if (!data) return false;
+  return (
+    data.temperature != null ||
+    data.humidity != null ||
+    data.pressure != null ||
+    data.co2 != null ||
+    data.illuminance != null
+  );
+}
+
+export function hasOutdoorValues(data: LatestData | null | undefined): boolean {
+  if (!data) return false;
+  return (
+    data.outdoor_temperature != null ||
+    data.outdoor_humidity != null ||
+    data.outdoor_pressure != null
+  );
+}
+
+export function resolveLatestDataLoadStatus(
+  data: LatestData | null | undefined,
+  fetchFailed: boolean
+): DeviceDataLoadStatus {
+  if (fetchFailed) return "error";
+  if (hasLatestSensorValues(data)) return "ok";
+  return "empty";
+}
+
+export function resolveOutdoorDataLoadStatus(
+  data: LatestData | null | undefined,
+  sourceFetchFailed: boolean
+): DeviceDataLoadStatus {
+  if (hasOutdoorValues(data)) return "ok";
+  if (sourceFetchFailed) return "error";
+  return "empty";
+}
+
+export function resolveAirconDataLoadStatus(
+  data: AirconData | null | undefined,
+  fetchFailed: boolean
+): DeviceDataLoadStatus {
+  if (fetchFailed) return "error";
+  if (hasAirconData(data)) return "ok";
+  return "empty";
+}
+
 /** グラフ・日次記録に使うデバイス */
 export const PRIMARY_SENSOR_DEVICE_ID = 1;
 
@@ -193,6 +263,10 @@ export function deviceMetricKey(deviceId: number, metric: ChartMetric): string {
   return `d${deviceId}_${metric}`;
 }
 
+export function deviceDht11TemperatureKey(deviceId: number): string {
+  return `d${deviceId}_temperature_dht11`;
+}
+
 export function deviceMetricMinKey(deviceId: number, metric: ChartMetric): string {
   return `d${deviceId}_${metric}_min`;
 }
@@ -222,6 +296,23 @@ export function getDeviceMetricValue(
   }
   if (deviceId === PRIMARY_SENSOR_DEVICE_ID) {
     const legacy = point[metric as keyof HistoryPoint];
+    return typeof legacy === "number" && !Number.isNaN(legacy) ? legacy : undefined;
+  }
+  return undefined;
+}
+
+export function getDeviceDht11TemperatureValue(
+  point: HistoryPoint,
+  deviceId: number
+): number | undefined {
+  const key = deviceDht11TemperatureKey(deviceId);
+  const row = point as unknown as Record<string, unknown>;
+  if (key in row) {
+    const value = row[key];
+    return typeof value === "number" && !Number.isNaN(value) ? value : undefined;
+  }
+  if (deviceId === PRIMARY_SENSOR_DEVICE_ID) {
+    const legacy = point.temperature_dht11;
     return typeof legacy === "number" && !Number.isNaN(legacy) ? legacy : undefined;
   }
   return undefined;

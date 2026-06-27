@@ -25,6 +25,7 @@ import type { HistoryPoint } from "@/lib/types";
 import {
   getHistoryChunkMs,
   getHistoryInitialSpanMs,
+  getHistoryQuickInitialSpanMs,
   mergeAirconIntoHistory,
   mergeHistoryPoints,
   toApiDateTime,
@@ -189,6 +190,18 @@ describe("history-loader", () => {
       getHistoryInitialSpanMs("day")
     );
     expect(getHistoryChunkMs("year")).toBeGreaterThan(getHistoryChunkMs("day"));
+  });
+
+  it("loads a shorter quick span before the full initial span", () => {
+    for (const viewRange of ["day", "week", "month", "year"] as const) {
+      const quick = getHistoryQuickInitialSpanMs(viewRange);
+      const full = getHistoryInitialSpanMs(viewRange);
+      expect(quick).toBeLessThanOrEqual(full);
+      expect(quick).toBeGreaterThan(0);
+    }
+    expect(getHistoryQuickInitialSpanMs("day")).toBeLessThan(
+      getHistoryInitialSpanMs("day")
+    );
   });
 });
 

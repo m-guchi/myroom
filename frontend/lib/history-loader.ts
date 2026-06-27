@@ -2,6 +2,7 @@ import type { ChartMetric, ChartViewRange, HistoryPoint } from "@/lib/types";
 import {
   CHART_METRICS,
   deviceAirconPowerKey,
+  deviceDht11TemperatureKey,
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
@@ -27,6 +28,23 @@ export function getHistoryInitialSpanMs(viewRange: ChartViewRange): number {
       return 400 * DAY_MS;
     default:
       return windowMs * 2;
+  }
+}
+
+/** 初回表示用の短い期間（先に取得してグラフを早く出す） */
+export function getHistoryQuickInitialSpanMs(viewRange: ChartViewRange): number {
+  const windowMs = getViewRangeMs(viewRange);
+  switch (viewRange) {
+    case "day":
+      return windowMs * 1.5;
+    case "week":
+      return windowMs * 1.2;
+    case "month":
+      return windowMs * 1.2;
+    case "year":
+      return 120 * DAY_MS;
+    default:
+      return windowMs * 1.2;
   }
 }
 
@@ -103,6 +121,11 @@ export function mergeMultiDeviceHistory(
         if (Array.isArray(range) && range.length === 2) {
           rowRecord[`d${deviceId}_${metric}Range`] = range;
         }
+      }
+
+      const dht11 = point.temperature_dht11;
+      if (typeof dht11 === "number" && !Number.isNaN(dht11)) {
+        rowRecord[deviceDht11TemperatureKey(deviceId)] = dht11;
       }
     }
   }

@@ -20,6 +20,10 @@ export function deviceVisibilityKey(deviceId: number): string {
   return `device:${deviceId}`;
 }
 
+export function deviceDht11VisibilityKey(deviceId: number): string {
+  return `device-dht11:${deviceId}`;
+}
+
 export function buildDefaultChartLineVisibility(
   sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
 ): ChartLineVisibilitySettings {
@@ -27,6 +31,7 @@ export function buildDefaultChartLineVisibility(
 
   for (const deviceId of sensorDeviceIds) {
     settings[deviceVisibilityKey(deviceId)] = true;
+    settings[deviceDht11VisibilityKey(deviceId)] = true;
   }
 
   settings[deviceVisibilityKey(AIRCON_CHART_DEVICE_ID)] = true;

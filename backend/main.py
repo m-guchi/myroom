@@ -4,11 +4,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, weather, outdoor_config, device_config, aircon_config, discord_notify, push_notify, push_subscriptions, sensor_monitor
+from . import database, weather, outdoor_config, device_config, aircon_config, discord_notify, push_notify, push_subscriptions, sensor_monitor, ui_settings
+from .auth import create_access_token, get_current_user
 from pydantic import BaseModel, model_validator
 
 load_dotenv()
@@ -66,9 +67,14 @@ class OutdoorLocation(BaseModel):
 
 class DeviceNameUpdate(BaseModel):
     name: str
+    inherits_from: Optional[int] = None
 
 class AirconNameUpdate(BaseModel):
     name: str
+
+class BulkDeleteRecordsRequest(BaseModel):
+    device: int
+    datetimes: List[str]
 
 class LoginRequest(BaseModel):
     password: str
@@ -89,6 +95,14 @@ class PushSubscribeRequest(BaseModel):
 class PushUnsubscribeRequest(BaseModel):
     password: str
     endpoint: str
+
+class PushTestRequest(BaseModel):
+    password: str
+
+class UiSettingsUpdate(BaseModel):
+    display_order: Optional[List[str]] = None
+    chart_colors: Optional[Dict[str, str]] = None
+    hidden_devices: Optional[List[str]] = None
 
 class AirconData(BaseModel):
     datetime: str
@@ -124,14 +138,17 @@ def _fetch_latest_aircon_record(
     )
 
 
-def _build_aircon_payload(record: Optional[database.AirconRecord]) -> dict:
+def _build_aircon_payload(
+    record: Optional[database.AirconRecord],
+    db: Optional[Session] = None,
+) -> dict:
     if record is None:
         return {}
 
     return {
         "ac_id": record.ac_id,
         "datetime": record.datetime,
-        "name": aircon_config.get_display_name(record.ac_id, record.name),
+        "name": aircon_config.get_display_name(record.ac_id, record.name, db=db),
         "source_name": record.name,
         "room_temperature": record.room_temperature,
         "target_temperature": record.target_temperature,
@@ -217,7 +234,10 @@ def _verify_app_password(password: str) -> None:
 
 
 @app.get("/api/sensors/status")
-def get_sensors_status(db: Session = Depends(database.get_db)):
+def get_sensors_status(
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     statuses = sensor_monitor.collect_sensor_statuses(db)
     stale_devices = [item for item in statuses if item["stale"]]
     return {
@@ -228,7 +248,7 @@ def get_sensors_status(db: Session = Depends(database.get_db)):
 
 
 @app.get("/api/push/vapid-public-key")
-def get_push_vapid_public_key():
+def get_push_vapid_public_key(_: dict = Depends(get_current_user)):
     public_key = push_notify.get_vapid_public_key()
     if not public_key:
         raise HTTPException(status_code=503, detail="Web Push is not configured")
@@ -239,7 +259,7 @@ def get_push_vapid_public_key():
 
 
 @app.post("/api/push/subscribe")
-def subscribe_push(body: PushSubscribeRequest):
+def subscribe_push(body: PushSubscribeRequest, _: dict = Depends(get_current_user)):
     _verify_app_password(body.password)
     if not push_notify.is_configured():
         raise HTTPException(status_code=503, detail="Web Push is not configured")
@@ -253,12 +273,32 @@ def subscribe_push(body: PushSubscribeRequest):
 
 
 @app.delete("/api/push/subscribe")
-def unsubscribe_push(body: PushUnsubscribeRequest):
+def unsubscribe_push(body: PushUnsubscribeRequest, _: dict = Depends(get_current_user)):
     _verify_app_password(body.password)
     removed = push_subscriptions.remove_subscription(body.endpoint)
     if not removed:
         raise HTTPException(status_code=404, detail="Subscription not found")
     return {"status": "ok"}
+
+
+@app.post("/api/push/test")
+def test_push(body: PushTestRequest, _: dict = Depends(get_current_user)):
+    _verify_app_password(body.password)
+    if not push_notify.is_configured():
+        raise HTTPException(status_code=503, detail="Web Push is not configured")
+
+    total = len(push_subscriptions.list_subscriptions())
+    if total == 0:
+        raise HTTPException(status_code=404, detail="No push subscriptions registered")
+
+    sent = push_notify.send_test_push()
+    if sent == 0:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to send test notification to any subscriber",
+        )
+
+    return {"status": "ok", "sent": sent, "total": total}
 
 
 @app.post("/api/login")
@@ -278,16 +318,20 @@ async def login(body: LoginRequest, request: Request):
     user_agent = request.headers.get("User-Agent", "unknown")
     timestamp = get_now_jst().strftime("%Y-%m-%d %H:%M:%S")
     discord_notify.send_login_notification(timestamp, client_ip, user_agent)
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "access_token": create_access_token(),
+        "token_type": "bearer",
+    }
 
 
 @app.get("/api/outdoor-location")
-def get_outdoor_location():
+def get_outdoor_location(_: dict = Depends(get_current_user)):
     return outdoor_config.get_location()
 
 
 @app.put("/api/outdoor-location")
-def update_outdoor_location(location: OutdoorLocation):
+def update_outdoor_location(location: OutdoorLocation, _: dict = Depends(get_current_user)):
     try:
         return outdoor_config.save_location(
             location.latitude,
@@ -299,31 +343,48 @@ def update_outdoor_location(location: OutdoorLocation):
 
 
 @app.get("/api/outdoor-location/search")
-def search_outdoor_locations(q: str = "", limit: int = 8):
+def search_outdoor_locations(
+    q: str = "",
+    limit: int = 8,
+    _: dict = Depends(get_current_user),
+):
     if limit < 1 or limit > 20:
         limit = 8
     return {"results": weather.search_locations(q, count=limit)}
 
 
 @app.get("/api/devices")
-def get_devices(db: Session = Depends(database.get_db)):
-    return {"devices": device_config.list_devices(_discover_device_ids(db))}
+def get_devices(db: Session = Depends(database.get_db), _: dict = Depends(get_current_user)):
+    return {"devices": device_config.list_devices(_discover_device_ids(db), db=db)}
 
 
 @app.put("/api/devices/{device_id}")
-def update_device_name(device_id: int, body: DeviceNameUpdate, db: Session = Depends(database.get_db)):
+def update_device_name(
+    device_id: int,
+    body: DeviceNameUpdate,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     if device_id < 1:
         raise HTTPException(status_code=400, detail="device id must be >= 1")
     try:
-        device = device_config.save_device_name(device_id, body.name)
+        inherits_kw: object = ...
+        if "inherits_from" in body.model_fields_set:
+            inherits_kw = body.inherits_from
+        device = device_config.save_device_name(
+            device_id,
+            body.name,
+            db=db,
+            inherits_from=inherits_kw,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return device
 
 
 @app.get("/api/aircon/units")
-def get_aircon_units(db: Session = Depends(database.get_db)):
-    return {"units": aircon_config.list_units(_discover_ac_ids(db))}
+def get_aircon_units(db: Session = Depends(database.get_db), _: dict = Depends(get_current_user)):
+    return {"units": aircon_config.list_units(_discover_ac_ids(db), db=db)}
 
 
 @app.put("/api/aircon/units/{ac_id}")
@@ -331,14 +392,30 @@ def update_aircon_unit_name(
     ac_id: int,
     body: AirconNameUpdate,
     db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
 ):
     if ac_id < 1:
         raise HTTPException(status_code=400, detail="ac id must be >= 1")
     try:
-        unit = aircon_config.save_unit_name(ac_id, body.name)
+        unit = aircon_config.save_unit_name(ac_id, body.name, db=db)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return unit
+
+
+@app.get("/api/ui-settings")
+def get_ui_settings(db: Session = Depends(database.get_db), _: dict = Depends(get_current_user)):
+    return ui_settings.get_settings(db)
+
+
+@app.put("/api/ui-settings")
+def update_ui_settings(
+    body: UiSettingsUpdate,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
+    updates = body.model_dump(exclude_unset=True)
+    return ui_settings.save_settings(updates, db=db)
 
 @app.post("/api/sensor")
 async def create_sensor_data(
@@ -377,14 +454,18 @@ async def create_sensor_data(
         
         db.add(record)
         db.commit()
-        device_config.ensure_device(device, device_name)
+        device_config.ensure_device(device, device_name, db=db)
         return {"status": "ok"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/latest")
-def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
+def get_latest(
+    device: int = 1,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     if device < 1:
         raise HTTPException(status_code=400, detail="device id must be >= 1")
     return _build_latest_payload(device, db)
@@ -392,7 +473,11 @@ def get_latest(device: int = 1, db: Session = Depends(database.get_db)):
 from sqlalchemy import func
 
 @app.get("/api/daily-stats")
-def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
+def get_daily_stats(
+    device: int = 1,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     if database.DB_MOCK:
         return database.generate_mock_daily()
         
@@ -472,7 +557,11 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
 
 
 @app.get("/api/aircon/daily-stats")
-def get_aircon_daily_stats(ac_id: int = 1, db: Session = Depends(database.get_db)):
+def get_aircon_daily_stats(
+    ac_id: int = 1,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     if ac_id < 1:
         raise HTTPException(status_code=400, detail="ac_id must be >= 1")
     if database.DB_MOCK:
@@ -563,16 +652,20 @@ async def create_aircon_data(
 
 
 @app.get("/api/aircon/latest")
-def get_aircon_latest(ac_id: Optional[int] = None, db: Session = Depends(database.get_db)):
+def get_aircon_latest(
+    ac_id: Optional[int] = None,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     if database.DB_MOCK:
         payload = database.generate_mock_aircon_latest()
         payload["name"] = aircon_config.get_display_name(
-            payload["ac_id"], payload.get("source_name")
+            payload["ac_id"], payload.get("source_name"), db=db
         )
         return payload
 
     record = _fetch_latest_aircon_record(db, ac_id)
-    return _build_aircon_payload(record)
+    return _build_aircon_payload(record, db=db)
 
 
 def _resolve_history_window(
@@ -651,6 +744,7 @@ def get_sensor_records(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
 ):
     if device < 1:
         raise HTTPException(status_code=400, detail="device id must be >= 1")
@@ -721,6 +815,7 @@ def delete_sensor_record(
     device: int,
     datetime_value: str = Query(..., alias="datetime"),
     db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
 ):
     if device < 1:
         raise HTTPException(status_code=400, detail="device id must be >= 1")
@@ -746,8 +841,51 @@ def delete_sensor_record(
     return {"status": "ok", "deleted": True}
 
 
+@app.post("/api/records/bulk-delete")
+def bulk_delete_sensor_records(
+    body: BulkDeleteRecordsRequest,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
+    if body.device < 1:
+        raise HTTPException(status_code=400, detail="device id must be >= 1")
+    if not body.datetimes:
+        raise HTTPException(status_code=400, detail="datetimes must not be empty")
+    if len(body.datetimes) > 500:
+        raise HTTPException(status_code=400, detail="too many datetimes (max 500)")
+
+    parsed_datetimes = []
+    for value in body.datetimes:
+        try:
+            parsed_datetimes.append(_parse_record_datetime(value))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid datetime: {value}") from exc
+
+    if database.DB_MOCK:
+        return {"status": "mock_ok", "deleted_count": len(parsed_datetimes)}
+
+    deleted = (
+        db.query(database.SensorRecord)
+        .filter(
+            database.SensorRecord.device_id == body.device,
+            database.SensorRecord.datetime.in_(parsed_datetimes),
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"status": "ok", "deleted_count": deleted}
+
+
 @app.get("/api/history")
-def get_history(date: Optional[str] = None, range: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, device: int = 1, db: Session = Depends(database.get_db)):
+def get_history(
+    date: Optional[str] = None,
+    range: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    device: int = 1,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     start_time, end_time, effective_range = _resolve_history_window(date, range, start, end)
 
     if database.DB_MOCK:
@@ -890,6 +1028,7 @@ def get_aircon_history(
     end: Optional[str] = None,
     ac_id: Optional[int] = None,
     db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
 ):
     start_time, end_time, effective_range = _resolve_history_window(date, range, start, end)
 

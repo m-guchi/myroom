@@ -3,25 +3,25 @@ from backend import device_config, outdoor_config
 
 def test_device_config_save_and_list(data_dir):
     saved = device_config.save_device_name(1, "リビング")
-    assert saved == {"id": 1, "name": "リビング"}
+    assert saved == {"id": 1, "name": "リビング", "inherits_from": None}
 
     devices = device_config.list_devices(discovered_ids=[2])
     assert devices == [
-        {"id": 1, "name": "リビング"},
-        {"id": 2, "name": "寝室"},
+        {"id": 1, "name": "リビング", "inherits_from": None},
+        {"id": 2, "name": "寝室", "inherits_from": None},
     ]
 
     devices_with_new = device_config.list_devices(discovered_ids=[3])
     assert devices_with_new == [
-        {"id": 1, "name": "リビング"},
-        {"id": 2, "name": "寝室"},
-        {"id": 3, "name": "デバイス 3"},
+        {"id": 1, "name": "リビング", "inherits_from": None},
+        {"id": 2, "name": "寝室", "inherits_from": None},
+        {"id": 3, "name": "デバイス 3", "inherits_from": None},
     ]
 
 
 def test_device_config_ensure_registers_new_device(data_dir):
     created = device_config.ensure_device(4, "書斎")
-    assert created == {"id": 4, "name": "書斎"}
+    assert created == {"id": 4, "name": "書斎", "inherits_from": None}
 
     devices = device_config.list_devices(discovered_ids=[4])
     assert any(device["id"] == 4 and device["name"] == "書斎" for device in devices)

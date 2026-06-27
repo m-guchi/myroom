@@ -3,9 +3,19 @@ import {
   type DisplayOrderItem,
 } from "@/lib/display-order";
 import {
+  AIRCON_TARGET_VISIBILITY_KEY,
+  deviceDht11VisibilityKey,
+  deviceVisibilityKey,
+  OUTDOOR_VISIBILITY_KEY,
+} from "@/lib/chart-line-visibility";
+import {
   AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
 } from "@/lib/types";
+
+export { AIRCON_TARGET_VISIBILITY_KEY } from "@/lib/chart-line-visibility";
+
+export const AIRCON_ROOM_HIDDEN_KEY = deviceVisibilityKey(AIRCON_CHART_DEVICE_ID);
 
 export const HIDDEN_DEVICES_STORAGE_KEY = "myroom_hidden_devices";
 export const VISIBLE_DEVICES_CHANGED_EVENT = "myroom-visible-devices-changed";
@@ -21,10 +31,60 @@ export function buildAllDashboardTargetKeys(
   const keys = new Set<string>();
   for (const deviceId of sensorDeviceIds) {
     keys.add(orderItemKey({ type: "device", deviceId }));
+    keys.add(deviceDht11VisibilityKey(deviceId));
   }
   keys.add("outdoor");
-  keys.add("aircon");
+  keys.add(AIRCON_ROOM_HIDDEN_KEY);
+  keys.add(AIRCON_TARGET_VISIBILITY_KEY);
   return keys;
+}
+
+export function isHiddenKeyVisible(hiddenKeys: Set<string>, key: string): boolean {
+  if (key === "aircon") {
+    return isAirconAnyVisible(hiddenKeys);
+  }
+  return !hiddenKeys.has(key);
+}
+
+export function isAirconRoomVisible(hiddenKeys: Set<string>): boolean {
+  if (hiddenKeys.has("aircon")) return false;
+  return !hiddenKeys.has(AIRCON_ROOM_HIDDEN_KEY);
+}
+
+export function isAirconTargetVisible(hiddenKeys: Set<string>): boolean {
+  if (hiddenKeys.has("aircon")) return false;
+  return !hiddenKeys.has(AIRCON_TARGET_VISIBILITY_KEY);
+}
+
+export function isAirconAnyVisible(hiddenKeys: Set<string>): boolean {
+  return isAirconRoomVisible(hiddenKeys) || isAirconTargetVisible(hiddenKeys);
+}
+
+export function isDeviceDht11Visible(
+  hiddenKeys: Set<string>,
+  deviceId: number
+): boolean {
+  return !hiddenKeys.has(deviceDht11VisibilityKey(deviceId));
+}
+
+export function setHiddenKeyVisible(
+  hiddenKeys: Set<string>,
+  key: string,
+  visible: boolean
+): Set<string> {
+  const next = new Set(hiddenKeys);
+  if (visible) {
+    next.delete(key);
+    if (key === AIRCON_ROOM_HIDDEN_KEY || key === AIRCON_TARGET_VISIBILITY_KEY) {
+      next.delete("aircon");
+    }
+  } else {
+    next.add(key);
+    if (key === AIRCON_ROOM_HIDDEN_KEY || key === AIRCON_TARGET_VISIBILITY_KEY) {
+      next.delete("aircon");
+    }
+  }
+  return next;
 }
 
 export function normalizeHiddenDeviceKeys(
@@ -34,7 +94,18 @@ export function normalizeHiddenDeviceKeys(
   const validKeys = buildAllDashboardTargetKeys(sensorDeviceIds);
   if (!saved?.length) return new Set();
 
-  return new Set(saved.filter((key) => validKeys.has(key)));
+  const normalized = new Set<string>();
+  for (const key of saved) {
+    if (key === "aircon") {
+      normalized.add(AIRCON_ROOM_HIDDEN_KEY);
+      normalized.add(AIRCON_TARGET_VISIBILITY_KEY);
+      continue;
+    }
+    if (validKeys.has(key)) {
+      normalized.add(key);
+    }
+  }
+  return normalized;
 }
 
 export function loadHiddenDeviceKeys(
@@ -68,6 +139,9 @@ export function isTargetVisible(
   hiddenKeys: Set<string>,
   item: DisplayOrderItem
 ): boolean {
+  if (item.type === "aircon") {
+    return isAirconAnyVisible(hiddenKeys);
+  }
   return !hiddenKeys.has(orderItemKey(item));
 }
 
@@ -93,6 +167,23 @@ export function filterDisplayOrderByVisibility(
   return order.filter((item) => isTargetVisible(hiddenKeys, item));
 }
 
+/** 非表示デバイスを末尾にまとめた表示順（各グループ内の相対順は維持） */
+export function sortDisplayOrderHiddenLast(
+  order: DisplayOrderItem[],
+  hiddenKeys: Set<string>
+): DisplayOrderItem[] {
+  const visible: DisplayOrderItem[] = [];
+  const hidden: DisplayOrderItem[] = [];
+  for (const item of order) {
+    if (isTargetVisible(hiddenKeys, item)) {
+      visible.push(item);
+    } else {
+      hidden.push(item);
+    }
+  }
+  return [...visible, ...hidden];
+}
+
 export function getVisibleSensorDeviceIds(
   sensorDeviceIds: readonly number[],
   hiddenKeys: Set<string>
@@ -107,8 +198,36 @@ export function getVisibleChartDeviceIds(
   hiddenKeys: Set<string>
 ): number[] {
   const ids = getVisibleSensorDeviceIds(sensorDeviceIds, hiddenKeys);
-  if (isTargetVisible(hiddenKeys, { type: "aircon" })) {
+  if (isAirconRoomVisible(hiddenKeys)) {
     ids.push(AIRCON_CHART_DEVICE_ID);
   }
   return ids;
+}
+
+export function applyHiddenDevicesToLineVisibility<T extends Record<string, boolean>>(
+  lineVisibility: T,
+  hiddenKeys: Set<string>,
+  sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
+): T {
+  const merged = { ...lineVisibility };
+  for (const deviceId of sensorDeviceIds) {
+    const key = deviceVisibilityKey(deviceId);
+    if (hiddenKeys.has(key)) {
+      merged[key as keyof T] = false as T[keyof T];
+    }
+    const dht11Key = deviceDht11VisibilityKey(deviceId);
+    if (hiddenKeys.has(dht11Key)) {
+      merged[dht11Key as keyof T] = false as T[keyof T];
+    }
+  }
+  if (hiddenKeys.has(OUTDOOR_VISIBILITY_KEY)) {
+    merged[OUTDOOR_VISIBILITY_KEY as keyof T] = false as T[keyof T];
+  }
+  if (!isAirconRoomVisible(hiddenKeys)) {
+    merged[AIRCON_ROOM_HIDDEN_KEY as keyof T] = false as T[keyof T];
+  }
+  if (!isAirconTargetVisible(hiddenKeys)) {
+    merged[AIRCON_TARGET_VISIBILITY_KEY as keyof T] = false as T[keyof T];
+  }
+  return merged;
 }

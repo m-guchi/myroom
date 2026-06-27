@@ -4,9 +4,12 @@ import {
   FALLBACK_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
   hasAirconData,
+  resolveAirconDataLoadStatus,
+  resolveLatestDataLoadStatus,
   type AirconData,
   type AirconUnitInfo,
   type DailyStat,
+  type DeviceDataLoadStatus,
   type DeviceInfo,
   type HistoryPoint,
   type LatestData,
@@ -15,16 +18,49 @@ import {
   type SensorRecordsResponse,
   type SensorsStatusResponse,
   type PushVapidPublicKeyResponse,
+  type PushTestResponse,
   type TimeRange,
   type ChartViewRange,
+  type UiSettings,
 } from "@/lib/types";
 import { processHistoryData, processAirconHistoryData } from "@/lib/chart-utils";
 import { toApiDateTime, type AirconHistoryPoint } from "@/lib/history-loader";
+import {
+  authHeaders,
+  AuthError,
+  clearAuthToken,
+  setAuthToken,
+} from "@/lib/auth";
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...authHeaders(),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 401) {
+    clearAuthToken();
+    throw new AuthError();
+  }
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   return res.json() as Promise<T>;
+}
+
+async function fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...authHeaders(),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 401) {
+    clearAuthToken();
+    throw new AuthError();
+  }
+  return res;
 }
 
 export async function login(password: string): Promise<boolean> {
@@ -33,7 +69,30 @@ export async function login(password: string): Promise<boolean> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
-  return res.ok;
+  if (!res.ok) return false;
+  const data = (await res.json()) as { access_token?: string };
+  if (!data.access_token) return false;
+  setAuthToken(data.access_token);
+  return true;
+}
+
+export async function fetchUiSettings(): Promise<UiSettings> {
+  return fetchJson<UiSettings>("/api/ui-settings");
+}
+
+export async function updateUiSettings(
+  settings: Partial<UiSettings>
+): Promise<UiSettings> {
+  const res = await fetchWithAuth("/api/ui-settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<UiSettings>;
 }
 
 export async function fetchLatest(deviceId = PRIMARY_SENSOR_DEVICE_ID): Promise<LatestData> {
@@ -134,12 +193,17 @@ export async function fetchDevices(): Promise<DeviceInfo[]> {
 
 export async function updateDeviceName(
   deviceId: number,
-  name: string
+  name: string,
+  inheritsFrom?: number | null
 ): Promise<DeviceInfo> {
-  const res = await fetch(`/api/devices/${deviceId}`, {
+  const body: { name: string; inherits_from?: number | null } = { name };
+  if (inheritsFrom !== undefined) {
+    body.inherits_from = inheritsFrom;
+  }
+  const res = await fetchWithAuth(`/api/devices/${deviceId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
@@ -157,7 +221,7 @@ export async function updateAirconUnitName(
   acId: number,
   name: string
 ): Promise<AirconUnitInfo> {
-  const res = await fetch(`/api/aircon/units/${acId}`, {
+  const res = await fetchWithAuth(`/api/aircon/units/${acId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -176,7 +240,7 @@ export async function fetchOutdoorLocation(): Promise<OutdoorLocation> {
 export async function updateOutdoorLocation(
   location: OutdoorLocation
 ): Promise<OutdoorLocation> {
-  const res = await fetch("/api/outdoor-location", {
+  const res = await fetchWithAuth("/api/outdoor-location", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(location),
@@ -219,7 +283,7 @@ export async function deleteSensorRecord(
     device: String(deviceId),
     datetime,
   });
-  const res = await fetch(`/api/records?${params.toString()}`, {
+  const res = await fetchWithAuth(`/api/records?${params.toString()}`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -228,12 +292,29 @@ export async function deleteSensorRecord(
   }
 }
 
+export async function deleteSensorRecordsBulk(
+  deviceId: number,
+  datetimes: string[]
+): Promise<number> {
+  const res = await fetchWithAuth("/api/records/bulk-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device: deviceId, datetimes }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  const data = (await res.json()) as { deleted_count: number };
+  return data.deleted_count;
+}
+
 export async function fetchSensorsStatus(): Promise<SensorsStatusResponse> {
   return fetchJson<SensorsStatusResponse>("/api/sensors/status");
 }
 
 export async function fetchPushVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
-  const res = await fetch("/api/push/vapid-public-key");
+  const res = await fetchWithAuth("/api/push/vapid-public-key");
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(body?.detail || `Request failed: ${res.status}`);
@@ -249,7 +330,7 @@ export async function subscribePushNotifications(
     expirationTime?: number | null;
   }
 ): Promise<void> {
-  const res = await fetch("/api/push/subscribe", {
+  const res = await fetchWithAuth("/api/push/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password, subscription }),
@@ -264,7 +345,7 @@ export async function unsubscribePushNotifications(
   password: string,
   endpoint: string
 ): Promise<void> {
-  const res = await fetch("/api/push/subscribe", {
+  const res = await fetchWithAuth("/api/push/subscribe", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password, endpoint }),
@@ -275,20 +356,44 @@ export async function unsubscribePushNotifications(
   }
 }
 
+export async function sendTestPushNotification(password: string): Promise<PushTestResponse> {
+  const res = await fetchWithAuth("/api/push/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<PushTestResponse>;
+}
+
+export interface LatestBatchResult {
+  latestByDevice: Record<number, LatestData | null>;
+  loadStatusByDevice: Record<number, DeviceDataLoadStatus>;
+}
+
 export async function fetchLatestBatch(
   deviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
-): Promise<Record<number, LatestData | null>> {
+): Promise<LatestBatchResult> {
   const results = await Promise.allSettled(
     deviceIds.map((deviceId) => fetchLatest(deviceId))
   );
 
   const latestByDevice: Record<number, LatestData | null> = {};
+  const loadStatusByDevice: Record<number, DeviceDataLoadStatus> = {};
   deviceIds.forEach((deviceId, index) => {
     const result = results[index];
-    latestByDevice[deviceId] =
-      result.status === "fulfilled" ? result.value : null;
+    if (result.status === "fulfilled") {
+      latestByDevice[deviceId] = result.value;
+      loadStatusByDevice[deviceId] = resolveLatestDataLoadStatus(result.value, false);
+    } else {
+      latestByDevice[deviceId] = null;
+      loadStatusByDevice[deviceId] = "error";
+    }
   });
-  return latestByDevice;
+  return { latestByDevice, loadStatusByDevice };
 }
 
 export async function fetchDashboardData(
@@ -309,14 +414,31 @@ export async function fetchDashboardData(
     mergedDailyStats[AIRCON_CHART_DEVICE_ID] = airconDailyStats.value;
   }
 
+  const latestBatch =
+    latestByDevice.status === "fulfilled"
+      ? latestByDevice.value
+      : {
+          latestByDevice: {} as Record<number, LatestData | null>,
+          loadStatusByDevice: Object.fromEntries(
+            sensorDeviceIds.map((deviceId) => [deviceId, "error" as const])
+          ),
+        };
+
+  const airconFetchFailed = airconLatest.status === "rejected";
+  const airconValue = airconLatest.status === "fulfilled" ? airconLatest.value : null;
+
   return {
-    latestByDevice:
-      latestByDevice.status === "fulfilled" ? latestByDevice.value : {},
+    latestByDevice: latestBatch.latestByDevice,
+    latestLoadStatusByDevice: latestBatch.loadStatusByDevice,
     latest:
       latestByDevice.status === "fulfilled"
-        ? latestByDevice.value[PRIMARY_SENSOR_DEVICE_ID] ?? null
+        ? latestBatch.latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? null
         : null,
     dailyStatsByDevice: mergedDailyStats,
-    airconLatest: airconLatest.status === "fulfilled" ? airconLatest.value : null,
+    airconLatest: airconValue,
+    airconLoadStatus: resolveAirconDataLoadStatus(airconValue, airconFetchFailed),
+    dashboardFetchFailed:
+      latestByDevice.status === "rejected" &&
+      airconLatest.status === "rejected",
   };
 }
