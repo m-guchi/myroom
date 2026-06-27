@@ -8,7 +8,6 @@ import {
   Gauge,
   ListOrdered,
   RefreshCw,
-  Settings,
   Snowflake,
   Sun,
   Thermometer,
@@ -17,8 +16,6 @@ import {
 import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
-import { DeviceNameSettings } from "@/components/device-name-settings";
-import { AirconNameSettings } from "@/components/aircon-name-settings";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
 import { DisplayOrderSettings } from "@/components/display-order-settings";
 import { NotificationSettings } from "@/components/notification-settings";
@@ -49,10 +46,8 @@ import {
   type DisplayOrderItem,
 } from "@/lib/display-order";
 import {
-  AIRCON_TARGET_COLOR_KEY,
   buildDefaultChartColors,
   deviceColorKey,
-  getAirconTargetChartColor,
   getDeviceChartColor,
   getOutdoorChartColor,
   loadChartColors,
@@ -67,7 +62,6 @@ import {
   isChartLineVisible,
   loadChartLineVisibility,
   mergeEffectiveChartLineVisibility,
-  AIRCON_TARGET_VISIBILITY_KEY,
   OUTDOOR_VISIBILITY_KEY,
   saveChartLineVisibility,
   type ChartLineVisibilityOverrides,
@@ -106,7 +100,6 @@ interface DeviceCardProps {
   accentColor?: string;
   action?: React.ReactNode;
   onClick?: () => void;
-  onSettingsClick?: () => void;
   statusNote?: string;
 }
 
@@ -228,7 +221,6 @@ function DeviceCard({
   accentColor,
   action,
   onClick,
-  onSettingsClick,
   statusNote,
 }: DeviceCardProps) {
   const className = onClick
@@ -246,22 +238,7 @@ function DeviceCard({
         >
           {title}
         </p>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {onSettingsClick && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onSettingsClick();
-              }}
-              className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground"
-              aria-label={`${title}の設定`}
-            >
-              <Settings className="size-4" strokeWidth={1.75} />
-            </button>
-          )}
-          {action}
-        </div>
+        {action && <div className="flex shrink-0 items-center">{action}</div>}
       </div>
       {statusNote && (
         <p className="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -328,8 +305,6 @@ export function MyRoomDashboard() {
   const [dailyLimit, setDailyLimit] = useState(7);
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
   const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
-  const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
-  const [deviceSettingsId, setDeviceSettingsId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [recordsPanelOpen, setRecordsPanelOpen] = useState(false);
   const [recordsDeviceId, setRecordsDeviceId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
@@ -354,14 +329,12 @@ export function MyRoomDashboard() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
-  const [airconSettingsOpen, setAirconSettingsOpen] = useState(false);
-  const [airconSettingsId, setAirconSettingsId] = useState(1);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [offlineSnapshot, setOfflineSnapshot] = useState<DashboardOfflineSnapshot | null>(
     null
   );
 
-  const activeAirconId = airconLatest?.ac_id ?? airconSettingsId;
+  const activeAirconId = airconLatest?.ac_id ?? 1;
   const airconChartTitle =
     airconLatest?.name ??
     airconUnits.find((unit) => unit.ac_id === activeAirconId)?.name ??
@@ -458,7 +431,7 @@ export function MyRoomDashboard() {
         }
 
         const [data, sensorsStatus] = await Promise.all([
-          fetchDashboardData(airconLatest?.ac_id ?? airconSettingsId, sensorDeviceIds),
+          fetchDashboardData(airconLatest?.ac_id ?? 1, sensorDeviceIds),
           fetchSensorsStatus().catch(() => null),
         ]);
         setIsOfflineMode(false);
@@ -487,7 +460,6 @@ export function MyRoomDashboard() {
     [
       resetAndLoad,
       airconLatest?.ac_id,
-      airconSettingsId,
       sensorDeviceIds,
       applyOfflineSnapshot,
     ]
@@ -784,10 +756,6 @@ export function MyRoomDashboard() {
                         strokeWidth={1.75}
                       />
                     }
-                    onSettingsClick={() => {
-                      setDeviceSettingsId(deviceId);
-                      setDeviceSettingsOpen(true);
-                    }}
                     onClick={() => {
                       setRecordsDeviceId(deviceId);
                       setRecordsPanelOpen(true);
@@ -810,7 +778,6 @@ export function MyRoomDashboard() {
                         strokeWidth={1.75}
                       />
                     }
-                    onSettingsClick={() => setOutdoorSettingsOpen(true)}
                     onClick={() => setOutdoorSettingsOpen(true)}
                   />
                 );
@@ -821,20 +788,6 @@ export function MyRoomDashboard() {
                   key="aircon"
                   title={airconTitle}
                   accentColor={getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)}
-                  action={
-                    <ChevronRight
-                      className="size-5 shrink-0 text-muted-foreground/60"
-                      strokeWidth={1.75}
-                    />
-                  }
-                  onSettingsClick={() => {
-                    setAirconSettingsId(activeAirconId);
-                    setAirconSettingsOpen(true);
-                  }}
-                  onClick={() => {
-                    setAirconSettingsId(activeAirconId);
-                    setAirconSettingsOpen(true);
-                  }}
                   metrics={buildAirconMetrics(
                     airconLatest,
                     getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)
@@ -900,39 +853,11 @@ export function MyRoomDashboard() {
         onChange={handleDisplayOrderChange}
       />
 
-      <DeviceNameSettings
-        open={deviceSettingsOpen}
-        deviceId={deviceSettingsId}
-        chartColor={getDeviceChartColor(chartColors, deviceSettingsId)}
-        onChartColorChange={(color) =>
-          handleChartColorChange(deviceColorKey(deviceSettingsId), color)
-        }
-        chartLineVisible={isChartLineVisible(
-          defaultLineVisibility,
-          deviceVisibilityKey(deviceSettingsId)
-        )}
-        onChartLineVisibleChange={(visible) =>
-          handleDefaultChartLineVisibleChange(deviceVisibilityKey(deviceSettingsId), visible)
-        }
-        onClose={() => setDeviceSettingsOpen(false)}
-        onSaved={(device) => {
-          setDevices((prev) => {
-            const others = prev.filter((item) => item.id !== device.id);
-            return [...others, device].sort((a, b) => a.id - b.id);
-          });
-        }}
-      />
-
       <SensorRecordsPanel
         open={recordsPanelOpen}
         deviceId={recordsDeviceId}
         deviceName={deviceNames[recordsDeviceId] ?? `デバイス ${recordsDeviceId}`}
         onClose={() => setRecordsPanelOpen(false)}
-        onOpenSettings={() => {
-          setRecordsPanelOpen(false);
-          setDeviceSettingsId(recordsDeviceId);
-          setDeviceSettingsOpen(true);
-        }}
         onChanged={() => fetchData({ reloadHistory: true })}
       />
 
@@ -947,47 +872,6 @@ export function MyRoomDashboard() {
         onClose={() => setOutdoorSettingsOpen(false)}
         onSaved={(location) => {
           setOutdoorLocation(location);
-          fetchData();
-        }}
-      />
-
-      <AirconNameSettings
-        open={airconSettingsOpen}
-        acId={airconSettingsId}
-        roomChartColor={getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)}
-        targetChartColor={getAirconTargetChartColor(chartColors)}
-        onRoomChartColorChange={(color) =>
-          handleChartColorChange(deviceColorKey(AIRCON_CHART_DEVICE_ID), color)
-        }
-        onTargetChartColorChange={(color) =>
-          handleChartColorChange(AIRCON_TARGET_COLOR_KEY, color)
-        }
-        roomChartLineVisible={isChartLineVisible(
-          defaultLineVisibility,
-          deviceVisibilityKey(AIRCON_CHART_DEVICE_ID)
-        )}
-        targetChartLineVisible={isChartLineVisible(
-          defaultLineVisibility,
-          AIRCON_TARGET_VISIBILITY_KEY
-        )}
-        onRoomChartLineVisibleChange={(visible) =>
-          handleDefaultChartLineVisibleChange(
-            deviceVisibilityKey(AIRCON_CHART_DEVICE_ID),
-            visible
-          )
-        }
-        onTargetChartLineVisibleChange={(visible) =>
-          handleDefaultChartLineVisibleChange(AIRCON_TARGET_VISIBILITY_KEY, visible)
-        }
-        onClose={() => setAirconSettingsOpen(false)}
-        onSaved={(unit: AirconUnitInfo) => {
-          setAirconUnits((prev) => {
-            const others = prev.filter((item) => item.ac_id !== unit.ac_id);
-            return [...others, unit].sort((a, b) => a.ac_id - b.ac_id);
-          });
-          setAirconLatest((prev) =>
-            prev && prev.ac_id === unit.ac_id ? { ...prev, name: unit.name } : prev
-          );
           fetchData();
         }}
       />

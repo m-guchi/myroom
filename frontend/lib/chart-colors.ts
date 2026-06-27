@@ -42,6 +42,8 @@ export interface ChartColorConfigItem {
 
 const STORAGE_KEY = "myroom_chart_colors";
 
+export const CHART_COLORS_CHANGED_EVENT = "myroom-chart-colors-changed";
+
 export function deviceColorKey(deviceId: number): string {
   return `device:${deviceId}`;
 }
