@@ -1,6 +1,6 @@
 # MyRoom
 
-部屋の環境データ（温度、湿度、気圧、CO2 など）を可視化するアプリケーションです。
+部屋の環境データ（温度、湿度、気圧、CO2、照度など）を可視化するアプリケーションです。ログイン後にダッシュボードで履歴グラフ・センサー一覧・記録を確認でき、Raspberry Pi からセンサー／エアコンデータを POST できます。
 
 - **バックエンド**: FastAPI (Python)
 - **フロントエンド**: Next.js (React + TypeScript + Tailwind CSS + shadcn/ui)
@@ -175,13 +175,14 @@ npm run build
 
 ### 画面構成
 
-SwitchBot 風のスマートホーム UI をベースに、モバイル向け（最大幅 480px）のライトテーマで構成しています。
+SwitchBot 風のスマートホーム UI をベースに、モバイル向け（最大幅 480px）のライト／ダークテーマで構成しています。
 
-1. **履歴グラフ** — 画面上部。横スクロールで過去データを読み込み
-2. **センサーカード（2列）** — 屋内デバイス / 屋外地点
+1. **履歴グラフ** — 画面上部。指標タブ（温度・湿度・気圧・CO2・照度）で切り替え。スマホではグラフ上と画面下部の固定バーの両方から操作可能
+2. **センサーカード（2列）** — 屋内デバイス / 屋外 / エアコン。カードタップでデバイス詳細（グラフ・記録一覧）
 3. **最近の記録** — 日ごとの最高・最低値をバー表示
+4. **デバイス設定** (`/devices`) — 表示順・表示名・色・ダッシュボード表示の管理
 
-フォントは **Noto Sans JP**、背景 `#F5F5F5`、カードは白背景・角丸 18〜20px です。
+フォントは **Noto Sans JP**、カードは角丸 18〜20px です。
 
 ### 単位と表示
 
@@ -190,22 +191,28 @@ SwitchBot 風のスマートホーム UI をベースに、モバイル向け（
 | 温度 | °C | 小数点第1位、青色 (`#3498db`) |
 | 湿度 | % | 整数、緑色 (`#2ecc71`) |
 | 気圧 | hPa | 整数、紫色 (`#9b59b6`) |
-| CO2 | ppm | 整数、グレー (`#95a5a6`) |
+| CO2 | ppm | 整数、オレンジ (`#e67e22`) |
+| 照度 | lx | 小数点第1位、黄色 (`#f1c40f`) |
 
 ### 履歴グラフ
 
-- **表示幅**: 日 / 週 / 月 / 年 を切り替え。横スクロールで表示範囲外のデータを段階的に取得
-- **指標切替**: 温度・湿度・気圧タブ
-- **屋内 / 屋外**: 屋内は実線＋塗り、屋外（Open-Meteo）はグレーの点線
+- **表示幅**: 日 / 週 / 月 / 年 を切り替え。左右ドラッグで表示期間を移動し、範囲外のデータを段階的に取得
+- **指標切替**: 温度・湿度・気圧・CO2・照度タブ（スマホではグラフ上部＋画面下部固定バー）
+- **屋内 / 屋外**: 屋内は実線、屋外（Open-Meteo）は点線。エアコンの室温・設定温度も個別に表示可能
+- **DHT11 温度**: 防水温湿度計など `temperature_dht11` を別系列で表示可能
+- **凡例**: 各系列の表示／非表示を切り替え（設定はセッションをまたいで保持）
 - **Y軸**: 現在表示中の時間帯のデータに合わせて自動調整
 - **年表示**: 日次集計（最高・最低を含む）。日・週・月は生データ（10分間隔等）
-- **更新**: 30秒ごとの自動更新、手動更新ボタンあり
+- **更新**: 30秒ごとの自動更新、手動更新ボタンあり。起動時は読み込み中表示
 
 ### デバイス管理
 
 - **複数デバイス対応**: API の `device` クエリで `device_id` を指定（例: `?device=2`）
-- **表示名の変更**: 屋内センサーカードをタップ → UI から名称を変更可能
-- **保存先**: `data/devices.json`（gitignore 対象）。初回デフォルト名は `.env` の `DEVICE_1_NAME`（未設定時: `リビング`）
+- **デバイス設定ページ** (`/devices`): 表示順のドラッグ並べ替え、表示名・グラフの色・ダッシュボード表示の ON/OFF
+- **デバイス詳細**: センサーカードをタップ → そのデバイス（設置場所）のグラフと記録一覧。記録の個別削除・一括削除に対応
+- **設置場所の継承**: 同じ場所でセンサーを交換した場合、`inherits_from` で過去データを連続表示。場所名は継承チェーン最古のデバイス名を使用
+- **エアコン**: 室温と設定温度で色・ダッシュボード表示を個別に設定可能
+- **表示名の保存**: UI 設定は DB（`ui_settings`）に永続化。デバイス名は `data/devices.json`（gitignore）にも反映
 
 ### 屋外データ
 
@@ -287,8 +294,11 @@ python3 migrate_db.py   # aircon テーブルを作成
 
 - **最近の記録**: 直近7日分から表示し、「もっと見る」で追加読み込み
 - **モバイルアプリ対応 (PWA)**: ホーム画面に追加して全画面起動可能。専用アプリアイコン設定済み
+- **オフライン表示**: ネットワーク切断時、IndexedDB に保存した最新値と直近24時間のグラフを表示
+- **センサー未到達通知**: API 側で鮮度を監視し、Discord / Web Push（PWA）で通知。ダッシュボードに警告表示
 - **死活監視用 API**: `/api/health` が `GET` / `HEAD` で `200 OK` を返す
 - **ログイン管理**:
+  - ダッシュボードのデータ取得 API は **JWT 認証必須**（`Authorization: Bearer <token>`）。センサー POST（`/api/sensor`）・エアコン POST（`/api/aircon`）は認証なし
   - デフォルトパスワード: `admin`（ローカル開発時）
   - 本番: 1Password の `app-password` を `APP_PASSWORD` としてサーバー `.env` に同期
   - ログイン成功時: Discord Webhook（1Password の `discord-webhook-url`）へ通知
@@ -299,18 +309,29 @@ python3 migrate_db.py   # aircon テーブルを作成
 | メソッド | パス | 説明 |
 |----------|------|------|
 | GET/HEAD | `/api/health` | 死活監視 |
-| POST | `/api/login` | ログイン（成功時に Discord 通知） |
-| GET | `/api/latest?device=1` | 最新の屋内＋屋外データ |
-| GET | `/api/history?range=day&device=1` | 履歴（`range`: day/week/month/year、または `start`/`end`） |
-| GET | `/api/daily-stats?device=1` | 日次統計（最近の記録） |
-| POST | `/api/sensor?device=1` | センサーデータ受信 |
-| POST | `/api/aircon` | エアコン状態受信（AirCloud Home 連携） |
-| GET | `/api/aircon/latest?ac_id=1` | エアコン最新状態 |
-| GET | `/api/devices` | デバイス一覧（表示名） |
-| PUT | `/api/devices/{id}` | デバイス表示名の更新 |
-| GET | `/api/outdoor-location` | 屋外地点の取得 |
-| PUT | `/api/outdoor-location` | 屋外地点の更新 |
-| GET | `/api/outdoor-location/search?q=大阪` | 地名検索（Open-Meteo Geocoding） |
+| POST | `/api/login` | ログイン（JWT 発行、成功時に Discord 通知） |
+| GET | `/api/latest?device=1` | 最新の屋内＋屋外データ（要認証） |
+| GET | `/api/history?range=day&device=1` | 履歴（`range`: day/week/month/year、または `start`/`end`、要認証） |
+| GET | `/api/daily-stats?device=1` | 日次統計（最近の記録、要認証） |
+| GET | `/api/records?device=1` | センサー記録一覧（要認証） |
+| DELETE | `/api/records` | センサー記録の削除（要認証） |
+| POST | `/api/records/bulk-delete` | センサー記録の一括削除（要認証） |
+| POST | `/api/sensor?device=1` | センサーデータ受信（認証不要） |
+| POST | `/api/aircon` | エアコン状態受信（認証不要） |
+| GET | `/api/aircon/latest?ac_id=1` | エアコン最新状態（要認証） |
+| GET | `/api/aircon/history` | エアコン履歴（要認証） |
+| GET | `/api/devices` | デバイス一覧（要認証） |
+| PUT | `/api/devices/{id}` | デバイス表示名・継承設定の更新（要認証） |
+| GET | `/api/aircon/units` | エアコンユニット一覧（要認証） |
+| PUT | `/api/aircon/units/{ac_id}` | エアコン表示名の更新（要認証） |
+| GET/PUT | `/api/ui-settings` | UI 設定（表示順・色・非表示デバイス、要認証） |
+| GET | `/api/outdoor-location` | 屋外地点の取得（要認証） |
+| PUT | `/api/outdoor-location` | 屋外地点の更新（要認証） |
+| GET | `/api/outdoor-location/search?q=大阪` | 地名検索（要認証） |
+| GET | `/api/sensors/status` | センサー鮮度ステータス（要認証） |
+| GET | `/api/push/vapid-public-key` | Web Push 用 VAPID 公開鍵（要認証） |
+| POST/DELETE | `/api/push/subscribe` | プッシュ通知の購読登録・解除（要認証） |
+| POST | `/api/push/test` | プッシュ通知のテスト送信（要認証） |
 
 ## 設定ファイル
 
@@ -491,7 +512,7 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 
 ### 3. バージョン管理（npm version）
 
-アプリのバージョンは `frontend/package.json` が正です。UI の表示と更新履歴はここから同期されます。`main` へのマージ時、GitHub Actions がこの値から `v2.4.0` 形式の Git タグと GitHub Release を自動作成します。
+アプリのバージョンは `frontend/package.json` が正です。UI の表示と更新履歴はここから同期されます。`main` へのマージ時、GitHub Actions がこの値から `v3.0.0` 形式の Git タグと GitHub Release を自動作成します。
 
 | ファイル | 役割 |
 |----------|------|

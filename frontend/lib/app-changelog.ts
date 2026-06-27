@@ -20,6 +20,20 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.0.0",
+    date: "2026-06-28",
+    changes: [
+      "ダッシュボードのデータ API を JWT 認証必須に変更（センサー POST は従来どおり認証不要）",
+      "/devices でデバイスの表示順・色・表示名・ダッシュボード表示を一元管理",
+      "センサーカードからデバイス詳細（グラフ・記録一覧・一括削除）を開けるように対応",
+      "設置場所の継承（センサー交換時の履歴連続表示）と場所名表示に対応",
+      "照度・DHT11 温度・エアコン室温/設定温度をグラフに表示",
+      "スマホで指標タブを画面下部に固定表示",
+      "オフライン時の最新値・直近24時間グラフ表示（PWA）",
+      "センサー未到達の Discord / プッシュ通知とダッシュボード警告",
+    ],
+  },
+  {
     version: "2.6.0",
     date: "2026-06-28",
     changes: [

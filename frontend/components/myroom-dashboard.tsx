@@ -77,6 +77,7 @@ import {
   saveChartColorsToServer,
   getDefaultUiSettings,
 } from "@/lib/ui-settings-client";
+import { getLocationName } from "@/lib/device-inheritance";
 import {
   AuthError,
   clearAuthToken,
@@ -559,7 +560,6 @@ export function MyRoomDashboard() {
         setChartColors(settings.chartColors);
         setHiddenDeviceKeys(settings.hiddenDeviceKeys);
         setDefaultLineVisibility(loadChartLineVisibility(sensorIds));
-        setSessionLineOverrides({});
         setLayoutReady(true);
       } catch {
         if (!cancelled) setLayoutReady(true);
@@ -1052,7 +1052,7 @@ export function MyRoomDashboard() {
       <DeviceDetailPanel
         open={devicePanelOpen}
         deviceId={devicePanelId}
-        deviceName={deviceNames[devicePanelId] ?? `デバイス ${devicePanelId}`}
+        locationName={getLocationName(devicePanelId, devices, deviceNames)}
         chartColors={chartColors}
         lineVisibility={effectiveLineVisibility}
         devices={devices}
