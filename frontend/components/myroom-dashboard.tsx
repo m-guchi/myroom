@@ -850,7 +850,7 @@ export function MyRoomDashboard() {
     : null;
 
   return (
-    <div className="pb-24 sm:pb-10">
+    <div className="pb-28 sm:pb-10">
       <div className="space-y-6 px-5 pt-12">
         {isOfflineMode && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">

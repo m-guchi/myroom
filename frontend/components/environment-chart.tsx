@@ -799,12 +799,12 @@ export function EnvironmentChart({
     showOutdoorLine ||
     airconTargetPointCount > 0;
 
-  const metricTabs = (
+  const renderMetricTabs = (tabsListClassName = "h-10") => (
     <Tabs
       value={chartMetric}
       onValueChange={(v) => onChartMetricChange(v as ChartMetric)}
     >
-      <TabsList className="h-10 w-full">
+      <TabsList className={cn("w-full", tabsListClassName)}>
         {availableMetrics.map((metric) => {
           const Icon = METRIC_ICONS[metric];
           const active = chartMetric === metric;
@@ -833,13 +833,8 @@ export function EnvironmentChart({
 
   return (
     <div className="climate-card flex flex-col gap-0 overflow-hidden p-0">
-      <div
-        className={cn(
-          "px-2 pt-4",
-          pinMetricTabsOnMobile && "hidden sm:block"
-        )}
-      >
-        {metricTabs}
+      <div className="px-2 pt-4">
+        {renderMetricTabs()}
       </div>
 
       {chartSeriesRows.length > 0 && (
@@ -1090,8 +1085,8 @@ export function EnvironmentChart({
           className="fixed inset-x-0 bottom-0 z-40 sm:hidden"
           aria-label="指標の選択"
         >
-          <div className="mx-auto max-w-[480px] border-t border-border bg-card/95 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur-sm dark:shadow-[0_-4px_16px_rgba(0,0,0,0.25)]">
-            {metricTabs}
+          <div className="mx-auto max-w-[480px] border-t border-border bg-card/95 px-2 pt-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom)+0.5rem))] shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur-sm dark:shadow-[0_-4px_16px_rgba(0,0,0,0.25)]">
+            {renderMetricTabs("h-[60px]")}
           </div>
         </div>
       )}
