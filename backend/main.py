@@ -92,6 +92,9 @@ class PushUnsubscribeRequest(BaseModel):
     password: str
     endpoint: str
 
+class PushTestRequest(BaseModel):
+    password: str
+
 class UiSettingsUpdate(BaseModel):
     display_order: Optional[List[str]] = None
     chart_colors: Optional[Dict[str, str]] = None
@@ -272,6 +275,26 @@ def unsubscribe_push(body: PushUnsubscribeRequest, _: dict = Depends(get_current
     if not removed:
         raise HTTPException(status_code=404, detail="Subscription not found")
     return {"status": "ok"}
+
+
+@app.post("/api/push/test")
+def test_push(body: PushTestRequest, _: dict = Depends(get_current_user)):
+    _verify_app_password(body.password)
+    if not push_notify.is_configured():
+        raise HTTPException(status_code=503, detail="Web Push is not configured")
+
+    total = len(push_subscriptions.list_subscriptions())
+    if total == 0:
+        raise HTTPException(status_code=404, detail="No push subscriptions registered")
+
+    sent = push_notify.send_test_push()
+    if sent == 0:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to send test notification to any subscriber",
+        )
+
+    return {"status": "ok", "sent": sent, "total": total}
 
 
 @app.post("/api/login")

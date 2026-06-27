@@ -15,6 +15,7 @@ import {
   type SensorRecordsResponse,
   type SensorsStatusResponse,
   type PushVapidPublicKeyResponse,
+  type PushTestResponse,
   type TimeRange,
   type ChartViewRange,
   type UiSettings,
@@ -333,6 +334,19 @@ export async function unsubscribePushNotifications(
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(body?.detail || `Request failed: ${res.status}`);
   }
+}
+
+export async function sendTestPushNotification(password: string): Promise<PushTestResponse> {
+  const res = await fetchWithAuth("/api/push/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<PushTestResponse>;
 }
 
 export async function fetchLatestBatch(

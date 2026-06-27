@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   fetchPushVapidPublicKey,
+  sendTestPushNotification,
   subscribePushNotifications,
   unsubscribePushNotifications,
 } from "@/lib/api";
@@ -31,6 +32,7 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
   const [supported, setSupported] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [vapidReady, setVapidReady] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
@@ -48,7 +50,9 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
     setLoading(true);
     try {
       await fetchPushVapidPublicKey();
+      setVapidReady(true);
     } catch {
+      setVapidReady(false);
       setInfo("サーバー側の Web Push 設定が未完了です（VAPID 鍵）。");
     } finally {
       setLoading(false);
@@ -117,6 +121,28 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
     }
   };
 
+  const handleTest = async () => {
+    if (!password.trim()) {
+      setError("アプリのパスワードを入力してください");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setInfo("");
+    try {
+      const result = await sendTestPushNotification(password.trim());
+      setInfo(
+        `テスト通知を送信しました（${result.sent}/${result.total} 件）。数秒以内に届かない場合は端末の通知設定を確認してください。`
+      );
+      setPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "テスト送信に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -180,7 +206,7 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
                   <Button
                     className="flex-1"
                     onClick={() => void handleEnable()}
-                    disabled={saving || enabled}
+                    disabled={saving || enabled || !vapidReady}
                   >
                     有効にする
                   </Button>
@@ -193,6 +219,15 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
                     無効にする
                   </Button>
                 </div>
+
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => void handleTest()}
+                  disabled={saving || !enabled || !vapidReady}
+                >
+                  テスト通知を送る
+                </Button>
               </div>
             )}
           </>
