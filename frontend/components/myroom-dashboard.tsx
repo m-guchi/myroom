@@ -21,7 +21,7 @@ import { DailyStatsList } from "@/components/daily-stats-list";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
 import { DisplayOrderSettings } from "@/components/display-order-settings";
 import { NotificationSettings } from "@/components/notification-settings";
-import { SensorRecordsPanel } from "@/components/sensor-records-panel";
+import { DeviceDetailPanel } from "@/components/device-detail-panel";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -266,7 +266,7 @@ function DeviceCard({
           {statusNote}
         </p>
       )}
-      {metrics.length > 0 ? (
+      {metricsState === "ready" ? (
         <div className="flex flex-col gap-1.5">
           {metrics.map((metric) => (
             <div key={metric.key} className="flex items-center gap-2">
@@ -278,7 +278,15 @@ function DeviceCard({
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">データがありません</p>
+        <p
+          className={`text-sm ${
+            metricsState === "error"
+              ? "text-destructive"
+              : "text-muted-foreground"
+          }`}
+        >
+          {metricsStateMessage(metricsState)}
+        </p>
       )}
     </>
   );
@@ -326,8 +334,8 @@ export function MyRoomDashboard() {
   const [dailyLimit, setDailyLimit] = useState(7);
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
   const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
-  const [recordsPanelOpen, setRecordsPanelOpen] = useState(false);
-  const [recordsDeviceId, setRecordsDeviceId] = useState(PRIMARY_SENSOR_DEVICE_ID);
+  const [devicePanelOpen, setDevicePanelOpen] = useState(false);
+  const [devicePanelId, setDevicePanelId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [displayOrderOpen, setDisplayOrderOpen] = useState(false);
   const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
@@ -844,8 +852,8 @@ export function MyRoomDashboard() {
                       />
                     }
                     onClick={() => {
-                      setRecordsDeviceId(deviceId);
-                      setRecordsPanelOpen(true);
+                      setDevicePanelId(deviceId);
+                      setDevicePanelOpen(true);
                     }}
                     metrics={buildIndoorMetrics(latestByDevice[deviceId], accentColor)}
                     statusNote={formatStaleNote(deviceId)}
