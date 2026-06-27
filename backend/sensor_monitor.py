@@ -45,14 +45,14 @@ def stale_threshold_minutes() -> int:
 
 
 def _discover_device_ids(db: Session) -> List[int]:
-    rows = db.query(database.DHTRecord.device_id).distinct().all()
+    rows = db.query(database.SensorRecord.device_id).distinct().all()
     return sorted({row[0] for row in rows if row[0] is not None})
 
 
 def _latest_by_device(db: Session) -> Dict[int, datetime.datetime]:
     rows = (
-        db.query(database.DHTRecord.device_id, func.max(database.DHTRecord.datetime))
-        .group_by(database.DHTRecord.device_id)
+        db.query(database.SensorRecord.device_id, func.max(database.SensorRecord.datetime))
+        .group_by(database.SensorRecord.device_id)
         .all()
     )
     return {device_id: latest for device_id, latest in rows if latest is not None}

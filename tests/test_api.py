@@ -42,6 +42,24 @@ def test_sensor_accepts_illuminance_only(client):
     assert response.json()["status"] == "mock_ok"
 
 
+def test_sensor_accepts_temperature_dht11(client):
+    response = client.post(
+        "/api/sensor?device=1",
+        json={
+            "datetime": "2026-05-31 12:00:00",
+            "temperature": 25.3,
+            "temperature_dht11": 25.0,
+            "humidity": 60,
+            "pressure": 1013,
+            "illuminance": 123.4,
+        },
+    )
+    assert response.status_code == 200
+    received = response.json()["received"]
+    assert received["temperature_dht11"] == 25.0
+    assert received["temperature"] == 25.3
+
+
 def test_sensor_rejects_empty_payload(client):
     response = client.post(
         "/api/sensor?device=1",

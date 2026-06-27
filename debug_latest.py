@@ -1,12 +1,12 @@
 from backend import database
-from backend.database import SessionLocal, DHTRecord
+from backend.database import SessionLocal, SensorRecord
 import datetime
 
 def debug_latest():
     db = SessionLocal()
     print("Querying latest record...")
     try:
-        record = db.query(DHTRecord).order_by(DHTRecord.datetime.desc()).first()
+        record = db.query(SensorRecord).order_by(SensorRecord.datetime.desc()).first()
         if not record:
             print("No record found.")
             return

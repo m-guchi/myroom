@@ -236,7 +236,7 @@ curl -X POST "https://myroom.gucchii.com/api/sensor?device=2" \
   -d '{"datetime":"2026-05-30 12:00:00","co2":600,"temperature":30.8,"humidity":31}'
 ```
 
-- `temperature` / `humidity` / `pressure` / `co2` / `illuminance` の **いずれか1つ以上** が必須
+- `temperature` / `humidity` / `pressure` / `co2` / `illuminance` / `temperature_dht11` の **いずれか1つ以上** が必須
 - 複数デバイスは `device` クエリで区別（例: DHT=`1`、SwitchBot CO2=`2`）
 - **SwitchBot 複数台**: Raspberry Pi の `sensors.json` に MAC と `device_id` を列挙（1回の BLE スキャンでまとめて POST）。新しい `device_id` は初回 POST で自動登録され、ダッシュボードにも自動表示
 - CO2 値は UI のセンサーカードに ppm として表示
@@ -324,7 +324,7 @@ python3 migrate_db.py   # aircon テーブルを作成
 
 ### スキーマ更新
 
-`device_id`（複合主キー）、`co2`、および `illuminance`（照度・lux）カラムの追加:
+センサー記録テーブルは `sensor_readings`（旧名 `dht`）です。`device_id`（複合主キー）、`co2`、`illuminance`（照度・lux）、`temperature_dht11` などのカラム追加と、旧テーブル名からのリネームは `migrate_db.py` で行います。
 
 ```bash
 source venv/bin/activate
