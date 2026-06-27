@@ -20,6 +20,15 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.6.0",
+    date: "2026-06-28",
+    changes: [
+      "/devices でデバイスの表示名・色・ダッシュボード表示を管理できるように対応",
+      "センサー見出しの歯車からデバイス設定ページへ移動",
+      "カード上の歯車を整理し、設定操作を /devices に集約",
+    ],
+  },
+  {
     version: "2.5.0",
     date: "2026-06-27",
     changes: [
