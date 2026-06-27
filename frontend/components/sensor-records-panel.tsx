@@ -28,7 +28,12 @@ function formatRecordDatetime(value: string): string {
 
 function formatCell(value: number | null | undefined, unit: string): string {
   if (value == null) return "--";
-  if (unit === "hPa" || unit === "ppm") return `${Math.round(value)}${unit === "ppm" ? " ppm" : " hPa"}`;
+  if (unit === "hPa" || unit === "ppm") {
+    return `${Math.round(value)}${unit === "ppm" ? " ppm" : " hPa"}`;
+  }
+  if (unit === "lx") {
+    return `${value >= 100 ? Math.round(value) : value.toFixed(1)} lx`;
+  }
   return `${value.toFixed(1)}${unit}`;
 }
 
@@ -100,6 +105,7 @@ export function SensorRecordsPanel({
 
   const hasPressure = records.some((record) => record.pressure != null);
   const hasCo2 = records.some((record) => record.co2 != null);
+  const hasIlluminance = records.some((record) => record.illuminance != null);
   const canLoadMore = records.length < total;
 
   return (
@@ -165,6 +171,9 @@ export function SensorRecordsPanel({
                       <span>気圧: {formatCell(record.pressure, "hPa")}</span>
                     )}
                     {hasCo2 && <span>CO2: {formatCell(record.co2, "ppm")}</span>}
+                    {hasIlluminance && (
+                      <span>照度: {formatCell(record.illuminance, "lx")}</span>
+                    )}
                   </div>
                 </div>
               ))}

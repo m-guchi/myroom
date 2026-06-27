@@ -3,7 +3,7 @@ export type TimeRange = "day" | "week" | "month" | "year" | "custom";
 /** グラフの表示幅（横スクロールのウィンドウサイズ） */
 export type ChartViewRange = "day" | "week" | "month" | "year";
 
-export type ChartMetric = "temperature" | "humidity" | "pressure" | "co2";
+export type ChartMetric = "temperature" | "humidity" | "pressure" | "co2" | "illuminance";
 
 export interface LatestData {
   device_id?: number;
@@ -12,6 +12,7 @@ export interface LatestData {
   humidity?: number;
   pressure?: number;
   co2?: number;
+  illuminance?: number;
   outdoor_temperature?: number;
   outdoor_humidity?: number;
   outdoor_pressure?: number;
@@ -24,6 +25,7 @@ export interface SensorRecord {
   humidity?: number | null;
   pressure?: number | null;
   co2?: number | null;
+  illuminance?: number | null;
 }
 
 export interface SensorRecordsResponse {
@@ -40,6 +42,7 @@ export interface HistoryPoint {
   humidity?: number;
   pressure?: number;
   co2?: number;
+  illuminance?: number;
   outdoor_temperature?: number;
   outdoor_humidity?: number;
   outdoor_pressure?: number;
@@ -47,6 +50,7 @@ export interface HistoryPoint {
   humidityRange?: [number, number] | null;
   pressureRange?: [number, number] | null;
   co2Range?: [number, number] | null;
+  illuminanceRange?: [number, number] | null;
   temperature_min?: number;
   temperature_max?: number;
   humidity_min?: number;
@@ -55,6 +59,8 @@ export interface HistoryPoint {
   pressure_max?: number;
   co2_min?: number;
   co2_max?: number;
+  illuminance_min?: number;
+  illuminance_max?: number;
 }
 
 export interface DailyStat {
@@ -67,6 +73,8 @@ export interface DailyStat {
   pressure_max?: number;
   co2_min?: number;
   co2_max?: number;
+  illuminance_min?: number;
+  illuminance_max?: number;
 }
 
 export interface OutdoorLocation {
@@ -167,7 +175,13 @@ export function getSensorDeviceIds(devices: DeviceInfo[]): number[] {
   return ids.length > 0 ? ids : [...FALLBACK_SENSOR_DEVICE_IDS];
 }
 
-export const CHART_METRICS: ChartMetric[] = ["temperature", "humidity", "pressure", "co2"];
+export const CHART_METRICS: ChartMetric[] = [
+  "temperature",
+  "humidity",
+  "pressure",
+  "co2",
+  "illuminance",
+];
 
 export function deviceMetricKey(deviceId: number, metric: ChartMetric): string {
   return `d${deviceId}_${metric}`;
@@ -286,6 +300,7 @@ export const METRIC_COLORS: Record<ChartMetric, string> = {
   humidity: "#2ecc71",
   pressure: "#9b59b6",
   co2: "#e67e22",
+  illuminance: "#f1c40f",
 };
 
 export const METRIC_LABELS: Record<ChartMetric, string> = {
@@ -293,6 +308,7 @@ export const METRIC_LABELS: Record<ChartMetric, string> = {
   humidity: "湿度",
   pressure: "気圧",
   co2: "CO2",
+  illuminance: "照度",
 };
 
 export const METRIC_UNITS: Record<ChartMetric, string> = {
@@ -300,6 +316,7 @@ export const METRIC_UNITS: Record<ChartMetric, string> = {
   humidity: "%",
   pressure: "hPa",
   co2: "ppm",
+  illuminance: " lx",
 };
 
 export const TIME_RANGE_LABELS: Record<TimeRange, string> = {

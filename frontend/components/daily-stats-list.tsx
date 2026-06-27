@@ -33,6 +33,9 @@ function getDayMetricValues(day: DailyStat, metric: ChartMetric) {
   if (metric === "co2") {
     return { min: day.co2_min, max: day.co2_max };
   }
+  if (metric === "illuminance") {
+    return { min: day.illuminance_min, max: day.illuminance_max };
+  }
   return { min: day.pressure_min, max: day.pressure_max };
 }
 
@@ -44,12 +47,14 @@ function getLatestMetricValue(
   if (metric === "temperature") return latest.temperature;
   if (metric === "humidity") return latest.humidity;
   if (metric === "co2") return latest.co2;
+  if (metric === "illuminance") return latest.illuminance;
   return latest.pressure ?? undefined;
 }
 
 function formatMetricValue(value: number | undefined, metric: ChartMetric): string {
   if (value == null) return "-";
   if (metric === "pressure" || metric === "co2") return String(Math.round(value));
+  if (metric === "illuminance") return value >= 100 ? String(Math.round(value)) : value.toFixed(1);
   return value.toFixed(1);
 }
 
@@ -111,7 +116,9 @@ export function DailyStatsList({
         ? "%"
         : chartMetric === "co2"
           ? " ppm"
-          : "";
+          : chartMetric === "illuminance"
+            ? " lx"
+            : "";
 
   return (
     <div className="flex flex-col gap-3">

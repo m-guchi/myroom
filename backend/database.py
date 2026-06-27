@@ -29,6 +29,7 @@ class DHTRecord(Base):
     humidity = Column(Integer, nullable=True)
     pressure = Column(Integer, nullable=True)
     co2 = Column(Integer, nullable=True)
+    illuminance = Column(Float, nullable=True)
 
 
 class AirconRecord(Base):
@@ -70,11 +71,18 @@ def generate_mock_history_for_range(
         temp = 20 + temp_offset + 5 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-1, 1)
         humid = 50 + humid_offset + 10 * (1 + math.cos(t.hour / 24 * 2 * math.pi)) + random.uniform(-2, 2)
         co2 = 450 + co2_offset + 150 * (1 + math.sin(t.hour / 24 * 2 * math.pi)) + random.uniform(-30, 30)
+        illuminance = max(
+            0,
+            200
+            + 800 * max(0, math.sin((t.hour - 6) / 12 * math.pi))
+            + random.uniform(-50, 50),
+        )
         entry = {
             "datetime": t,
             "temperature": round(temp, 1),
             "humidity": round(humid, 1),
             "co2": round(co2),
+            "illuminance": round(illuminance, 1),
         }
         if device_id == 1:
             entry["pressure"] = round(1013 + random.uniform(-5, 5), 1)

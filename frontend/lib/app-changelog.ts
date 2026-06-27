@@ -20,6 +20,14 @@ export function formatChangelogDate(date: string): string {
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.5.0",
+    date: "2026-06-27",
+    changes: [
+      "デバイスから照度（lux）を受信・保存・表示できるように対応",
+      "グラフ・ダッシュボード・記録一覧に照度を追加",
+    ],
+  },
+  {
     version: "2.4.0",
     date: "2026-06-25",
     changes: [
