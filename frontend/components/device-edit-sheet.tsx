@@ -29,8 +29,15 @@ interface DeviceEditSheetProps {
     color: string;
     onChange: (color: string) => void;
   }>;
-  visible: boolean;
-  onVisibleChange: (visible: boolean) => void;
+  visible?: boolean;
+  onVisibleChange?: (visible: boolean) => void;
+  visibilityToggles?: Array<{
+    id: string;
+    label: string;
+    description?: string;
+    visible: boolean;
+    onChange: (visible: boolean) => void;
+  }>;
   visibilityId: string;
   onSave: () => void;
   saving?: boolean;
@@ -56,6 +63,7 @@ export function DeviceEditSheet({
   chartColors,
   visible,
   onVisibleChange,
+  visibilityToggles,
   visibilityId,
   onSave,
   saving = false,
@@ -128,6 +136,7 @@ export function DeviceEditSheet({
             chartColors={chartColors}
             visible={visible}
             onVisibleChange={onVisibleChange}
+            visibilityToggles={visibilityToggles}
             visibilityId={visibilityId}
             onSave={onSave}
             saving={saving}

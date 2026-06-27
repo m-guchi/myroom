@@ -24,8 +24,15 @@ interface DeviceSettingsCardProps {
     color: string;
     onChange: (color: string) => void;
   }>;
-  visible: boolean;
-  onVisibleChange: (visible: boolean) => void;
+  visible?: boolean;
+  onVisibleChange?: (visible: boolean) => void;
+  visibilityToggles?: Array<{
+    id: string;
+    label: string;
+    description?: string;
+    visible: boolean;
+    onChange: (visible: boolean) => void;
+  }>;
   visibilityId: string;
   onSave: () => void;
   saving?: boolean;
@@ -48,6 +55,7 @@ export function DeviceSettingsCard({
   chartColors,
   visible,
   onVisibleChange,
+  visibilityToggles,
   visibilityId,
   onSave,
   saving = false,
@@ -97,13 +105,29 @@ export function DeviceSettingsCard({
           />
         ))}
 
-        <ChartLineVisibilityToggle
-          id={visibilityId}
-          label="ダッシュボードに表示"
-          description="オフにするとセンサーカード・グラフ・日次記録から非表示になります"
-          visible={visible}
-          onChange={onVisibleChange}
-        />
+        {(visibilityToggles ?? []).map((toggle) => (
+          <ChartLineVisibilityToggle
+            key={toggle.id}
+            id={toggle.id}
+            label={toggle.label}
+            description={
+              toggle.description ??
+              "オフにするとセンサーカード・グラフ・日次記録から非表示になります"
+            }
+            visible={toggle.visible}
+            onChange={toggle.onChange}
+          />
+        ))}
+
+        {!visibilityToggles?.length && visible != null && onVisibleChange ? (
+          <ChartLineVisibilityToggle
+            id={visibilityId}
+            label="ダッシュボードに表示"
+            description="オフにするとセンサーカード・グラフ・日次記録から非表示になります"
+            visible={visible}
+            onChange={onVisibleChange}
+          />
+        ) : null}
 
         {footer}
 

@@ -71,6 +71,9 @@ import {
   filterDisplayOrderByVisibility,
   getVisibleChartDeviceIds,
   getVisibleSensorDeviceIds,
+  isAirconRoomVisible,
+  isAirconTargetVisible,
+  applyHiddenDevicesToLineVisibility,
   VISIBLE_DEVICES_CHANGED_EVENT,
 } from "@/lib/visible-devices";
 import {
@@ -170,20 +173,23 @@ function buildIndoorMetrics(
 
 function buildAirconMetrics(
   data: AirconData | null | undefined,
-  accentColor: string
+  accentColor: string,
+  options?: { showRoom?: boolean; showTarget?: boolean }
 ): DeviceMetric[] {
   if (!data) return [];
 
+  const showRoom = options?.showRoom !== false;
+  const showTarget = options?.showTarget !== false;
   const metrics: DeviceMetric[] = [];
 
-  if (data.room_temperature != null) {
+  if (showRoom && data.room_temperature != null) {
     metrics.push({
       key: "room_temperature",
       icon: <Thermometer className="size-5" strokeWidth={1.75} style={{ color: accentColor }} />,
       value: `${data.room_temperature.toFixed(1)}°C`,
     });
   }
-  if (data.target_temperature != null || data.mode || data.power) {
+  if (showTarget && (data.target_temperature != null || data.mode || data.power)) {
     const powerOff = isAirconPowerOff(data.power);
     const modeLabel = powerOff ? "停止" : formatAirconMode(data.mode);
     const value =
@@ -338,10 +344,6 @@ export function MyRoomDashboard() {
   const [sessionLineOverrides, setSessionLineOverrides] =
     useState<ChartLineVisibilityOverrides>({});
 
-  const effectiveLineVisibility = useMemo(
-    () => mergeEffectiveChartLineVisibility(defaultLineVisibility, sessionLineOverrides),
-    [defaultLineVisibility, sessionLineOverrides]
-  );
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
@@ -358,6 +360,16 @@ export function MyRoomDashboard() {
 
   const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
   const sensorDeviceIdsKey = sensorDeviceIds.join(",");
+
+  const effectiveLineVisibility = useMemo(
+    () =>
+      applyHiddenDevicesToLineVisibility(
+        mergeEffectiveChartLineVisibility(defaultLineVisibility, sessionLineOverrides),
+        hiddenDeviceKeys,
+        sensorDeviceIds
+      ),
+    [defaultLineVisibility, sessionLineOverrides, hiddenDeviceKeys, sensorDeviceIds]
+  );
 
   const visibleSensorDeviceIds = useMemo(
     () => getVisibleSensorDeviceIds(sensorDeviceIds, hiddenDeviceKeys),
@@ -610,6 +622,7 @@ export function MyRoomDashboard() {
         ids.push(item.deviceId);
       } else if (
         item.type === "aircon" &&
+        isAirconRoomVisible(hiddenDeviceKeys) &&
         (dailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0
       ) {
         ids.push(AIRCON_CHART_DEVICE_ID);
@@ -864,7 +877,11 @@ export function MyRoomDashboard() {
                   accentColor={getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)}
                   metrics={buildAirconMetrics(
                     airconLatest,
-                    getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)
+                    getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID),
+                    {
+                      showRoom: isAirconRoomVisible(hiddenDeviceKeys),
+                      showTarget: isAirconTargetVisible(hiddenDeviceKeys),
+                    }
                   )}
                 />
               );

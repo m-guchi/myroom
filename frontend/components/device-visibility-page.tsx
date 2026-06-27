@@ -50,8 +50,13 @@ import {
 } from "@/lib/types";
 import {
   isTargetVisible,
+  isAirconRoomVisible,
+  isAirconTargetVisible,
+  setHiddenKeyVisible,
   setTargetVisible,
   sortDisplayOrderHiddenLast,
+  AIRCON_ROOM_HIDDEN_KEY,
+  AIRCON_TARGET_VISIBILITY_KEY,
   VISIBLE_DEVICES_CHANGED_EVENT,
 } from "@/lib/visible-devices";
 import {
@@ -213,6 +218,33 @@ export function DeviceVisibilityPage() {
       return true;
     }
     return false;
+  };
+
+  const handleHiddenKeyVisibilityChange = (
+    key: string,
+    visible: boolean,
+    item?: DisplayOrderItem
+  ) => {
+    const next = setHiddenKeyVisible(hiddenKeys, key, visible);
+    setHiddenKeys(next);
+
+    if (!visible && item && !isTargetVisible(next, item)) {
+      const normalized = normalizeDisplayOrder(displayOrder, sensorDeviceIds);
+      const itemKey = orderItemKey(item);
+      const target = normalized.find((entry) => orderItemKey(entry) === itemKey);
+      const rest = normalized.filter((entry) => orderItemKey(entry) !== itemKey);
+      if (target) {
+        persistDisplayOrder([...rest, target]);
+      }
+    }
+
+    void saveHiddenDevicesToServer(next)
+      .then(() => {
+        window.dispatchEvent(new Event(VISIBLE_DEVICES_CHANGED_EVENT));
+      })
+      .catch((err) => {
+        if (err instanceof AuthError) setIsAuthenticated(false);
+      });
   };
 
   const handleVisibilityChange = (item: DisplayOrderItem, visible: boolean) => {
@@ -528,6 +560,22 @@ export function DeviceVisibilityPage() {
         ]}
         visible={isTargetVisible(hiddenKeys, item)}
         onVisibleChange={(visible) => handleVisibilityChange(item, visible)}
+        visibilityToggles={[
+          {
+            id: `${key}-room-visible`,
+            label: "ダッシュボードに表示（室温）",
+            visible: isAirconRoomVisible(hiddenKeys),
+            onChange: (visible) =>
+              handleHiddenKeyVisibilityChange(AIRCON_ROOM_HIDDEN_KEY, visible, item),
+          },
+          {
+            id: `${key}-target-visible`,
+            label: "ダッシュボードに表示（設定温度）",
+            visible: isAirconTargetVisible(hiddenKeys),
+            onChange: (visible) =>
+              handleHiddenKeyVisibilityChange(AIRCON_TARGET_VISIBILITY_KEY, visible, item),
+          },
+        ]}
         visibilityId={`visible-${key}`}
         onSave={() => void saveAirconName(primaryAirconId)}
         saving={savingKey === key}
