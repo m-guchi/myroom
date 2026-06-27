@@ -903,7 +903,7 @@ export function EnvironmentChart({
           </div>
         )}
 
-        {historyLoading && !loading && (
+        {historyLoading && !loading && historyData.length > 0 && (
           <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-card/90 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm">
             <div className="size-3 animate-spin rounded-full border border-muted-foreground/30 border-t-muted-foreground" />
             読み込み中
@@ -911,10 +911,17 @@ export function EnvironmentChart({
         )}
 
         {!historyData.length ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
-            <p>データがありません</p>
-            <p className="text-[10px] opacity-70">バックエンドが起動しているか確認してください</p>
-          </div>
+          loading || historyLoading ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+              <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-muted-foreground" />
+              <p>読み込み中...</p>
+            </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
+              <p>データがありません</p>
+              <p className="text-[10px] opacity-70">バックエンドが起動しているか確認してください</p>
+            </div>
+          )
         ) : !chartPlotData.length || !hasPlottedLines ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             表示する項目を選択してください

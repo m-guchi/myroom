@@ -49,7 +49,7 @@ export function useChartHistory(
   offlineHistoryRef.current = offlineHistory;
 
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [historyEpoch, setHistoryEpoch] = useState(0);
   const [noMoreOlderData, setNoMoreOlderData] = useState(false);
 
