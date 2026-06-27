@@ -38,15 +38,22 @@ class SensorData(BaseModel):
     humidity: Optional[float] = None
     pressure: Optional[float] = None
     co2: Optional[int] = None
+    illuminance: Optional[float] = None
 
     @model_validator(mode="after")
     def at_least_one_measurement(self):
         if all(
             v is None
-            for v in (self.temperature, self.humidity, self.pressure, self.co2)
+            for v in (
+                self.temperature,
+                self.humidity,
+                self.pressure,
+                self.co2,
+                self.illuminance,
+            )
         ):
             raise ValueError(
-                "At least one of temperature, humidity, pressure, or co2 is required"
+                "At least one of temperature, humidity, pressure, co2, or illuminance is required"
             )
         return self
 
@@ -164,6 +171,7 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
         }
         if device == 1:
             payload["pressure"] = round(1013.0 + random.uniform(-1, 1), 1)
+            payload["illuminance"] = round(450.0 + random.uniform(-80, 80), 1)
         else:
             payload["co2"] = round(530 + random.uniform(-20, 20))
         return payload
@@ -185,6 +193,7 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
         "humidity": record.humidity,
         "pressure": record.pressure if record.pressure else None,
         "co2": record.co2,
+        "illuminance": record.illuminance,
         "outdoor_temperature": outdoor["temperature"] if outdoor else None,
         "outdoor_humidity": outdoor["humidity"] if outdoor else None,
         "outdoor_pressure": outdoor["pressure"] if outdoor else None,
@@ -359,6 +368,7 @@ async def create_sensor_data(
             humidity=int(data.humidity) if data.humidity is not None else None,
             pressure=int(data.pressure) if data.pressure is not None else None,
             co2=data.co2,
+            illuminance=data.illuminance,
         )
         
         db.add(record)
@@ -402,6 +412,7 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
         "humidity": r.humidity,
         "pressure": r.pressure if r.pressure else None,
         "co2": r.co2,
+        "illuminance": r.illuminance,
     } for r in records]
     
     df = pd.DataFrame(data)
@@ -439,6 +450,12 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
                 daily_stat.update({
                     "co2_max": float(group['co2'].max()),
                     "co2_min": float(group['co2'].min()),
+                })
+
+            if 'illuminance' in group.columns and group['illuminance'].notna().any():
+                daily_stat.update({
+                    "illuminance_max": float(group['illuminance'].max()),
+                    "illuminance_min": float(group['illuminance'].min()),
                 })
 
             daily_stats.append(daily_stat)
@@ -609,6 +626,7 @@ def _format_record_row(record: database.DHTRecord) -> dict:
         "humidity": record.humidity,
         "pressure": _normalize_pressure_hpa(record.pressure),
         "co2": record.co2,
+        "illuminance": record.illuminance,
     }
 
 
@@ -659,6 +677,7 @@ def get_sensor_records(
                 "humidity": row.get("humidity"),
                 "pressure": row.get("pressure"),
                 "co2": row.get("co2"),
+                "illuminance": row.get("illuminance"),
             }
             for row in page
         ]
@@ -741,6 +760,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
                 "humidity": r.humidity,
                 "pressure": r.pressure,
                 "co2": r.co2,
+                "illuminance": r.illuminance,
             })
     
     # Fetch outdoor history
@@ -764,15 +784,16 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
         for d in records_raw:
             date_str = d['datetime'].strftime('%Y-%m-%d')
             if date_str not in daily_map:
-                daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': [], 'co2s': []}
+                daily_map[date_str] = {'temps': [], 'humids': [], 'pressures': [], 'co2s': [], 'illuminances': []}
             if d['temperature'] is not None: daily_map[date_str]['temps'].append(d['temperature'])
             if d['humidity'] is not None: daily_map[date_str]['humids'].append(d['humidity'])
             if d.get('pressure') is not None: daily_map[date_str]['pressures'].append(d['pressure'])
             if d.get('co2') is not None: daily_map[date_str]['co2s'].append(d['co2'])
+            if d.get('illuminance') is not None: daily_map[date_str]['illuminances'].append(d['illuminance'])
         
         aggregated = []
         for date_str, values in daily_map.items():
-            if not any([values['temps'], values['humids'], values['pressures'], values['co2s']]):
+            if not any([values['temps'], values['humids'], values['pressures'], values['co2s'], values['illuminances']]):
                 continue
             # 日次ポイントは正午を代表時刻とする（0:00固定だとグラフ上すべて深夜に見える）
             dt = datetime.datetime.strptime(date_str, '%Y-%m-%d').replace(hour=12)
@@ -811,6 +832,12 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
                     "co2_min": min(values['co2s']),
                     "co2_max": max(values['co2s']),
                 })
+            if values['illuminances']:
+                entry.update({
+                    "illuminance": round(sum(values['illuminances']) / len(values['illuminances']), 1),
+                    "illuminance_min": min(values['illuminances']),
+                    "illuminance_max": max(values['illuminances']),
+                })
 
             aggregated.append(entry)
         aggregated.sort(key=lambda x: x['datetime'])
@@ -836,6 +863,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
             "humidity": r.get('humidity'),
             "pressure": r.get('pressure'),
             "co2": r.get('co2'),
+            "illuminance": r.get('illuminance'),
             "outdoor_temperature": out_data.get("temp"),
             "outdoor_humidity": out_data.get("humid"),
             "outdoor_pressure": out_data.get("press")

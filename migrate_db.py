@@ -21,6 +21,9 @@ USE `{db_name}`;
 
 -- Add CO2 column (skip if already exists)
 ALTER TABLE dht ADD COLUMN co2 INT NULL;
+
+-- Add illuminance column (skip if already exists)
+ALTER TABLE dht ADD COLUMN illuminance FLOAT NULL;
 """.strip()
 
 
@@ -78,6 +81,14 @@ def migrate():
                 print("Adding column 'co2'...")
                 conn.execute(text("ALTER TABLE dht ADD COLUMN co2 INT NULL"))
                 print("Column 'co2' added.")
+
+            print("Checking if 'illuminance' column exists...")
+            if _column_exists(conn, "illuminance"):
+                print("Column 'illuminance' already exists.")
+            else:
+                print("Adding column 'illuminance'...")
+                conn.execute(text("ALTER TABLE dht ADD COLUMN illuminance FLOAT NULL"))
+                print("Column 'illuminance' added.")
 
             print("Checking if 'aircon' table exists...")
             result = conn.execute(text("SHOW TABLES LIKE 'aircon'"))

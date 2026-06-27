@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Droplets, Eye, EyeOff, Gauge, Thermometer, Wind } from "lucide-react";
+import { Droplets, Eye, EyeOff, Gauge, Sun, Thermometer, Wind } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AIRCON_CHART_DEVICE_ID,
@@ -77,6 +77,7 @@ const METRIC_ICONS = {
   humidity: Droplets,
   pressure: Gauge,
   co2: Wind,
+  illuminance: Sun,
 } as const;
 
 const VIEW_RANGES: ChartViewRange[] = ["day", "week", "month", "year"];
@@ -124,6 +125,7 @@ function getMetricKeys(metric: ChartMetric) {
 function formatMetricValue(value: number | undefined, metric: ChartMetric): string {
   if (value == null) return "--";
   if (metric === "pressure" || metric === "co2") return String(Math.round(value));
+  if (metric === "illuminance") return value.toFixed(1);
   return value.toFixed(1);
 }
 
@@ -836,7 +838,9 @@ export function EnvironmentChart({
                 tickFormatter={(val) =>
                   chartMetric === "pressure" || chartMetric === "co2"
                     ? String(Math.round(val))
-                    : val.toFixed(1)
+                    : chartMetric === "illuminance"
+                      ? val >= 100 ? String(Math.round(val)) : val.toFixed(1)
+                      : val.toFixed(1)
                 }
               />
               {showOutdoorLine && (

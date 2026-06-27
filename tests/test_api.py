@@ -15,6 +15,7 @@ def test_latest_returns_mock_data(client):
     data = response.json()
     assert data["device_id"] == 1
     assert isinstance(data["temperature"], float)
+    assert isinstance(data["illuminance"], float)
     assert data["outdoor_temperature"] == 25.0
 
 
@@ -27,6 +28,15 @@ def test_sensor_accepts_co2_only(client):
     response = client.post(
         "/api/sensor?device=2",
         json={"datetime": "2026-05-30 12:00:00", "co2": 400},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "mock_ok"
+
+
+def test_sensor_accepts_illuminance_only(client):
+    response = client.post(
+        "/api/sensor?device=1",
+        json={"datetime": "2026-05-31 12:00:00", "illuminance": 123.4},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "mock_ok"

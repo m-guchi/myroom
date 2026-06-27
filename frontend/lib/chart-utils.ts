@@ -1,4 +1,8 @@
 import type { ChartMetric, ChartViewRange, HistoryPoint, TimeRange } from "@/lib/types";
+
+function isIndoorOnlyMetric(metric: ChartMetric): boolean {
+  return metric === "co2" || metric === "illuminance";
+}
 import {
   CHART_METRICS,
   deviceAirconPowerKey,
@@ -275,7 +279,7 @@ export function downsampleMultiDeviceHistoryForChart(
     }
   }
 
-  if (metric !== "co2" && hasOutdoorMetricData(historyData, metric)) {
+  if (!isIndoorOnlyMetric(metric) && hasOutdoorMetricData(historyData, metric)) {
     const outdoorKey = `outdoor_${metric}` as keyof HistoryPoint;
     const outdoorSeries: MetricSeriesPoint[] = [];
 
@@ -485,7 +489,7 @@ export function withSelectionEndPoints(
     }
   }
 
-  if (includeOutdoor && metric !== "co2") {
+  if (includeOutdoor && !isIndoorOnlyMetric(metric)) {
     const outdoorValue = interpolateOutdoorMetricAtTime(chartData, metric, selectionTime);
     if (outdoorValue != null) {
       record[`outdoor_${metric}`] = outdoorValue;
@@ -556,7 +560,7 @@ export function hasOutdoorMetricData(
   historyData: HistoryPoint[],
   metric: ChartMetric
 ): boolean {
-  if (metric === "co2") return false;
+  if (isIndoorOnlyMetric(metric)) return false;
   const key = `outdoor_${metric}` as keyof HistoryPoint;
   return historyData.some((point) => {
     const value = point[key];
@@ -842,7 +846,7 @@ export function interpolateOutdoorMetricAtTime(
   metric: ChartMetric,
   targetTime: number
 ): number | undefined {
-  if (metric === "co2") return undefined;
+  if (isIndoorOnlyMetric(metric)) return undefined;
 
   const key = `outdoor_${metric}` as keyof HistoryPoint;
   let prev: { t: number; v: number } | undefined;
@@ -1067,7 +1071,9 @@ export function computeVisibleYDomain(
         ? Math.max(Math.abs(minValue) * 0.05, 5)
         : metric === "co2"
           ? Math.max(Math.abs(minValue) * 0.05, 30)
-          : Math.max(Math.abs(minValue) * 0.1, 1);
+          : metric === "illuminance"
+            ? Math.max(Math.abs(minValue) * 0.05, 20)
+            : Math.max(Math.abs(minValue) * 0.1, 1);
     return [minValue - pad, maxValue + pad];
   }
 
@@ -1077,7 +1083,9 @@ export function computeVisibleYDomain(
       ? Math.max(span * 0.08, 3)
       : metric === "co2"
         ? Math.max(span * 0.08, 20)
-        : Math.max(span * 0.1, 0.5);
+        : metric === "illuminance"
+          ? Math.max(span * 0.08, 15)
+          : Math.max(span * 0.1, 0.5);
 
   return [minValue - pad, maxValue + pad];
 }
@@ -1102,6 +1110,10 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
           ? Math.round(Number(item.pressure))
           : undefined,
       co2: item.co2 != null ? Math.round(Number(item.co2)) : undefined,
+      illuminance:
+        item.illuminance != null && item.illuminance !== ""
+          ? Number(item.illuminance)
+          : undefined,
       outdoor_temperature:
         item.outdoor_temperature != null && item.outdoor_temperature !== ""
           ? Number(item.outdoor_temperature)
@@ -1129,6 +1141,10 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
       co2Range:
         item.co2_min !== undefined && item.co2_max !== undefined
           ? [Math.round(Number(item.co2_min)), Math.round(Number(item.co2_max))]
+          : null,
+      illuminanceRange:
+        item.illuminance_min !== undefined && item.illuminance_max !== undefined
+          ? [Number(item.illuminance_min), Number(item.illuminance_max)]
           : null,
     }))
     .filter((item) => item.datetimeObj > 0) as HistoryPoint[];

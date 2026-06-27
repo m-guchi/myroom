@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Settings,
   Snowflake,
+  Sun,
   Thermometer,
   Wind,
 } from "lucide-react";
@@ -146,6 +147,13 @@ function buildIndoorMetrics(
       key: "co2",
       icon: <Wind className="size-5" strokeWidth={1.75} style={iconStyle} />,
       value: `${data.co2} ppm`,
+    });
+  }
+  if (data.illuminance != null) {
+    metrics.push({
+      key: "illuminance",
+      icon: <Sun className="size-5" strokeWidth={1.75} style={iconStyle} />,
+      value: `${data.illuminance.toFixed(1)} lx`,
     });
   }
 
