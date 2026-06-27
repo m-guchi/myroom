@@ -1,3 +1,4 @@
+import type { DisplayOrderItem } from "@/lib/display-order";
 import {
   CHART_METRICS,
   deviceDht11TemperatureKey,
@@ -168,4 +169,97 @@ export function applyAllDeviceInheritance(
     result = applyDeviceInheritance(result, deviceId, devices);
   }
   return result;
+}
+
+/** 他デバイスの inherits_from になっている = 継承元（トップ画面非表示） */
+export function isPredecessorDevice(
+  deviceId: number,
+  devices: readonly DeviceInfo[]
+): boolean {
+  return devices.some((device) => device.inherits_from === deviceId);
+}
+
+/** 同じ設置場所のチェーン先端（現在稼働中のデバイス）を返す */
+export function findLeafDeviceId(
+  deviceId: number,
+  devices: readonly DeviceInfo[]
+): number {
+  let current = deviceId;
+  const visited = new Set<number>();
+
+  while (true) {
+    if (visited.has(current)) return current;
+    visited.add(current);
+    const successor = devices.find((device) => device.inherits_from === current);
+    if (!successor) return current;
+    current = successor.id;
+  }
+}
+
+/** 設置場所名（継承チェーン最古のデバイス名） */
+export function getLocationName(
+  activeDeviceId: number,
+  devices: readonly DeviceInfo[],
+  deviceNames: Record<number, string>
+): string {
+  const chain = getInheritanceChain(activeDeviceId, devices);
+  const rootId = chain[0];
+  return (
+    deviceNames[rootId] ??
+    devices.find((device) => device.id === rootId)?.name ??
+    `デバイス ${rootId}`
+  );
+}
+
+/** ダッシュボード用: 継承元を先端デバイスに置き換え、重複を除く */
+export function resolveLocationDisplayOrder(
+  order: readonly DisplayOrderItem[],
+  devices: readonly DeviceInfo[]
+): DisplayOrderItem[] {
+  const seenActive = new Set<number>();
+  const result: DisplayOrderItem[] = [];
+
+  for (const item of order) {
+    if (item.type !== "device") {
+      result.push(item);
+      continue;
+    }
+    const leafId = findLeafDeviceId(item.deviceId, devices);
+    if (seenActive.has(leafId)) continue;
+    seenActive.add(leafId);
+    result.push({ type: "device", deviceId: leafId });
+  }
+
+  return result;
+}
+
+/** 表示対象 ID を設置場所（チェーン先端）単位に正規化 */
+export function filterToLocationActiveDeviceIds(
+  deviceIds: readonly number[],
+  devices: readonly DeviceInfo[]
+): number[] {
+  const seen = new Set<number>();
+  const result: number[] = [];
+
+  for (const deviceId of deviceIds) {
+    const leafId = findLeafDeviceId(deviceId, devices);
+    if (seen.has(leafId)) continue;
+    seen.add(leafId);
+    result.push(leafId);
+  }
+
+  return result;
+}
+
+/** 設置場所カード用の表示名マップ（先端 device_id → 場所名） */
+export function buildLocationNames(
+  devices: readonly DeviceInfo[],
+  deviceNames: Record<number, string>
+): Record<number, string> {
+  const names: Record<number, string> = {};
+  for (const device of devices) {
+    const leafId = findLeafDeviceId(device.id, devices);
+    names[leafId] = getLocationName(leafId, devices, deviceNames);
+  }
+  return names;
 }

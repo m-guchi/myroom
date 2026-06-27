@@ -5,12 +5,20 @@ import { GripVertical, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+export interface DeviceListItemTrack {
+  label: string;
+  color: string;
+  visible: boolean;
+}
+
 interface DeviceListItemProps {
   icon: LucideIcon;
   accentColor: string;
   title: string;
   subtitle?: string;
   visible: boolean;
+  /** エアコンなど、色・表示が複数ある項目向け */
+  tracks?: DeviceListItemTrack[];
   onEdit: () => void;
   draggable?: boolean;
   onDragStart?: (event: React.DragEvent) => void;
@@ -26,6 +34,7 @@ export function DeviceListItem({
   title,
   subtitle,
   visible,
+  tracks,
   onEdit,
   draggable = true,
   onDragStart,
@@ -72,7 +81,30 @@ export function DeviceListItem({
         {subtitle ? (
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         ) : null}
-        {!visible ? (
+        {tracks && tracks.length > 0 ? (
+          <div className="mt-1.5 flex flex-col gap-1">
+            {tracks.map((track) => (
+              <div key={track.label} className="flex min-w-0 items-center gap-1.5">
+                <span
+                  className="size-2.5 shrink-0 rounded-full border border-black/10 dark:border-white/15"
+                  style={{ backgroundColor: track.color }}
+                  aria-hidden
+                />
+                <span className="truncate text-xs text-muted-foreground">{track.label}</span>
+                <span
+                  className={cn(
+                    "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium leading-none",
+                    track.visible
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {track.visible ? "表示" : "非表示"}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : !visible ? (
           <p className="text-xs text-muted-foreground">非表示</p>
         ) : null}
       </div>

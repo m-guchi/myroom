@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   applyDeviceInheritance,
+  buildLocationNames,
   expandDeviceIdsForHistory,
+  filterToLocationActiveDeviceIds,
+  findLeafDeviceId,
   getInheritanceChain,
+  getLocationName,
+  isPredecessorDevice,
+  resolveLocationDisplayOrder,
 } from "@/lib/device-inheritance";
 import { deviceMetricKey, type DeviceInfo, type HistoryPoint } from "@/lib/types";
 
@@ -53,5 +59,31 @@ describe("device-inheritance", () => {
 
     expect(row0[deviceMetricKey(2, "temperature")]).toBe(20);
     expect(row2[deviceMetricKey(2, "temperature")]).toBe(22);
+  });
+
+  it("identifies predecessor and leaf devices", () => {
+    expect(isPredecessorDevice(1, devices)).toBe(true);
+    expect(isPredecessorDevice(2, devices)).toBe(false);
+    expect(findLeafDeviceId(1, devices)).toBe(2);
+    expect(findLeafDeviceId(2, devices)).toBe(2);
+  });
+
+  it("uses root device name as location name", () => {
+    const names = { 1: "旧リビング", 2: "新リビング" };
+    expect(getLocationName(2, devices, names)).toBe("旧リビング");
+    expect(buildLocationNames(devices, names)).toEqual({ 2: "旧リビング" });
+  });
+
+  it("resolves display order to location cards only", () => {
+    const order = [
+      { type: "device" as const, deviceId: 1 },
+      { type: "device" as const, deviceId: 2 },
+      { type: "outdoor" as const },
+    ];
+    expect(resolveLocationDisplayOrder(order, devices)).toEqual([
+      { type: "device", deviceId: 2 },
+      { type: "outdoor" },
+    ]);
+    expect(filterToLocationActiveDeviceIds([1, 2], devices)).toEqual([2]);
   });
 });

@@ -162,7 +162,7 @@ export function DeviceSettingsCard({
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              同じ設置場所でデバイスを交換した場合、グラフで過去データを連続表示します。
+              同じ設置場所でデバイスを交換した場合、グラフで過去データを連続表示します。場所名は継承チェーン最古のデバイス名が使われます。
             </p>
           </div>
         ) : null}

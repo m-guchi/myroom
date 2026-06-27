@@ -12,7 +12,10 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { LoginScreen } from "@/components/login-screen";
 import { DeviceEditSheet } from "@/components/device-edit-sheet";
-import { DeviceListItem } from "@/components/device-list-item";
+import {
+  DeviceListItem,
+  type DeviceListItemTrack,
+} from "@/components/device-list-item";
 import {
   fetchAirconUnits,
   fetchDevices,
@@ -48,6 +51,11 @@ import {
   type DeviceInfo,
   type OutdoorLocation,
 } from "@/lib/types";
+import {
+  findLeafDeviceId,
+  getLocationName,
+  isPredecessorDevice,
+} from "@/lib/device-inheritance";
 import {
   isTargetVisible,
   isAirconRoomVisible,
@@ -86,10 +94,42 @@ function getItemIcon(item: DisplayOrderItem): LucideIcon {
   return Thermometer;
 }
 
-function getItemSubtitle(item: DisplayOrderItem, primaryAirconId: number): string {
-  if (item.type === "device") return `デバイス ID: ${item.deviceId}`;
-  if (item.type === "aircon") return `エアコン ID: ${primaryAirconId}`;
+function getItemSubtitle(
+  item: DisplayOrderItem,
+  primaryAirconId: number,
+  devices: readonly DeviceInfo[],
+  deviceNames: Record<number, string>
+): string {
+  if (item.type === "device") {
+    if (isPredecessorDevice(item.deviceId, devices)) {
+      return `継承元 · デバイス ID: ${item.deviceId}（トップ画面非表示）`;
+    }
+    const leafId = findLeafDeviceId(item.deviceId, devices);
+    const locationName = getLocationName(leafId, devices, deviceNames);
+    return `場所: ${locationName} · デバイス ID: ${item.deviceId}`;
+  }
+  if (item.type === "aircon") {
+    return `エアコン ID: ${primaryAirconId} · 色・表示は室温と設定温度で個別`;
+  }
   return "Open-Meteo API";
+}
+
+function getAirconListTracks(
+  hiddenKeys: Set<string>,
+  chartColors: ChartColorSettings
+): DeviceListItemTrack[] {
+  return [
+    {
+      label: "室温",
+      color: getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID),
+      visible: isAirconRoomVisible(hiddenKeys),
+    },
+    {
+      label: "設定温度",
+      color: getAirconTargetChartColor(chartColors),
+      visible: isAirconTargetVisible(hiddenKeys),
+    },
+  ];
 }
 
 export function DeviceVisibilityPage() {
@@ -425,6 +465,14 @@ export function DeviceVisibilityPage() {
     if (item.type === "outdoor") {
       return formatOutdoorApiLabel(outdoorLocation?.name);
     }
+    if (item.type === "device") {
+      const deviceName =
+        deviceNames[item.deviceId] ?? `デバイス ${item.deviceId}`;
+      if (isPredecessorDevice(item.deviceId, devices)) {
+        return deviceName;
+      }
+      return getLocationName(item.deviceId, devices, deviceNames);
+    }
     return getDisplayOrderLabel(
       item,
       deviceNames,
@@ -464,7 +512,7 @@ export function DeviceVisibilityPage() {
           icon={Icon}
           accentColor={getAccentColor(item)}
           title={label}
-          subtitle={getItemSubtitle(item, primaryAirconId)}
+          subtitle={getItemSubtitle(item, primaryAirconId, devices, deviceNames)}
           nameLabel="表示名"
           name={nameDrafts[key] ?? label}
           onNameChange={(value) => setDraft(key, value)}
@@ -557,7 +605,7 @@ export function DeviceVisibilityPage() {
         icon={Icon}
         accentColor={getAccentColor(item)}
         title={label}
-        subtitle={getItemSubtitle(item, primaryAirconId)}
+        subtitle={getItemSubtitle(item, primaryAirconId, devices, deviceNames)}
         nameLabel="表示名"
         name={nameDrafts[key] ?? label}
         onNameChange={(value) => setDraft(key, value)}
@@ -645,8 +693,13 @@ export function DeviceVisibilityPage() {
                     icon={getItemIcon(item)}
                     accentColor={getAccentColor(item)}
                     title={getListTitle(item)}
-                    subtitle={getItemSubtitle(item, primaryAirconId)}
+                    subtitle={getItemSubtitle(item, primaryAirconId, devices, deviceNames)}
                     visible={isTargetVisible(hiddenKeys, item)}
+                    tracks={
+                      item.type === "aircon"
+                        ? getAirconListTracks(hiddenKeys, chartColors)
+                        : undefined
+                    }
                     onEdit={() => {
                       if (item.type === "device") {
                         setEditingTarget({ kind: "device", item });
