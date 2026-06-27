@@ -799,12 +799,22 @@ export function EnvironmentChart({
     showOutdoorLine ||
     airconTargetPointCount > 0;
 
-  const renderMetricTabs = (tabsListClassName = "h-10") => (
+  const renderMetricTabs = (
+    tabsListClassName = "h-10",
+    options?: { square?: boolean }
+  ) => (
     <Tabs
       value={chartMetric}
       onValueChange={(v) => onChartMetricChange(v as ChartMetric)}
+      className={options?.square ? "gap-0" : undefined}
     >
-      <TabsList className={cn("w-full", tabsListClassName)}>
+      <TabsList
+        className={cn(
+          "w-full",
+          tabsListClassName,
+          options?.square && "rounded-none bg-muted p-0 items-stretch"
+        )}
+      >
         {availableMetrics.map((metric) => {
           const Icon = METRIC_ICONS[metric];
           const active = chartMetric === metric;
@@ -814,7 +824,9 @@ export function EnvironmentChart({
               value={metric}
               className={cn(
                 "gap-1 text-xs sm:text-sm",
-                active && "text-[var(--metric-color)]"
+                active && "text-[var(--metric-color)]",
+                options?.square &&
+                  "h-full rounded-none py-0 bg-transparent shadow-none data-[state=active]:rounded-none data-[state=active]:bg-background data-[state=active]:shadow-none"
               )}
               style={
                 active
@@ -1085,8 +1097,12 @@ export function EnvironmentChart({
           className="fixed inset-x-0 bottom-0 z-40 sm:hidden"
           aria-label="指標の選択"
         >
-          <div className="mx-auto max-w-[480px] border-t border-border bg-card/95 px-2 pt-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom)+0.5rem))] shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur-sm dark:shadow-[0_-4px_16px_rgba(0,0,0,0.25)]">
-            {renderMetricTabs("h-[60px]")}
+          <div className="mx-auto max-w-[480px] border-t border-border bg-muted/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur-sm dark:shadow-[0_-4px_16px_rgba(0,0,0,0.25)]">
+            {renderMetricTabs("h-[60px]", { square: true })}
+            <div
+              className="pb-[max(0.75rem,calc(env(safe-area-inset-bottom)+0.5rem))]"
+              aria-hidden
+            />
           </div>
         </div>
       )}
