@@ -17,7 +17,7 @@ export function ChartLineVisibilityToggle({
   onChange,
   id = "chart-line-visible",
   label = "グラフに表示",
-  description = "画面を開いたときのグラフ表示（凡例での切り替えは次回起動まで保持されません）",
+  description = "グラフの凡例や設定での切り替えは次回表示時も保持されます",
 }: ChartLineVisibilityToggleProps) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border bg-background/60 px-3 py-3">

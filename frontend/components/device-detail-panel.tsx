@@ -39,6 +39,7 @@ interface DeviceDetailPanelProps {
   offlineCacheKey?: string | null;
   onClose: () => void;
   onChanged: () => void;
+  onLineVisibilityChange?: (key: string, visible: boolean) => void;
 }
 
 function formatRecordDatetime(value: string): string {
@@ -80,6 +81,7 @@ export function DeviceDetailPanel({
   offlineCacheKey = null,
   onClose,
   onChanged,
+  onLineVisibilityChange,
 }: DeviceDetailPanelProps) {
   const [view, setView] = useState<PanelView>("chart");
   const [chartMetric, setChartMetric] = useState<ChartMetric>("temperature");
@@ -334,7 +336,7 @@ export function DeviceDetailPanel({
                 legendOrder={legendOrder}
                 chartColors={chartColors}
                 lineVisibility={lineVisibility}
-                onLineVisibilityChange={() => {}}
+                onLineVisibilityChange={onLineVisibilityChange ?? (() => {})}
                 pinMetricTabsOnMobile={false}
               />
             </div>

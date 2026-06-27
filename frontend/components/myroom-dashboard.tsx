@@ -59,10 +59,8 @@ import {
   deviceVisibilityKey,
   isChartLineVisible,
   loadChartLineVisibility,
-  mergeEffectiveChartLineVisibility,
   OUTDOOR_VISIBILITY_KEY,
   saveChartLineVisibility,
-  type ChartLineVisibilityOverrides,
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
 import {
@@ -407,8 +405,6 @@ export function MyRoomDashboard() {
   );
   const [defaultLineVisibility, setDefaultLineVisibility] =
     useState<ChartLineVisibilitySettings>(() => buildDefaultChartLineVisibility());
-  const [sessionLineOverrides, setSessionLineOverrides] =
-    useState<ChartLineVisibilityOverrides>({});
 
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
@@ -435,11 +431,11 @@ export function MyRoomDashboard() {
   const effectiveLineVisibility = useMemo(
     () =>
       applyHiddenDevicesToLineVisibility(
-        mergeEffectiveChartLineVisibility(defaultLineVisibility, sessionLineOverrides),
+        defaultLineVisibility,
         hiddenDeviceKeys,
         sensorDeviceIds
       ),
-    [defaultLineVisibility, sessionLineOverrides, hiddenDeviceKeys, sensorDeviceIds]
+    [defaultLineVisibility, hiddenDeviceKeys, sensorDeviceIds]
   );
 
   const visibleSensorDeviceIds = useMemo(
@@ -762,22 +758,12 @@ export function MyRoomDashboard() {
     });
   };
 
-  const handleDefaultChartLineVisibleChange = (key: string, visible: boolean) => {
+  const handleChartLineVisibleChange = (key: string, visible: boolean) => {
     setDefaultLineVisibility((prev) => {
       const next = { ...prev, [key]: visible };
       saveChartLineVisibility(next);
       return next;
     });
-    setSessionLineOverrides((prev) => {
-      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  };
-
-  const handleSessionChartLineVisibleChange = (key: string, visible: boolean) => {
-    setSessionLineOverrides((prev) => ({ ...prev, [key]: visible }));
   };
 
   const latestForDailyStats = useMemo(() => {
@@ -913,7 +899,7 @@ export function MyRoomDashboard() {
             legendOrder={visibleDisplayOrder}
             chartColors={chartColors}
             lineVisibility={effectiveLineVisibility}
-            onLineVisibilityChange={handleSessionChartLineVisibleChange}
+            onLineVisibilityChange={handleChartLineVisibleChange}
           />
         </section>
 
@@ -1073,6 +1059,7 @@ export function MyRoomDashboard() {
         isOfflineMode={isOfflineMode}
         offlineHistory={offlineSnapshot?.historyData ?? null}
         offlineCacheKey={offlineSnapshot?.cachedAt ?? null}
+        onLineVisibilityChange={handleChartLineVisibleChange}
         onClose={() => setDevicePanelOpen(false)}
         onChanged={() => fetchData({ reloadHistory: true })}
       />
@@ -1083,7 +1070,7 @@ export function MyRoomDashboard() {
         onChartColorChange={(color) => handleChartColorChange(OUTDOOR_COLOR_KEY, color)}
         chartLineVisible={isChartLineVisible(defaultLineVisibility, OUTDOOR_VISIBILITY_KEY)}
         onChartLineVisibleChange={(visible) =>
-          handleDefaultChartLineVisibleChange(OUTDOOR_VISIBILITY_KEY, visible)
+          handleChartLineVisibleChange(OUTDOOR_VISIBILITY_KEY, visible)
         }
         onClose={() => setOutdoorSettingsOpen(false)}
         onSaved={(location) => {
