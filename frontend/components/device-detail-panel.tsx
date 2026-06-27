@@ -4,13 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Trash2, X } from "lucide-react";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { Button } from "@/components/ui/button";
-import { deleteSensorRecord, fetchSensorRecords } from "@/lib/api";
+import {
+  deleteSensorRecord,
+  deleteSensorRecordsBulk,
+  fetchSensorRecords,
+} from "@/lib/api";
 import type { ChartColorSettings } from "@/lib/chart-colors";
 import {
   deviceVisibilityKey,
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
 import type { DisplayOrderItem } from "@/lib/display-order";
+import { getInheritanceChain } from "@/lib/device-inheritance";
 import { useChartHistory } from "@/lib/use-chart-history";
 import type {
   ChartMetric,
@@ -25,7 +30,7 @@ type PanelView = "chart" | "records";
 interface DeviceDetailPanelProps {
   open: boolean;
   deviceId: number;
-  deviceName: string;
+  locationName: string;
   chartColors: ChartColorSettings;
   lineVisibility?: ChartLineVisibilitySettings;
   devices: DeviceInfo[];
@@ -58,10 +63,15 @@ function formatCell(value: number | null | undefined, unit: string): string {
   return `${value.toFixed(1)}${unit}`;
 }
 
+function getDeviceLabel(deviceId: number, devices: readonly DeviceInfo[]): string {
+  const device = devices.find((item) => item.id === deviceId);
+  return device?.name?.trim() || `デバイス ${deviceId}`;
+}
+
 export function DeviceDetailPanel({
   open,
   deviceId,
-  deviceName,
+  locationName,
   chartColors,
   lineVisibility: lineVisibilityProp,
   devices,
@@ -74,17 +84,27 @@ export function DeviceDetailPanel({
   const [view, setView] = useState<PanelView>("chart");
   const [chartMetric, setChartMetric] = useState<ChartMetric>("temperature");
   const [viewRange, setViewRange] = useState<ChartViewRange>("day");
+  const [recordsDeviceId, setRecordsDeviceId] = useState(deviceId);
   const [records, setRecords] = useState<SensorRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selectedDatetimes, setSelectedDatetimes] = useState<Set<string>>(
+    () => new Set()
+  );
   const [error, setError] = useState("");
 
+  const inheritanceChain = useMemo(
+    () => getInheritanceChain(deviceId, devices),
+    [deviceId, devices]
+  );
+
   const deviceIds = useMemo(() => [deviceId] as const, [deviceId]);
-  const deviceNames = useMemo(
-    () => ({ [deviceId]: deviceName }),
-    [deviceId, deviceName]
+  const chartDeviceNames = useMemo(
+    () => ({ [deviceId]: locationName }),
+    [deviceId, locationName]
   );
   const legendOrder = useMemo(
     (): DisplayOrderItem[] => [{ type: "device", deviceId }],
@@ -113,11 +133,13 @@ export function DeviceDetailPanel({
   useEffect(() => {
     if (!open) return;
     setView("chart");
+    setRecordsDeviceId(deviceId);
+    setSelectedDatetimes(new Set());
     setError("");
   }, [open, deviceId]);
 
   const loadPage = useCallback(
-    async (offset: number, append: boolean) => {
+    async (targetDeviceId: number, offset: number, append: boolean) => {
       if (append) {
         setLoadingMore(true);
       } else {
@@ -125,9 +147,12 @@ export function DeviceDetailPanel({
       }
       setError("");
       try {
-        const data = await fetchSensorRecords(deviceId, offset);
+        const data = await fetchSensorRecords(targetDeviceId, offset);
         setTotal(data.total);
         setRecords((prev) => (append ? [...prev, ...data.records] : data.records));
+        if (!append) {
+          setSelectedDatetimes(new Set());
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "読み込みに失敗しました");
         if (!append) {
@@ -139,13 +164,59 @@ export function DeviceDetailPanel({
         setLoadingMore(false);
       }
     },
-    [deviceId]
+    []
   );
 
   useEffect(() => {
     if (!open || view !== "records" || isOfflineMode) return;
-    loadPage(0, false);
-  }, [open, view, deviceId, loadPage, isOfflineMode]);
+    loadPage(recordsDeviceId, 0, false);
+  }, [open, view, recordsDeviceId, loadPage, isOfflineMode]);
+
+  const selectedCount = selectedDatetimes.size;
+  const allLoadedSelected =
+    records.length > 0 && records.every((record) => selectedDatetimes.has(record.datetime));
+  const isDeleting = deletingKey !== null || bulkDeleting;
+
+  const toggleSelected = (datetime: string) => {
+    setSelectedDatetimes((prev) => {
+      const next = new Set(prev);
+      if (next.has(datetime)) {
+        next.delete(datetime);
+      } else {
+        next.add(datetime);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllLoaded = () => {
+    if (allLoadedSelected) {
+      setSelectedDatetimes(new Set());
+      return;
+    }
+    setSelectedDatetimes(new Set(records.map((record) => record.datetime)));
+  };
+
+  const handleBulkDelete = async () => {
+    const datetimes = Array.from(selectedDatetimes);
+    if (datetimes.length === 0) return;
+    if (!window.confirm(`選択した ${datetimes.length} 件の記録を削除しますか？`)) return;
+
+    setBulkDeleting(true);
+    setError("");
+    try {
+      const deletedCount = await deleteSensorRecordsBulk(recordsDeviceId, datetimes);
+      const deletedSet = new Set(datetimes);
+      setRecords((prev) => prev.filter((item) => !deletedSet.has(item.datetime)));
+      setTotal((prev) => Math.max(0, prev - deletedCount));
+      setSelectedDatetimes(new Set());
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "削除に失敗しました");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const handleDelete = async (record: SensorRecord) => {
     const label = formatRecordDatetime(record.datetime);
@@ -154,9 +225,15 @@ export function DeviceDetailPanel({
     setDeletingKey(record.datetime);
     setError("");
     try {
-      await deleteSensorRecord(deviceId, record.datetime);
+      await deleteSensorRecord(recordsDeviceId, record.datetime);
       setRecords((prev) => prev.filter((item) => item.datetime !== record.datetime));
       setTotal((prev) => Math.max(0, prev - 1));
+      setSelectedDatetimes((prev) => {
+        if (!prev.has(record.datetime)) return prev;
+        const next = new Set(prev);
+        next.delete(record.datetime);
+        return next;
+      });
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "削除に失敗しました");
@@ -171,6 +248,7 @@ export function DeviceDetailPanel({
   const hasCo2 = records.some((record) => record.co2 != null);
   const hasIlluminance = records.some((record) => record.illuminance != null);
   const canLoadMore = records.length < total;
+  const activeDeviceLabel = getDeviceLabel(deviceId, devices);
 
   return (
     <div className="fixed inset-0 z-50 flex min-h-0 items-end justify-center bg-black/40 sm:items-center sm:p-4">
@@ -188,9 +266,11 @@ export function DeviceDetailPanel({
               </button>
             ) : null}
             <div className="min-w-0">
-              <h2 className="truncate text-lg font-bold">{deviceName}</h2>
+              <h2 className="truncate text-lg font-bold">{locationName}</h2>
               <p className="text-xs text-muted-foreground">
-                {view === "chart" ? "グラフ" : "記録一覧・外れ値の削除"}
+                {view === "chart"
+                  ? `使用中: ${activeDeviceLabel} (ID: ${deviceId})`
+                  : "記録一覧・外れ値の削除"}
               </p>
             </div>
           </div>
@@ -204,13 +284,44 @@ export function DeviceDetailPanel({
           </button>
         </div>
 
+        {inheritanceChain.length > 1 && view === "chart" ? (
+          <div className="shrink-0 border-b px-5 py-3">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">デバイス履歴</p>
+            <div className="flex flex-wrap items-center gap-1 text-xs text-foreground">
+              {inheritanceChain.map((chainDeviceId, index) => {
+                const label = getDeviceLabel(chainDeviceId, devices);
+                const isActive = chainDeviceId === deviceId;
+                return (
+                  <span key={chainDeviceId} className="inline-flex items-center gap-1">
+                    {index > 0 ? (
+                      <span className="text-muted-foreground" aria-hidden="true">
+                        →
+                      </span>
+                    ) : null}
+                    <span
+                      className={
+                        isActive
+                          ? "rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {label} (ID: {chainDeviceId})
+                      {isActive ? " · 現在" : ""}
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
           {view === "chart" ? (
             <div className="px-3 py-3">
               <EnvironmentChart
                 historyData={historyData}
                 deviceIds={deviceIds}
-                deviceNames={deviceNames}
+                deviceNames={chartDeviceNames}
                 chartMetric={chartMetric}
                 onChartMetricChange={setChartMetric}
                 viewRange={viewRange}
@@ -241,19 +352,33 @@ export function DeviceDetailPanel({
             </p>
           ) : (
             <div className="space-y-2 px-5 py-3">
-              {records.map((record) => (
+              {records.map((record) => {
+                const isSelected = selectedDatetimes.has(record.datetime);
+                return (
                 <div
                   key={record.datetime}
-                  className="rounded-xl border bg-background/60 px-3 py-2.5"
+                  className={`rounded-xl border bg-background/60 px-3 py-2.5 ${
+                    isSelected ? "border-primary/40 bg-primary/5" : ""
+                  }`}
                 >
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-foreground">
-                      {formatRecordDatetime(record.datetime)}
-                    </p>
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelected(record.datetime)}
+                        disabled={isDeleting}
+                        className="size-4 shrink-0 rounded border-input accent-primary"
+                        aria-label={`${formatRecordDatetime(record.datetime)} を選択`}
+                      />
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {formatRecordDatetime(record.datetime)}
+                      </p>
+                    </label>
                     <button
                       type="button"
                       onClick={() => handleDelete(record)}
-                      disabled={deletingKey === record.datetime}
+                      disabled={isDeleting}
                       className="flex size-8 shrink-0 items-center justify-center rounded-full text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
                       aria-label="この記録を削除"
                     >
@@ -272,7 +397,8 @@ export function DeviceDetailPanel({
                     )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
@@ -292,21 +418,73 @@ export function DeviceDetailPanel({
               データを表示する
             </Button>
           ) : (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
-                {total > 0 ? `${records.length} / ${total} 件` : "0 件"}
-              </p>
-              {canLoadMore && (
+            <div className="space-y-3">
+              {inheritanceChain.length > 1 ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">表示デバイス</p>
+                  <div className="flex flex-wrap gap-2">
+                    {inheritanceChain.map((chainDeviceId) => {
+                      const label = getDeviceLabel(chainDeviceId, devices);
+                      const selected = chainDeviceId === recordsDeviceId;
+                      return (
+                        <button
+                          key={chainDeviceId}
+                          type="button"
+                          onClick={() => setRecordsDeviceId(chainDeviceId)}
+                          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                            selected
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                          }`}
+                        >
+                          {label} (ID: {chainDeviceId})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {selectedCount > 0 ? (
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => loadPage(records.length, true)}
-                  disabled={loadingMore}
+                  variant="destructive"
+                  className="h-10 w-full rounded-xl"
+                  onClick={handleBulkDelete}
+                  disabled={isDeleting}
                 >
-                  {loadingMore ? "読み込み中..." : "もっと見る"}
+                  {bulkDeleting
+                    ? "削除中..."
+                    : `選択した ${selectedCount} 件を削除`}
                 </Button>
-              )}
+              ) : null}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={allLoadedSelected}
+                      onChange={toggleSelectAllLoaded}
+                      disabled={isDeleting || records.length === 0}
+                      className="size-4 rounded border-input accent-primary"
+                    />
+                    表示中を全選択
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    {total > 0 ? `${records.length} / ${total} 件` : "0 件"}
+                    {selectedCount > 0 ? ` · ${selectedCount} 件選択` : ""}
+                  </p>
+                </div>
+                {canLoadMore && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => loadPage(recordsDeviceId, records.length, true)}
+                    disabled={loadingMore || isDeleting}
+                  >
+                    {loadingMore ? "読み込み中..." : "もっと見る"}
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>

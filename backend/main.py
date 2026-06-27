@@ -72,6 +72,10 @@ class DeviceNameUpdate(BaseModel):
 class AirconNameUpdate(BaseModel):
     name: str
 
+class BulkDeleteRecordsRequest(BaseModel):
+    device: int
+    datetimes: List[str]
+
 class LoginRequest(BaseModel):
     password: str
 
@@ -835,6 +839,41 @@ def delete_sensor_record(
         raise HTTPException(status_code=404, detail="record not found")
     db.commit()
     return {"status": "ok", "deleted": True}
+
+
+@app.post("/api/records/bulk-delete")
+def bulk_delete_sensor_records(
+    body: BulkDeleteRecordsRequest,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
+    if body.device < 1:
+        raise HTTPException(status_code=400, detail="device id must be >= 1")
+    if not body.datetimes:
+        raise HTTPException(status_code=400, detail="datetimes must not be empty")
+    if len(body.datetimes) > 500:
+        raise HTTPException(status_code=400, detail="too many datetimes (max 500)")
+
+    parsed_datetimes = []
+    for value in body.datetimes:
+        try:
+            parsed_datetimes.append(_parse_record_datetime(value))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid datetime: {value}") from exc
+
+    if database.DB_MOCK:
+        return {"status": "mock_ok", "deleted_count": len(parsed_datetimes)}
+
+    deleted = (
+        db.query(database.SensorRecord)
+        .filter(
+            database.SensorRecord.device_id == body.device,
+            database.SensorRecord.datetime.in_(parsed_datetimes),
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"status": "ok", "deleted_count": deleted}
 
 
 @app.get("/api/history")

@@ -292,6 +292,23 @@ export async function deleteSensorRecord(
   }
 }
 
+export async function deleteSensorRecordsBulk(
+  deviceId: number,
+  datetimes: string[]
+): Promise<number> {
+  const res = await fetchWithAuth("/api/records/bulk-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device: deviceId, datetimes }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  const data = (await res.json()) as { deleted_count: number };
+  return data.deleted_count;
+}
+
 export async function fetchSensorsStatus(): Promise<SensorsStatusResponse> {
   return fetchJson<SensorsStatusResponse>("/api/sensors/status");
 }

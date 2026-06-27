@@ -303,6 +303,29 @@ def test_records_delete_mock_ok(client, auth_headers):
     assert response.json()["deleted"] is True
 
 
+def test_records_bulk_delete_mock_ok(client, auth_headers):
+    response = client.post(
+        "/api/records/bulk-delete",
+        json={
+            "device": 1,
+            "datetimes": ["2026-05-30 12:00:00", "2026-05-30 11:00:00"],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deleted_count"] == 2
+
+
+def test_records_bulk_delete_rejects_empty(client, auth_headers):
+    response = client.post(
+        "/api/records/bulk-delete",
+        json={"device": 1, "datetimes": []},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+
 def test_records_rejects_invalid_device(client, auth_headers):
     response = client.get("/api/records?device=0", headers=auth_headers)
     assert response.status_code == 400
