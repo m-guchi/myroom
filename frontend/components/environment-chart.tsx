@@ -19,6 +19,7 @@ import {
   CHART_VIEW_RANGE_LABELS,
   ChartViewRange,
   deviceMetricKey,
+  deviceDht11TemperatureKey,
   deviceTargetMetricKey,
   formatAirconTargetTemperature,
   HistoryPoint,
@@ -41,13 +42,16 @@ import {
   formatChartAxisDate,
   getAvailableChartMetrics,
   getChartTicksForDomain,
+  getDeviceDht11TemperatureValueAtTime,
   getDeviceMetricValueAtTime,
   getDeviceTargetMetricStateAtTime,
   getDeviceTargetMetricValueAtTime,
+  getDevicesWithDht11TemperatureData,
   getDevicesWithMetricData,
   getMaxPositiveDomainOffset,
   getOutdoorMetricValueAtTime,
   getSelectionTime,
+  hasDeviceDht11TemperatureData,
   hasDeviceMetricData,
   hasDeviceTargetChartData,
   hasDeviceTargetStateData,
@@ -64,6 +68,7 @@ import {
 } from "@/lib/chart-colors";
 import {
   AIRCON_TARGET_VISIBILITY_KEY,
+  deviceDht11VisibilityKey,
   deviceVisibilityKey,
   isChartLineVisible,
   OUTDOOR_VISIBILITY_KEY,
@@ -106,6 +111,8 @@ interface EnvironmentChartProps {
   chartColors: ChartColorSettings;
   lineVisibility: ChartLineVisibilitySettings;
   onLineVisibilityChange: (key: string, visible: boolean) => void;
+  /** スマホ表示時に指標タブを画面下部に固定する（モーダル内では false） */
+  pinMetricTabsOnMobile?: boolean;
 }
 
 interface ChartSeriesRow {
@@ -218,6 +225,7 @@ export function EnvironmentChart({
   chartColors,
   lineVisibility,
   onLineVisibilityChange,
+  pinMetricTabsOnMobile = true,
 }: EnvironmentChartProps) {
   const resolvedLegendOrder = legendOrder ?? buildDefaultDisplayOrder(deviceIds.filter(
     (id) => id !== AIRCON_CHART_DEVICE_ID
@@ -271,6 +279,22 @@ export function EnvironmentChart({
     [visibleDeviceIds, lineVisibility]
   );
 
+  const dht11DeviceIds = useMemo(
+    () =>
+      chartMetric === "temperature"
+        ? getDevicesWithDht11TemperatureData(historyData, deviceIds)
+        : [],
+    [chartMetric, historyData, deviceIds]
+  );
+
+  const plottedDht11DeviceIds = useMemo(
+    () =>
+      dht11DeviceIds.filter((deviceId) =>
+        isChartLineVisible(lineVisibility, deviceDht11VisibilityKey(deviceId))
+      ),
+    [dht11DeviceIds, lineVisibility]
+  );
+
   const orderedPlottedDeviceIds = useMemo(() => {
     const preferred = deviceSeriesOrder.filter((deviceId) =>
       plottedDeviceIds.includes(deviceId)
@@ -278,6 +302,14 @@ export function EnvironmentChart({
     const rest = plottedDeviceIds.filter((deviceId) => !preferred.includes(deviceId));
     return [...preferred, ...rest];
   }, [deviceSeriesOrder, plottedDeviceIds]);
+
+  const orderedPlottedDht11DeviceIds = useMemo(() => {
+    const preferred = deviceSeriesOrder.filter((deviceId) =>
+      plottedDht11DeviceIds.includes(deviceId)
+    );
+    const rest = plottedDht11DeviceIds.filter((deviceId) => !preferred.includes(deviceId));
+    return [...preferred, ...rest];
+  }, [deviceSeriesOrder, plottedDht11DeviceIds]);
 
   const isDeviceLineVisible = useCallback(
     (deviceId: number) =>
@@ -375,15 +407,21 @@ export function EnvironmentChart({
         aggregated,
         plottedDeviceIds,
         showOutdoorLine,
-        targetDeviceIds
+        targetDeviceIds,
+        plottedDht11DeviceIds
       ),
-    [historyData, currentDomain, chartMetric, aggregated, plottedDeviceIds, showOutdoorLine, targetDeviceIds]
+    [historyData, currentDomain, chartMetric, aggregated, plottedDeviceIds, showOutdoorLine, targetDeviceIds, plottedDht11DeviceIds]
   );
 
   const historySource = useMemo(() => {
     const visible = filterHistoryForDomain(historyData, currentDomain);
     return visible.length > 0 ? visible : historyData;
   }, [historyData, currentDomain]);
+
+  const downsampleDeviceIds = useMemo(() => {
+    if (chartMetric !== "temperature") return plottedDeviceIds;
+    return [...new Set([...plottedDeviceIds, ...plottedDht11DeviceIds])];
+  }, [chartMetric, plottedDeviceIds, plottedDht11DeviceIds]);
 
   const chartPlotData = useMemo(() => {
     if (!historyData.length) return [];
@@ -395,7 +433,7 @@ export function EnvironmentChart({
           source,
           chartMetric,
           320,
-          plottedDeviceIds
+          downsampleDeviceIds
         );
 
     return withSelectionEndPoints(
@@ -404,17 +442,19 @@ export function EnvironmentChart({
       plottedDeviceIds,
       chartMetric,
       showOutdoorLine,
-      targetDeviceIds
+      targetDeviceIds,
+      plottedDht11DeviceIds
     );
   }, [
     historyData,
     historySource,
     chartMetric,
     aggregated,
-    plottedDeviceIds,
+    downsampleDeviceIds,
     selectionTime,
     showOutdoorLine,
     targetDeviceIds,
+    plottedDht11DeviceIds,
   ]);
 
   const airconTargetSegments = useMemo(() => {
@@ -513,6 +553,30 @@ export function EnvironmentChart({
       .filter((entry) => entry.value != null);
   }, [selectionTime, orderedPlottedDeviceIds, deviceNames, chartMetric, chartPlotData, chartColors]);
 
+  const activeDht11Values = useMemo(() => {
+    if (selectionTime == null || chartMetric !== "temperature") return [];
+    return orderedPlottedDht11DeviceIds
+      .map((deviceId) => ({
+        deviceId,
+        seriesKey: `dht11-${deviceId}`,
+        name: `${deviceNames[deviceId] ?? `デバイス ${deviceId}`} (DHT11)`,
+        value: getDeviceDht11TemperatureValueAtTime(
+          chartPlotData,
+          deviceId,
+          selectionTime
+        ),
+        color: getDeviceChartColor(chartColors, deviceId),
+      }))
+      .filter((entry) => entry.value != null);
+  }, [
+    selectionTime,
+    chartMetric,
+    orderedPlottedDht11DeviceIds,
+    deviceNames,
+    chartPlotData,
+    chartColors,
+  ]);
+
   const activeOutdoor = useMemo(() => {
     if (selectionTime == null) return undefined;
     return getOutdoorMetricValueAtTime(chartPlotData, chartMetric, selectionTime);
@@ -541,24 +605,52 @@ export function EnvironmentChart({
         const deviceId =
           item.type === "device" ? item.deviceId : AIRCON_CHART_DEVICE_ID;
         if (!deviceIds.includes(deviceId)) continue;
-        if (!hasDeviceMetricData(historyData, deviceId, chartMetric)) continue;
 
-        rows.push({
-          id: `device-${deviceId}`,
-          name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
-          color: getDeviceChartColor(chartColors, deviceId),
-          value:
-            selectionTime == null
-              ? undefined
-              : getDeviceMetricValueAtTime(
-                  chartPlotData,
-                  deviceId,
-                  chartMetric,
-                  selectionTime
-                ),
-          visible: isDeviceLineVisible(deviceId),
-          visibilityKey: deviceVisibilityKey(deviceId),
-        });
+        const hasMetric = hasDeviceMetricData(historyData, deviceId, chartMetric);
+        const hasDht11 =
+          chartMetric === "temperature" &&
+          hasDeviceDht11TemperatureData(historyData, deviceId);
+        if (!hasMetric && !hasDht11) continue;
+
+        if (hasMetric) {
+          rows.push({
+            id: `device-${deviceId}`,
+            name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
+            color: getDeviceChartColor(chartColors, deviceId),
+            value:
+              selectionTime == null
+                ? undefined
+                : getDeviceMetricValueAtTime(
+                    chartPlotData,
+                    deviceId,
+                    chartMetric,
+                    selectionTime
+                  ),
+            visible: isDeviceLineVisible(deviceId),
+            visibilityKey: deviceVisibilityKey(deviceId),
+          });
+        }
+
+        if (hasDht11) {
+          rows.push({
+            id: `device-dht11-${deviceId}`,
+            name: `${deviceNames[deviceId] ?? `デバイス ${deviceId}`} (DHT11)`,
+            color: getDeviceChartColor(chartColors, deviceId),
+            value:
+              selectionTime == null
+                ? undefined
+                : getDeviceDht11TemperatureValueAtTime(
+                    chartPlotData,
+                    deviceId,
+                    selectionTime
+                  ),
+            visible: isChartLineVisible(
+              lineVisibility,
+              deviceDht11VisibilityKey(deviceId)
+            ),
+            visibilityKey: deviceDht11VisibilityKey(deviceId),
+          });
+        }
 
         if (
           deviceId === airconTargetDeviceId &&
@@ -618,7 +710,7 @@ export function EnvironmentChart({
 
   const activeDots = useMemo(() => {
     if (selectionTime == null) return [];
-    return activeDeviceValues
+    return [...activeDeviceValues, ...activeDht11Values]
       .map((entry) => {
         const plotPosition = computePlotPosition(
           currentDomain,
@@ -626,10 +718,12 @@ export function EnvironmentChart({
           selectionTime,
           entry.value
         );
-        return plotPosition?.yRatio != null ? { ...entry, plotPosition } : null;
+        return plotPosition?.yRatio != null
+          ? { ...entry, plotPosition, deviceId: entry.deviceId }
+          : null;
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry != null);
-  }, [activeDeviceValues, currentDomain, selectionTime, visibleYDomain]);
+  }, [activeDeviceValues, activeDht11Values, currentDomain, selectionTime, visibleYDomain]);
 
   const unit = METRIC_UNITS[chartMetric];
 
@@ -695,46 +789,57 @@ export function EnvironmentChart({
     lineLeft != null &&
     chartPlotData.length > 0 &&
     (plottedDeviceIds.length > 0 ||
+      plottedDht11DeviceIds.length > 0 ||
       (showOutdoorLine && activeOutdoor != null) ||
       (showAirconTargetLine && activeTargetState != null));
 
   const hasPlottedLines =
     plottedDeviceIds.length > 0 ||
+    plottedDht11DeviceIds.length > 0 ||
     showOutdoorLine ||
     airconTargetPointCount > 0;
 
+  const metricTabs = (
+    <Tabs
+      value={chartMetric}
+      onValueChange={(v) => onChartMetricChange(v as ChartMetric)}
+    >
+      <TabsList className="h-10 w-full">
+        {availableMetrics.map((metric) => {
+          const Icon = METRIC_ICONS[metric];
+          const active = chartMetric === metric;
+          return (
+            <TabsTrigger
+              key={metric}
+              value={metric}
+              className={cn(
+                "gap-1 text-xs sm:text-sm",
+                active && "text-[var(--metric-color)]"
+              )}
+              style={
+                active
+                  ? ({ "--metric-color": METRIC_COLORS[metric] } as CSSProperties)
+                  : undefined
+              }
+            >
+              <Icon className="size-4" />
+              {METRIC_LABELS[metric]}
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
+  );
+
   return (
     <div className="climate-card flex flex-col gap-0 overflow-hidden p-0">
-      <div className="px-2 pt-4">
-        <Tabs
-          value={chartMetric}
-          onValueChange={(v) => onChartMetricChange(v as ChartMetric)}
-        >
-          <TabsList className="h-10 w-full">
-            {availableMetrics.map((metric) => {
-              const Icon = METRIC_ICONS[metric];
-              const active = chartMetric === metric;
-              return (
-                <TabsTrigger
-                  key={metric}
-                  value={metric}
-                  className={cn(
-                    "gap-1 text-xs sm:text-sm",
-                    active && "text-[var(--metric-color)]"
-                  )}
-                  style={
-                    active
-                      ? ({ "--metric-color": METRIC_COLORS[metric] } as CSSProperties)
-                      : undefined
-                  }
-                >
-                  <Icon className="size-4" />
-                  {METRIC_LABELS[metric]}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </Tabs>
+      <div
+        className={cn(
+          "px-2 pt-4",
+          pinMetricTabsOnMobile && "hidden sm:block"
+        )}
+      >
+        {metricTabs}
       </div>
 
       {chartSeriesRows.length > 0 && (
@@ -817,7 +922,7 @@ export function EnvironmentChart({
         ) : (
           <ResponsiveContainer width="100%" height="100%" className="pointer-events-none">
             <ComposedChart
-              key={`${chartMetric}-${viewRange}-${plottedDeviceIds.join("-")}-${showOutdoorLine}-${showTargetLine}`}
+              key={`${chartMetric}-${viewRange}-${plottedDeviceIds.join("-")}-${plottedDht11DeviceIds.join("-")}-${showOutdoorLine}-${showTargetLine}`}
               data={chartPlotData}
               margin={{ top: PLOT_INSET.top, right: PLOT_INSET.right, left: 0, bottom: 0 }}
             >
@@ -875,6 +980,21 @@ export function EnvironmentChart({
                   connectNulls
                 />
               ))}
+              {chartMetric === "temperature" &&
+                orderedPlottedDht11DeviceIds.map((deviceId) => (
+                  <Line
+                    key={`dht11-${deviceId}`}
+                    type="linear"
+                    dataKey={deviceDht11TemperatureKey(deviceId)}
+                    stroke={getDeviceChartColor(chartColors, deviceId)}
+                    strokeWidth={1.5}
+                    strokeDasharray="6 4"
+                    dot={false}
+                    name={`${deviceNames[deviceId] ?? `デバイス ${deviceId}`} (DHT11)`}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                ))}
               {airconTargetSegments.map((segment, index) =>
                 segment.points.length > 0 ? (
                   <Line
@@ -919,9 +1039,13 @@ export function EnvironmentChart({
                   ? `calc(${PLOT_INSET.top}px + ${plotHeightExpr()} * ${entry.plotPosition.yRatio})`
                   : undefined;
               if (!dotTop) return null;
+              const dotKey =
+                "seriesKey" in entry && typeof entry.seriesKey === "string"
+                  ? entry.seriesKey
+                  : `device-${entry.deviceId}`;
               return (
                 <div
-                  key={entry.deviceId}
+                  key={dotKey}
                   className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background"
                   style={{ left: lineLeft, top: dotTop, backgroundColor: entry.color }}
                 />
@@ -953,6 +1077,17 @@ export function EnvironmentChart({
           左右にドラッグして表示期間を変更
         </p>
       </div>
+
+      {pinMetricTabsOnMobile && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 sm:hidden"
+          aria-label="指標の選択"
+        >
+          <div className="mx-auto max-w-[480px] border-t border-border bg-card/95 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur-sm dark:shadow-[0_-4px_16px_rgba(0,0,0,0.25)]">
+            {metricTabs}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

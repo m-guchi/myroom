@@ -39,6 +39,12 @@ interface DeviceSettingsCardProps {
   saveDisabled?: boolean;
   error?: string;
   footer?: ReactNode;
+  inheritsFromOptions?: Array<{
+    value: number | null;
+    label: string;
+  }>;
+  inheritsFrom?: number | null;
+  onInheritsFromChange?: (value: number | null) => void;
   /** 編集シート内など、ヘッダーを省略する */
   compact?: boolean;
 }
@@ -62,6 +68,9 @@ export function DeviceSettingsCard({
   saveDisabled = false,
   error,
   footer,
+  inheritsFromOptions,
+  inheritsFrom,
+  onInheritsFromChange,
   compact = false,
 }: DeviceSettingsCardProps) {
   return (
@@ -130,6 +139,33 @@ export function DeviceSettingsCard({
         ) : null}
 
         {footer}
+
+        {inheritsFromOptions && onInheritsFromChange ? (
+          <div className="space-y-2 border-t pt-3">
+            <Label htmlFor={`${visibilityId}-inherits`}>継承元デバイス</Label>
+            <select
+              id={`${visibilityId}-inherits`}
+              value={inheritsFrom ?? ""}
+              onChange={(event) => {
+                const value = event.target.value;
+                onInheritsFromChange(value === "" ? null : Number(value));
+              }}
+              className={cn(
+                "h-10 w-full rounded-xl border border-input bg-background px-3 text-sm",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              )}
+            >
+              {inheritsFromOptions.map((option) => (
+                <option key={option.value ?? "none"} value={option.value ?? ""}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              同じ設置場所でデバイスを交換した場合、グラフで過去データを連続表示します。
+            </p>
+          </div>
+        ) : null}
 
         {error ? (
           <p className={cn("rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive")}>

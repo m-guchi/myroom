@@ -4,9 +4,12 @@ import {
   FALLBACK_SENSOR_DEVICE_IDS,
   PRIMARY_SENSOR_DEVICE_ID,
   hasAirconData,
+  resolveAirconDataLoadStatus,
+  resolveLatestDataLoadStatus,
   type AirconData,
   type AirconUnitInfo,
   type DailyStat,
+  type DeviceDataLoadStatus,
   type DeviceInfo,
   type HistoryPoint,
   type LatestData,
@@ -349,20 +352,31 @@ export async function sendTestPushNotification(password: string): Promise<PushTe
   return res.json() as Promise<PushTestResponse>;
 }
 
+export interface LatestBatchResult {
+  latestByDevice: Record<number, LatestData | null>;
+  loadStatusByDevice: Record<number, DeviceDataLoadStatus>;
+}
+
 export async function fetchLatestBatch(
   deviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS
-): Promise<Record<number, LatestData | null>> {
+): Promise<LatestBatchResult> {
   const results = await Promise.allSettled(
     deviceIds.map((deviceId) => fetchLatest(deviceId))
   );
 
   const latestByDevice: Record<number, LatestData | null> = {};
+  const loadStatusByDevice: Record<number, DeviceDataLoadStatus> = {};
   deviceIds.forEach((deviceId, index) => {
     const result = results[index];
-    latestByDevice[deviceId] =
-      result.status === "fulfilled" ? result.value : null;
+    if (result.status === "fulfilled") {
+      latestByDevice[deviceId] = result.value;
+      loadStatusByDevice[deviceId] = resolveLatestDataLoadStatus(result.value, false);
+    } else {
+      latestByDevice[deviceId] = null;
+      loadStatusByDevice[deviceId] = "error";
+    }
   });
-  return latestByDevice;
+  return { latestByDevice, loadStatusByDevice };
 }
 
 export async function fetchDashboardData(
@@ -383,14 +397,31 @@ export async function fetchDashboardData(
     mergedDailyStats[AIRCON_CHART_DEVICE_ID] = airconDailyStats.value;
   }
 
+  const latestBatch =
+    latestByDevice.status === "fulfilled"
+      ? latestByDevice.value
+      : {
+          latestByDevice: {} as Record<number, LatestData | null>,
+          loadStatusByDevice: Object.fromEntries(
+            sensorDeviceIds.map((deviceId) => [deviceId, "error" as const])
+          ),
+        };
+
+  const airconFetchFailed = airconLatest.status === "rejected";
+  const airconValue = airconLatest.status === "fulfilled" ? airconLatest.value : null;
+
   return {
-    latestByDevice:
-      latestByDevice.status === "fulfilled" ? latestByDevice.value : {},
+    latestByDevice: latestBatch.latestByDevice,
+    latestLoadStatusByDevice: latestBatch.loadStatusByDevice,
     latest:
       latestByDevice.status === "fulfilled"
-        ? latestByDevice.value[PRIMARY_SENSOR_DEVICE_ID] ?? null
+        ? latestBatch.latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? null
         : null,
     dailyStatsByDevice: mergedDailyStats,
-    airconLatest: airconLatest.status === "fulfilled" ? airconLatest.value : null,
+    airconLatest: airconValue,
+    airconLoadStatus: resolveAirconDataLoadStatus(airconValue, airconFetchFailed),
+    dashboardFetchFailed:
+      latestByDevice.status === "rejected" &&
+      airconLatest.status === "rejected",
   };
 }

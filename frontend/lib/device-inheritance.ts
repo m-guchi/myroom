@@ -1,5 +1,6 @@
 import {
   CHART_METRICS,
+  deviceDht11TemperatureKey,
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
@@ -115,6 +116,13 @@ function copyDeviceMetrics(
     if (Array.isArray(range) && range.length === 2) {
       targetRow[targetRangeKey] = range;
     }
+  }
+
+  const dht11Key = deviceDht11TemperatureKey(fromDeviceId);
+  const targetDht11Key = deviceDht11TemperatureKey(toDeviceId);
+  const dht11 = sourceRow[dht11Key];
+  if (typeof dht11 === "number" && !Number.isNaN(dht11)) {
+    targetRow[targetDht11Key] = dht11;
   }
 }
 

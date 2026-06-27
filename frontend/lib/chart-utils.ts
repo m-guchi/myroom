@@ -6,11 +6,13 @@ function isIndoorOnlyMetric(metric: ChartMetric): boolean {
 import {
   CHART_METRICS,
   deviceAirconPowerKey,
+  deviceDht11TemperatureKey,
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
   deviceTargetMetricKey,
   getDeviceMetricValue,
+  getDeviceDht11TemperatureValue,
   getDeviceTargetMetricValue,
   getDeviceTargetMetricRawValue,
   isAirconAutoTarget,
@@ -277,6 +279,33 @@ export function downsampleMultiDeviceHistoryForChart(
         }
       }
     }
+
+    if (metric === "temperature") {
+      const dht11Series: MetricSeriesPoint[] = [];
+      for (const point of historyData) {
+        const value = getDeviceDht11TemperatureValue(point, deviceId);
+        if (value == null) continue;
+        dht11Series.push({
+          datetimeObj: point.datetimeObj,
+          datetime: point.datetime,
+          value,
+        });
+      }
+
+      const sampledDht11 = downsampleMetricSeries(dht11Series, maxPoints);
+      const dht11Key = deviceDht11TemperatureKey(deviceId);
+      for (const entry of sampledDht11) {
+        let row = byTime.get(entry.datetimeObj);
+        if (!row) {
+          row = {
+            datetimeObj: entry.datetimeObj,
+            datetime: entry.datetime,
+          };
+          byTime.set(entry.datetimeObj, row);
+        }
+        (row as unknown as Record<string, unknown>)[dht11Key] = entry.value;
+      }
+    }
   }
 
   if (!isIndoorOnlyMetric(metric) && hasOutdoorMetricData(historyData, metric)) {
@@ -470,7 +499,8 @@ export function withSelectionEndPoints(
   deviceIds: readonly number[],
   metric: ChartMetric,
   includeOutdoor = false,
-  targetDeviceIds?: readonly number[]
+  targetDeviceIds?: readonly number[],
+  dht11DeviceIds?: readonly number[]
 ): HistoryPoint[] {
   if (!chartData.length || selectionTime == null) return chartData;
 
@@ -507,8 +537,45 @@ export function withSelectionEndPoints(
     }
   }
 
+  if (metric === "temperature" && dht11DeviceIds?.length) {
+    for (const deviceId of dht11DeviceIds) {
+      const value = interpolateDeviceDht11TemperatureAtTime(
+        chartData,
+        deviceId,
+        selectionTime
+      );
+      if (value != null) {
+        record[deviceDht11TemperatureKey(deviceId)] = value;
+        hasAny = true;
+      }
+    }
+  }
+
   if (!hasAny) return chartData;
   return [...chartData, row];
+}
+
+export function hasDeviceDht11TemperatureData(
+  historyData: HistoryPoint[],
+  deviceId: number
+): boolean {
+  const key = deviceDht11TemperatureKey(deviceId);
+  return historyData.some((point) => {
+    const value = getDeviceDht11TemperatureValue(point, deviceId);
+    if (value != null) return true;
+    const row = point as unknown as Record<string, unknown>;
+    const raw = row[key];
+    return typeof raw === "number" && !Number.isNaN(raw);
+  });
+}
+
+export function getDevicesWithDht11TemperatureData(
+  historyData: HistoryPoint[],
+  deviceIds: readonly number[]
+): number[] {
+  return deviceIds.filter((deviceId) =>
+    hasDeviceDht11TemperatureData(historyData, deviceId)
+  );
 }
 
 export function hasDeviceMetricData(
@@ -585,7 +652,9 @@ export function getAvailableChartMetrics(
   return CHART_METRICS.filter(
     (metric) =>
       getDevicesWithMetricData(historyData, deviceIds, metric).length > 0 ||
-      hasOutdoorMetricData(historyData, metric)
+      hasOutdoorMetricData(historyData, metric) ||
+      (metric === "temperature" &&
+        getDevicesWithDht11TemperatureData(historyData, deviceIds).length > 0)
   );
 }
 
@@ -700,6 +769,64 @@ export function getDeviceMetricValueAtTime(
   targetTime: number
 ): number | undefined {
   return interpolateDeviceMetricAtTime(historyData, deviceId, metric, targetTime);
+}
+
+function findPrevNextDht11Values(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): {
+  prev?: { t: number; v: number };
+  next?: { t: number; v: number };
+} {
+  let prev: { t: number; v: number } | undefined;
+  let next: { t: number; v: number } | undefined;
+
+  for (const point of historyData) {
+    const value = getDeviceDht11TemperatureValue(point, deviceId);
+    if (value == null) continue;
+
+    if (point.datetimeObj <= targetTime) {
+      prev = { t: point.datetimeObj, v: value };
+      continue;
+    }
+
+    if (!next) {
+      next = { t: point.datetimeObj, v: value };
+      break;
+    }
+  }
+
+  return { prev, next };
+}
+
+/** 指定時刻の DHT11 温度（線形補間） */
+export function interpolateDeviceDht11TemperatureAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): number | undefined {
+  const { prev, next } = findPrevNextDht11Values(historyData, deviceId, targetTime);
+
+  if (prev && next) {
+    if (targetTime === prev.t) return prev.v;
+    if (targetTime === next.t) return next.v;
+    if (targetTime > prev.t && targetTime < next.t) {
+      return interpolateBetween(prev, next, targetTime);
+    }
+  }
+
+  if (prev) return prev.v;
+  return undefined;
+}
+
+/** @deprecated alias */
+export function getDeviceDht11TemperatureValueAtTime(
+  historyData: HistoryPoint[],
+  deviceId: number,
+  targetTime: number
+): number | undefined {
+  return interpolateDeviceDht11TemperatureAtTime(historyData, deviceId, targetTime);
 }
 
 function findPrevNextTargetValues(
@@ -998,7 +1125,8 @@ export function computeVisibleYDomain(
   aggregated: boolean,
   deviceIds?: readonly number[],
   includeOutdoor = false,
-  targetDeviceIds?: readonly number[]
+  targetDeviceIds?: readonly number[],
+  dht11DeviceIds?: readonly number[]
 ): [number, number] | ["auto", "auto"] {
   if (!historyData.length) return ["auto", "auto"];
 
@@ -1053,6 +1181,12 @@ export function computeVisibleYDomain(
       }
     }
 
+    if (metric === "temperature" && dht11DeviceIds?.length) {
+      for (const deviceId of dht11DeviceIds) {
+        collectNumericValues(values, getDeviceDht11TemperatureValue(point, deviceId));
+      }
+    }
+
     const range = point[rangeKey];
     if (Array.isArray(range) && range.length === 2) {
       collectNumericValues(values, range[0]);
@@ -1100,6 +1234,10 @@ export function processHistoryData(raw: Record<string, unknown>[]): HistoryPoint
       temperature:
         item.temperature != null && item.temperature !== ""
           ? Number(item.temperature)
+          : undefined,
+      temperature_dht11:
+        item.temperature_dht11 != null && item.temperature_dht11 !== ""
+          ? Number(item.temperature_dht11)
           : undefined,
       humidity:
         item.humidity != null && item.humidity !== ""

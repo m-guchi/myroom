@@ -224,6 +224,7 @@ export function DeviceDetailPanel({
                 chartColors={chartColors}
                 lineVisibility={lineVisibility}
                 onLineVisibilityChange={() => {}}
+                pinMetricTabsOnMobile={false}
               />
             </div>
           ) : loading ? (

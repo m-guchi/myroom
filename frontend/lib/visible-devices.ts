@@ -4,6 +4,7 @@ import {
 } from "@/lib/display-order";
 import {
   AIRCON_TARGET_VISIBILITY_KEY,
+  deviceDht11VisibilityKey,
   deviceVisibilityKey,
   OUTDOOR_VISIBILITY_KEY,
 } from "@/lib/chart-line-visibility";
@@ -30,6 +31,7 @@ export function buildAllDashboardTargetKeys(
   const keys = new Set<string>();
   for (const deviceId of sensorDeviceIds) {
     keys.add(orderItemKey({ type: "device", deviceId }));
+    keys.add(deviceDht11VisibilityKey(deviceId));
   }
   keys.add("outdoor");
   keys.add(AIRCON_ROOM_HIDDEN_KEY);
@@ -56,6 +58,13 @@ export function isAirconTargetVisible(hiddenKeys: Set<string>): boolean {
 
 export function isAirconAnyVisible(hiddenKeys: Set<string>): boolean {
   return isAirconRoomVisible(hiddenKeys) || isAirconTargetVisible(hiddenKeys);
+}
+
+export function isDeviceDht11Visible(
+  hiddenKeys: Set<string>,
+  deviceId: number
+): boolean {
+  return !hiddenKeys.has(deviceDht11VisibilityKey(deviceId));
 }
 
 export function setHiddenKeyVisible(
@@ -205,6 +214,10 @@ export function applyHiddenDevicesToLineVisibility<T extends Record<string, bool
     const key = deviceVisibilityKey(deviceId);
     if (hiddenKeys.has(key)) {
       merged[key as keyof T] = false as T[keyof T];
+    }
+    const dht11Key = deviceDht11VisibilityKey(deviceId);
+    if (hiddenKeys.has(dht11Key)) {
+      merged[dht11Key as keyof T] = false as T[keyof T];
     }
   }
   if (hiddenKeys.has(OUTDOOR_VISIBILITY_KEY)) {

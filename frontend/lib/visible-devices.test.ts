@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  applyHiddenDevicesToLineVisibility,
   buildAllDashboardTargetKeys,
   getVisibleChartDeviceIds,
   getVisibleSensorDeviceIds,
   isAirconRoomVisible,
   isAirconTargetVisible,
   isAirconAnyVisible,
+  isDeviceDht11Visible,
   isHiddenKeyVisible,
   setHiddenKeyVisible,
   AIRCON_ROOM_HIDDEN_KEY,
@@ -18,6 +20,8 @@ import {
   sortDisplayOrderHiddenLast,
   HIDDEN_DEVICES_STORAGE_KEY,
 } from "@/lib/visible-devices";
+import { deviceDht11VisibilityKey } from "@/lib/chart-line-visibility";
+import { buildDefaultChartLineVisibility } from "@/lib/chart-line-visibility";
 import { AIRCON_CHART_DEVICE_ID, getSensorDeviceIds } from "@/lib/types";
 
 describe("visible-devices", () => {
@@ -34,7 +38,15 @@ describe("visible-devices", () => {
 
   it("treats all dashboard targets as visible by default", () => {
     expect([...buildAllDashboardTargetKeys([1, 2])].sort()).toEqual(
-      ["device:1", "device:2", "device:9001", "airconTarget", "outdoor"].sort()
+      [
+        "device:1",
+        "device:2",
+        "device-dht11:1",
+        "device-dht11:2",
+        "device:9001",
+        "airconTarget",
+        "outdoor",
+      ].sort()
     );
     expect(isTargetVisible(new Set(), { type: "device", deviceId: 2 })).toBe(true);
     expect(isTargetVisible(new Set(), { type: "aircon" })).toBe(true);
@@ -74,6 +86,17 @@ describe("visible-devices", () => {
 
     const roomHidden = new Set([AIRCON_ROOM_HIDDEN_KEY]);
     expect(getVisibleChartDeviceIds([1, 2], roomHidden)).toEqual([1, 2]);
+  });
+
+  it("hides DHT11 chart lines when configured in hidden devices", () => {
+    const hidden = new Set([deviceDht11VisibilityKey(1)]);
+    expect(isDeviceDht11Visible(hidden, 1)).toBe(false);
+    expect(isDeviceDht11Visible(hidden, 2)).toBe(true);
+
+    const defaults = buildDefaultChartLineVisibility([1, 2]);
+    const merged = applyHiddenDevicesToLineVisibility(defaults, hidden, [1, 2]);
+    expect(merged[deviceDht11VisibilityKey(1)]).toBe(false);
+    expect(merged[deviceDht11VisibilityKey(2)]).toBe(true);
   });
 
   it("toggles visibility for a target", () => {

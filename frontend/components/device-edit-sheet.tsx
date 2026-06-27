@@ -4,8 +4,6 @@ import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { X } from "lucide-react";
 import { DeviceSettingsCard } from "@/components/device-settings-card";
-import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 
 interface InheritsFromOption {
   value: number | null;
@@ -97,33 +95,6 @@ export function DeviceEditSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {inheritsFromOptions && onInheritsFromChange ? (
-            <div className="mb-4 space-y-2">
-              <Label htmlFor={`${visibilityId}-inherits`}>継承元デバイス</Label>
-              <select
-                id={`${visibilityId}-inherits`}
-                value={inheritsFrom ?? ""}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  onInheritsFromChange(value === "" ? null : Number(value));
-                }}
-                className={cn(
-                  "h-10 w-full rounded-xl border border-input bg-background px-3 text-sm",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                )}
-              >
-                {inheritsFromOptions.map((option) => (
-                  <option key={option.value ?? "none"} value={option.value ?? ""}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                同じ設置場所でデバイスを交換した場合、グラフで過去データを連続表示します。
-              </p>
-            </div>
-          ) : null}
-
           <DeviceSettingsCard
             icon={icon}
             accentColor={accentColor}
@@ -143,6 +114,9 @@ export function DeviceEditSheet({
             saveDisabled={saveDisabled}
             error={error}
             footer={footer}
+            inheritsFromOptions={inheritsFromOptions}
+            inheritsFrom={inheritsFrom}
+            onInheritsFromChange={onInheritsFromChange}
             compact
           />
         </div>

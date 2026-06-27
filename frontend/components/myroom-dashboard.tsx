@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
@@ -7,7 +8,6 @@ import {
   Bell,
   Droplets,
   Gauge,
-  ListOrdered,
   RefreshCw,
   Settings,
   Snowflake,
@@ -19,9 +19,7 @@ import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
-import { DisplayOrderSettings } from "@/components/display-order-settings";
 import { NotificationSettings } from "@/components/notification-settings";
-import { DeviceDetailPanel } from "@/components/device-detail-panel";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,7 +77,7 @@ import {
 import {
   loadUiSettingsFromServer,
   saveChartColorsToServer,
-  saveDisplayOrderToServer,
+  getDefaultUiSettings,
 } from "@/lib/ui-settings-client";
 import {
   AuthError,
@@ -95,16 +93,26 @@ import {
   isAirconPowerOff,
   formatOutdoorApiLabel,
   PRIMARY_SENSOR_DEVICE_ID,
+  resolveAirconDataLoadStatus,
+  resolveLatestDataLoadStatus,
+  resolveOutdoorDataLoadStatus,
   type AirconData,
   type AirconUnitInfo,
   type ChartMetric,
   type ChartViewRange,
   type DailyStat,
+  type DeviceDataLoadStatus,
   type DeviceInfo,
   type LatestData,
   type OutdoorLocation,
   type SensorDeviceStatus,
 } from "@/lib/types";
+
+const DeviceDetailPanel = dynamic(
+  () =>
+    import("@/components/device-detail-panel").then((module) => module.DeviceDetailPanel),
+  { ssr: false }
+);
 
 interface DeviceMetric {
   key: string;
@@ -115,10 +123,49 @@ interface DeviceMetric {
 interface DeviceCardProps {
   title: string;
   metrics: DeviceMetric[];
+  metricsState: MetricsDisplayState;
   accentColor?: string;
   action?: React.ReactNode;
   onClick?: () => void;
   statusNote?: string;
+}
+
+type MetricsDisplayState = "loading" | "error" | "empty" | "ready";
+
+function resolveMetricsDisplayState(
+  metrics: DeviceMetric[],
+  loadStatus: DeviceDataLoadStatus | undefined,
+  dashboardDataLoaded: boolean
+): MetricsDisplayState {
+  if (metrics.length > 0) return "ready";
+  if (!dashboardDataLoaded) return "loading";
+  if (loadStatus === "error") return "error";
+  return "empty";
+}
+
+function metricsStateMessage(state: MetricsDisplayState): string {
+  switch (state) {
+    case "loading":
+      return "読み込み中...";
+    case "error":
+      return "データを読み込めませんでした";
+    case "empty":
+      return "データがありません";
+    default:
+      return "";
+  }
+}
+
+function DeviceCardSkeleton() {
+  return (
+    <div className="device-card text-left" aria-hidden="true">
+      <div className="mb-3 h-5 w-2/3 animate-pulse rounded bg-muted" />
+      <div className="flex flex-col gap-1.5">
+        <div className="h-6 w-1/2 animate-pulse rounded bg-muted" />
+        <div className="h-6 w-2/5 animate-pulse rounded bg-muted" />
+      </div>
+    </div>
+  );
 }
 
 function buildIndoorMetrics(
@@ -236,9 +283,21 @@ function buildOutdoorMetrics(data: LatestData | null | undefined): DeviceMetric[
   return metrics;
 }
 
+function buildLoadStatusFromLatest(
+  latestByDevice: Record<number, LatestData | null>,
+  deviceIds: readonly number[]
+): Record<number, DeviceDataLoadStatus> {
+  const status: Record<number, DeviceDataLoadStatus> = {};
+  for (const deviceId of deviceIds) {
+    status[deviceId] = resolveLatestDataLoadStatus(latestByDevice[deviceId], false);
+  }
+  return status;
+}
+
 function DeviceCard({
   title,
   metrics,
+  metricsState,
   accentColor,
   action,
   onClick,
@@ -337,7 +396,6 @@ export function MyRoomDashboard() {
   const [devicePanelOpen, setDevicePanelOpen] = useState(false);
   const [devicePanelId, setDevicePanelId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
-  const [displayOrderOpen, setDisplayOrderOpen] = useState(false);
   const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
   const [sensorStatuses, setSensorStatuses] = useState<SensorDeviceStatus[]>([]);
   const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>(() =>
@@ -359,6 +417,12 @@ export function MyRoomDashboard() {
   const [offlineSnapshot, setOfflineSnapshot] = useState<DashboardOfflineSnapshot | null>(
     null
   );
+  const [layoutReady, setLayoutReady] = useState(false);
+  const [dashboardDataLoaded, setDashboardDataLoaded] = useState(false);
+  const [latestLoadStatusByDevice, setLatestLoadStatusByDevice] = useState<
+    Record<number, DeviceDataLoadStatus>
+  >({});
+  const [airconLoadStatus, setAirconLoadStatus] = useState<DeviceDataLoadStatus>("empty");
 
   const activeAirconId = airconLatest?.ac_id ?? 1;
   const airconChartTitle =
@@ -367,7 +431,6 @@ export function MyRoomDashboard() {
     "エアコン";
 
   const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
-  const sensorDeviceIdsKey = sensorDeviceIds.join(",");
 
   const effectiveLineVisibility = useMemo(
     () =>
@@ -413,6 +476,7 @@ export function MyRoomDashboard() {
   });
 
   const applyOfflineSnapshot = useCallback((snapshot: DashboardOfflineSnapshot) => {
+    const sensorIds = getSensorDeviceIds(snapshot.devices);
     setLatestByDevice(snapshot.latestByDevice);
     setLatestData(snapshot.latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? null);
     setDailyStatsByDevice(snapshot.dailyStatsByDevice);
@@ -420,6 +484,12 @@ export function MyRoomDashboard() {
     setDevices(snapshot.devices);
     setAirconUnits(snapshot.airconUnits);
     setOutdoorLocation(snapshot.outdoorLocation);
+    setLatestLoadStatusByDevice(
+      buildLoadStatusFromLatest(snapshot.latestByDevice, sensorIds)
+    );
+    setAirconLoadStatus(resolveAirconDataLoadStatus(snapshot.airconLatest, false));
+    setDashboardDataLoaded(true);
+    setLayoutReady(true);
     setOfflineSnapshot(snapshot);
     setIsOfflineMode(true);
   }, []);
@@ -456,11 +526,55 @@ export function MyRoomDashboard() {
   }, [sensorDeviceIds]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    void reloadUiSettings();
-    setDefaultLineVisibility(loadChartLineVisibility(sensorDeviceIds));
-    setSessionLineOverrides({});
-  }, [isAuthenticated, sensorDeviceIdsKey, reloadUiSettings, sensorDeviceIds]);
+    if (!isAuthenticated) {
+      setLayoutReady(false);
+      setDashboardDataLoaded(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function bootstrap() {
+      try {
+        const [deviceList, units, outdoorLoc] = await Promise.all([
+          fetchDevices().catch(() => [] as DeviceInfo[]),
+          fetchAirconUnits().catch(() => [] as AirconUnitInfo[]),
+          fetchOutdoorLocation().catch(() => null),
+        ]);
+        if (cancelled) return;
+
+        const sensorIds = getSensorDeviceIds(deviceList);
+        let settings;
+        try {
+          settings = await loadUiSettingsFromServer(sensorIds);
+        } catch (err) {
+          if (err instanceof AuthError) {
+            setIsAuthenticated(false);
+            return;
+          }
+          settings = getDefaultUiSettings(sensorIds);
+        }
+        if (cancelled) return;
+
+        setDevices(deviceList);
+        setAirconUnits(units);
+        setOutdoorLocation(outdoorLoc);
+        setDisplayOrder(settings.displayOrder);
+        setChartColors(settings.chartColors);
+        setHiddenDeviceKeys(settings.hiddenDeviceKeys);
+        setDefaultLineVisibility(loadChartLineVisibility(sensorIds));
+        setSessionLineOverrides({});
+        setLayoutReady(true);
+      } catch {
+        if (!cancelled) setLayoutReady(true);
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const reloadVisibility = () => {
@@ -479,19 +593,6 @@ export function MyRoomDashboard() {
       window.removeEventListener(DISPLAY_ORDER_CHANGED_EVENT, reloadVisibility);
     };
   }, [reloadUiSettings]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    fetchOutdoorLocation()
-      .then(setOutdoorLocation)
-      .catch(() => setOutdoorLocation(null));
-    fetchDevices()
-      .then(setDevices)
-      .catch(() => setDevices([]));
-    fetchAirconUnits()
-      .then(setAirconUnits)
-      .catch(() => setAirconUnits([]));
-  }, [isAuthenticated]);
 
   const fetchData = useCallback(
     async (options?: { showChartLoading?: boolean; reloadHistory?: boolean }) => {
@@ -518,6 +619,8 @@ export function MyRoomDashboard() {
         setLatestData(data.latest);
         setDailyStatsByDevice(data.dailyStatsByDevice);
         setAirconLatest(data.airconLatest);
+        setLatestLoadStatusByDevice(data.latestLoadStatusByDevice);
+        setAirconLoadStatus(data.airconLoadStatus);
         if (sensorsStatus) {
           setSensorStatuses(sensorsStatus.devices);
         }
@@ -533,8 +636,18 @@ export function MyRoomDashboard() {
         const snapshot = await loadDashboardOfflineSnapshot();
         if (snapshot) {
           applyOfflineSnapshot(snapshot);
+        } else {
+          setLatestLoadStatusByDevice((prev) => {
+            const next = { ...prev };
+            for (const deviceId of visibleSensorDeviceIds) {
+              next[deviceId] = "error";
+            }
+            return next;
+          });
+          setAirconLoadStatus("error");
         }
       } finally {
+        setDashboardDataLoaded(true);
         setRefreshing(false);
         if (showChartLoading) setChartLoading(false);
       }
@@ -593,11 +706,11 @@ export function MyRoomDashboard() {
   }, [isAuthenticated, fetchData]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !layoutReady) return;
     fetchData();
     const interval = setInterval(() => fetchData(), 30000);
     return () => clearInterval(interval);
-  }, [isAuthenticated, fetchData]);
+  }, [isAuthenticated, layoutReady, fetchData]);
 
   const handleLogin = async (password: string) => {
     const ok = await login(password);
@@ -638,13 +751,6 @@ export function MyRoomDashboard() {
     }
     return ids;
   }, [visibleDisplayOrder, dailyStatsByDevice]);
-
-  const handleDisplayOrderChange = (order: DisplayOrderItem[]) => {
-    setDisplayOrder(order);
-    void saveDisplayOrderToServer(order).catch((err) => {
-      if (err instanceof AuthError) setIsAuthenticated(false);
-    });
-  };
 
   const handleChartColorChange = (key: string, color: string) => {
     setChartColors((prev) => {
@@ -744,7 +850,7 @@ export function MyRoomDashboard() {
     : null;
 
   return (
-    <div className="pb-10">
+    <div className="pb-24 sm:pb-10">
       <div className="space-y-6 px-5 pt-12">
         {isOfflineMode && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
@@ -813,33 +919,29 @@ export function MyRoomDashboard() {
 
         <section>
           <div className="mb-3 flex items-center justify-between px-0.5">
-            <div className="flex items-center gap-0.5">
-              <h2 className="section-title">センサー</h2>
-              <Link
-                href="/devices"
-                className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground"
-                aria-label="デバイス設定"
-              >
-                <Settings className="size-4" strokeWidth={1.75} />
-              </Link>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setDisplayOrderOpen(true)}
-                className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <ListOrdered className="size-4" />
-                表示順
-              </button>
-            </div>
+            <h2 className="section-title">センサー</h2>
+            <Link
+              href="/devices"
+              className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Settings className="size-4" strokeWidth={1.75} />
+              デバイス設定
+            </Link>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {visibleDisplayOrder.map((item) => {
+            {!layoutReady
+              ? buildDefaultDisplayOrder().map((_, index) => (
+                  <DeviceCardSkeleton key={`device-skeleton-${index}`} />
+                ))
+              : visibleDisplayOrder.map((item) => {
               if (item.type === "device") {
                 const deviceId = item.deviceId;
                 const device = getDeviceInfo(deviceId);
                 const accentColor = getDeviceChartColor(chartColors, deviceId);
+                const indoorMetrics = buildIndoorMetrics(
+                  latestByDevice[deviceId],
+                  accentColor
+                );
                 return (
                   <DeviceCard
                     key={`device-${deviceId}`}
@@ -855,18 +957,32 @@ export function MyRoomDashboard() {
                       setDevicePanelId(deviceId);
                       setDevicePanelOpen(true);
                     }}
-                    metrics={buildIndoorMetrics(latestByDevice[deviceId], accentColor)}
+                    metrics={indoorMetrics}
+                    metricsState={resolveMetricsDisplayState(
+                      indoorMetrics,
+                      latestLoadStatusByDevice[deviceId],
+                      dashboardDataLoaded
+                    )}
                     statusNote={formatStaleNote(deviceId)}
                   />
                 );
               }
 
               if (item.type === "outdoor") {
+                const outdoorLoadStatus = resolveOutdoorDataLoadStatus(
+                  sensorLatest,
+                  latestLoadStatusByDevice[PRIMARY_SENSOR_DEVICE_ID] === "error"
+                );
                 return (
                   <DeviceCard
                     key="outdoor"
                     title={formatOutdoorApiLabel(outdoorLocation?.name)}
                     metrics={outdoorMetrics}
+                    metricsState={resolveMetricsDisplayState(
+                      outdoorMetrics,
+                      outdoorLoadStatus,
+                      dashboardDataLoaded
+                    )}
                     action={
                       <ChevronRight
                         className="size-5 shrink-0 text-muted-foreground/60"
@@ -878,18 +994,24 @@ export function MyRoomDashboard() {
                 );
               }
 
+              const airconMetrics = buildAirconMetrics(
+                airconLatest,
+                getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID),
+                {
+                  showRoom: isAirconRoomVisible(hiddenDeviceKeys),
+                  showTarget: isAirconTargetVisible(hiddenDeviceKeys),
+                }
+              );
               return (
                 <DeviceCard
                   key="aircon"
                   title={airconTitle}
                   accentColor={getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)}
-                  metrics={buildAirconMetrics(
-                    airconLatest,
-                    getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID),
-                    {
-                      showRoom: isAirconRoomVisible(hiddenDeviceKeys),
-                      showTarget: isAirconTargetVisible(hiddenDeviceKeys),
-                    }
+                  metrics={airconMetrics}
+                  metricsState={resolveMetricsDisplayState(
+                    airconMetrics,
+                    airconLoadStatus,
+                    dashboardDataLoaded
                   )}
                 />
               );
@@ -941,22 +1063,17 @@ export function MyRoomDashboard() {
         </button>
       </div>
 
-      <DisplayOrderSettings
-        open={displayOrderOpen}
-        order={displayOrder}
-        deviceNames={deviceNames}
-        outdoorName={outdoorLocation?.name}
-        airconName={airconTitle}
+      <DeviceDetailPanel
+        open={devicePanelOpen}
+        deviceId={devicePanelId}
+        deviceName={deviceNames[devicePanelId] ?? `デバイス ${devicePanelId}`}
         chartColors={chartColors}
-        onClose={() => setDisplayOrderOpen(false)}
-        onChange={handleDisplayOrderChange}
-      />
-
-      <SensorRecordsPanel
-        open={recordsPanelOpen}
-        deviceId={recordsDeviceId}
-        deviceName={deviceNames[recordsDeviceId] ?? `デバイス ${recordsDeviceId}`}
-        onClose={() => setRecordsPanelOpen(false)}
+        lineVisibility={effectiveLineVisibility}
+        devices={devices}
+        isOfflineMode={isOfflineMode}
+        offlineHistory={offlineSnapshot?.historyData ?? null}
+        offlineCacheKey={offlineSnapshot?.cachedAt ?? null}
+        onClose={() => setDevicePanelOpen(false)}
         onChanged={() => fetchData({ reloadHistory: true })}
       />
 

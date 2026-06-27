@@ -2,6 +2,7 @@ import type { ChartMetric, ChartViewRange, HistoryPoint } from "@/lib/types";
 import {
   CHART_METRICS,
   deviceAirconPowerKey,
+  deviceDht11TemperatureKey,
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
@@ -103,6 +104,11 @@ export function mergeMultiDeviceHistory(
         if (Array.isArray(range) && range.length === 2) {
           rowRecord[`d${deviceId}_${metric}Range`] = range;
         }
+      }
+
+      const dht11 = point.temperature_dht11;
+      if (typeof dht11 === "number" && !Number.isNaN(dht11)) {
+        rowRecord[deviceDht11TemperatureKey(deviceId)] = dht11;
       }
     }
   }

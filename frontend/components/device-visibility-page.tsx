@@ -52,6 +52,7 @@ import {
   isTargetVisible,
   isAirconRoomVisible,
   isAirconTargetVisible,
+  isDeviceDht11Visible,
   setHiddenKeyVisible,
   setTargetVisible,
   sortDisplayOrderHiddenLast,
@@ -59,6 +60,7 @@ import {
   AIRCON_TARGET_VISIBILITY_KEY,
   VISIBLE_DEVICES_CHANGED_EVENT,
 } from "@/lib/visible-devices";
+import { deviceDht11VisibilityKey } from "@/lib/chart-line-visibility";
 import {
   loadUiSettingsFromServer,
   saveChartColorsToServer,
@@ -439,7 +441,7 @@ export function DeviceVisibilityPage() {
       if (device.id === deviceId || device.id === AIRCON_CHART_DEVICE_ID) continue;
       options.push({
         value: device.id,
-        label: device.name || `デバイス ${device.id}`,
+        label: `${device.name || `デバイス ${device.id}`} (ID: ${device.id})`,
       });
     }
     return options;
@@ -475,8 +477,25 @@ export function DeviceVisibilityPage() {
               onChange: (color) => handleColorChange(deviceColorKey(deviceId), color),
             },
           ]}
-          visible={isTargetVisible(hiddenKeys, item)}
-          onVisibleChange={(visible) => handleVisibilityChange(item, visible)}
+          visibilityToggles={[
+            {
+              id: `${key}-dashboard-visible`,
+              label: "ダッシュボードに表示",
+              visible: isTargetVisible(hiddenKeys, item),
+              onChange: (visible) => handleVisibilityChange(item, visible),
+            },
+            {
+              id: `${key}-dht11-visible`,
+              label: "DHT11温度を表示",
+              description: "オフにするとグラフから DHT11 の温度系列を非表示にします",
+              visible: isDeviceDht11Visible(hiddenKeys, deviceId),
+              onChange: (visible) =>
+                handleHiddenKeyVisibilityChange(
+                  deviceDht11VisibilityKey(deviceId),
+                  visible
+                ),
+            },
+          ]}
           visibilityId={`visible-${key}`}
           onSave={() => void saveDeviceName(deviceId)}
           saving={savingKey === key}
