@@ -17,8 +17,12 @@ DB_MOCK = os.getenv("DB_MOCK", "true").lower() == "true"
 
 Base = declarative_base()
 
-class DHTRecord(Base):
-    __tablename__ = "dht"
+SENSOR_READINGS_TABLE = "sensor_readings"
+LEGACY_SENSOR_READINGS_TABLE = "dht"
+
+
+class SensorRecord(Base):
+    __tablename__ = SENSOR_READINGS_TABLE
     
     # Existing schema has composite PK or just datetime/pressure as PK. 
     # Setting datetime as PK for SQLAlchemy mapping.
@@ -26,6 +30,7 @@ class DHTRecord(Base):
     device_id = Column(Integer, primary_key=True, default=1)
     
     temperature = Column(Float, nullable=True)
+    temperature_dht11 = Column(Float, nullable=True)
     humidity = Column(Integer, nullable=True)
     pressure = Column(Integer, nullable=True)
     co2 = Column(Integer, nullable=True)
@@ -49,7 +54,7 @@ class AirconRecord(Base):
     online = Column(Integer, nullable=True)
     model = Column(String(100), nullable=True)
 
-# DHTDaily model removed as we aggregate from dht table directly
+# SensorDaily model removed as we aggregate from sensor_readings table directly
 
 # Mock Data Generator
 def generate_mock_history_for_range(

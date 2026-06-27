@@ -9,6 +9,7 @@ export interface LatestData {
   device_id?: number;
   datetime?: string;
   temperature?: number;
+  temperature_dht11?: number;
   humidity?: number;
   pressure?: number;
   co2?: number;
@@ -22,6 +23,7 @@ export interface SensorRecord {
   datetime: string;
   device_id: number;
   temperature?: number | null;
+  temperature_dht11?: number | null;
   humidity?: number | null;
   pressure?: number | null;
   co2?: number | null;
@@ -39,6 +41,7 @@ export interface HistoryPoint {
   datetime?: string;
   datetimeObj: number;
   temperature?: number;
+  temperature_dht11?: number;
   humidity?: number;
   pressure?: number;
   co2?: number;
@@ -163,8 +166,11 @@ export const FALLBACK_SENSOR_DEVICE_IDS = [1, 2] as const;
 /** @deprecated API のデバイス一覧を使う。互換用フォールバックのみ */
 export const DASHBOARD_SENSOR_DEVICE_IDS = FALLBACK_SENSOR_DEVICE_IDS;
 
-/** グラフ用の仮想デバイスID（エアコン室温）。屋内センサー一覧からは除外する */
-export const AIRCON_CHART_DEVICE_ID = 3;
+/** グラフ用の仮想デバイスID（エアコン室温）。実センサーの device_id と重複しない値 */
+export const AIRCON_CHART_DEVICE_ID = 9001;
+
+/** @deprecated 旧バージョンでエアコン室温に使っていた ID（localStorage 移行用） */
+export const LEGACY_AIRCON_CHART_DEVICE_ID = 3;
 
 /** /api/devices から屋内センサーの device_id 一覧を得る */
 export function getSensorDeviceIds(devices: DeviceInfo[]): number[] {
@@ -271,7 +277,8 @@ export const AIRCON_TARGET_CHART_KEY = "airconTarget";
 export const DEVICE_LINE_COLORS: Record<number, string> = {
   1: "#3498db",
   2: "#e67e22",
-  3: "#1abc9c",
+  3: "#9b59b6",
+  [AIRCON_CHART_DEVICE_ID]: "#1abc9c",
 };
 
 /** エアコン設定温度ライン（室温とは別色） */

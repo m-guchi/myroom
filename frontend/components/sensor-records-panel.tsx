@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Settings, Trash2, X } from "lucide-react";
+import { LayoutGrid, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteSensorRecord, fetchSensorRecords } from "@/lib/api";
 import type { SensorRecord } from "@/lib/types";
@@ -11,7 +12,6 @@ interface SensorRecordsPanelProps {
   deviceId: number;
   deviceName: string;
   onClose: () => void;
-  onOpenSettings: () => void;
   onChanged: () => void;
 }
 
@@ -42,7 +42,6 @@ export function SensorRecordsPanel({
   deviceId,
   deviceName,
   onClose,
-  onOpenSettings,
   onChanged,
 }: SensorRecordsPanelProps) {
   const [records, setRecords] = useState<SensorRecord[]>([]);
@@ -117,14 +116,14 @@ export function SensorRecordsPanel({
             <p className="text-xs text-muted-foreground">記録一覧・外れ値の削除</p>
           </div>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={onOpenSettings}
+            <Link
+              href="/devices"
+              onClick={onClose}
               className="flex size-8 items-center justify-center rounded-full hover:bg-accent"
-              aria-label="表示名を設定"
+              aria-label="デバイス設定"
             >
-              <Settings className="size-5 text-muted-foreground" />
-            </button>
+              <LayoutGrid className="size-5 text-muted-foreground" />
+            </Link>
             <button
               type="button"
               onClick={onClose}

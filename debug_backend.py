@@ -1,5 +1,5 @@
 from backend import database
-from backend.database import SessionLocal, DHTRecord
+from backend.database import SessionLocal, SensorRecord
 import datetime
 import pandas as pd
 
@@ -8,7 +8,7 @@ def debug_daily_stats():
     start_date = datetime.date.today() - datetime.timedelta(days=7)
     
     print(f"Querying from {start_date}")
-    records = db.query(DHTRecord).filter(DHTRecord.datetime >= start_date).all()
+    records = db.query(SensorRecord).filter(SensorRecord.datetime >= start_date).all()
     print(f"Found {len(records)} records")
 
     if not records:

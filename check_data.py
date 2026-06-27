@@ -1,4 +1,4 @@
-from backend.database import SessionLocal, DHTRecord
+from backend.database import SessionLocal, SensorRecord, SENSOR_READINGS_TABLE
 from sqlalchemy import func
 
 def check_data():
@@ -8,10 +8,10 @@ def check_data():
 
     db = SessionLocal()
     try:
-        count = db.query(func.count(DHTRecord.datetime)).scalar()
-        print(f"Total records in 'dht': {count}")
+        count = db.query(func.count(SensorRecord.datetime)).scalar()
+        print(f"Total records in '{SENSOR_READINGS_TABLE}': {count}")
         
-        latest = db.query(DHTRecord).order_by(DHTRecord.datetime.desc()).first()
+        latest = db.query(SensorRecord).order_by(SensorRecord.datetime.desc()).first()
         if latest:
             print(f"Latest record: {latest.datetime}, Temp: {latest.temperature}, Humid: {latest.humidity}")
         else:

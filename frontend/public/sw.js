@@ -1,4 +1,4 @@
-const CACHE_NAME = "myroom-shell-v2-5-0";
+const CACHE_NAME = "myroom-shell-v2-6-0";
 
 self.addEventListener("push", (event) => {
   let payload = {

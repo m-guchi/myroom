@@ -1,4 +1,4 @@
-from backend.database import engine
+from backend.database import engine, SENSOR_READINGS_TABLE, LEGACY_SENSOR_READINGS_TABLE
 from sqlalchemy import text
 
 def inspect_schema():
@@ -7,13 +7,16 @@ def inspect_schema():
         return
 
     with engine.connect() as conn:
-        try:
-            result = conn.execute(text("DESCRIBE dht"))
-            print("Table 'dht' columns:")
-            for row in result:
-                print(row)
-        except Exception as e:
-            print(f"Error: {e}")
+        for table_name in (SENSOR_READINGS_TABLE, LEGACY_SENSOR_READINGS_TABLE):
+            try:
+                result = conn.execute(text(f"DESCRIBE `{table_name}`"))
+                print(f"Table '{table_name}' columns:")
+                for row in result:
+                    print(row)
+                return
+            except Exception:
+                continue
+        print("Neither sensor_readings nor legacy dht table found.")
 
 if __name__ == "__main__":
     inspect_schema()

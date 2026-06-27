@@ -35,6 +35,7 @@ app.add_middleware(
 class SensorData(BaseModel):
     datetime: str
     temperature: Optional[float] = None
+    temperature_dht11: Optional[float] = None
     humidity: Optional[float] = None
     pressure: Optional[float] = None
     co2: Optional[int] = None
@@ -46,6 +47,7 @@ class SensorData(BaseModel):
             v is None
             for v in (
                 self.temperature,
+                self.temperature_dht11,
                 self.humidity,
                 self.pressure,
                 self.co2,
@@ -53,7 +55,7 @@ class SensorData(BaseModel):
             )
         ):
             raise ValueError(
-                "At least one of temperature, humidity, pressure, co2, or illuminance is required"
+                "At least one of temperature, temperature_dht11, humidity, pressure, co2, or illuminance is required"
             )
         return self
 
@@ -145,7 +147,7 @@ def _build_aircon_payload(record: Optional[database.AirconRecord]) -> dict:
 def _discover_device_ids(db: Optional[Session]) -> List[int]:
     if database.DB_MOCK or db is None:
         return []
-    rows = db.query(database.DHTRecord.device_id).distinct().all()
+    rows = db.query(database.SensorRecord.device_id).distinct().all()
     return sorted({row[0] for row in rows if row[0] is not None})
 
 
@@ -177,9 +179,9 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
         return payload
 
     record = (
-        db.query(database.DHTRecord)
-        .filter(database.DHTRecord.device_id == device)
-        .order_by(database.DHTRecord.datetime.desc())
+        db.query(database.SensorRecord)
+        .filter(database.SensorRecord.device_id == device)
+        .order_by(database.SensorRecord.datetime.desc())
         .first()
     )
     if not record:
@@ -190,6 +192,7 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
         "device_id": device,
         "datetime": record.datetime,
         "temperature": record.temperature,
+        "temperature_dht11": record.temperature_dht11,
         "humidity": record.humidity,
         "pressure": record.pressure if record.pressure else None,
         "co2": record.co2,
@@ -361,10 +364,11 @@ async def create_sensor_data(
         # Create record
         # Note: Pressure is stored as integer (Pa?) in DB based on get_latest logic (val / 100.0)
         # Assuming input is hPa (e.g. 1013), store as 101300
-        record = database.DHTRecord(
+        record = database.SensorRecord(
             datetime=dt,
             device_id=device,
             temperature=data.temperature,
+            temperature_dht11=data.temperature_dht11,
             humidity=int(data.humidity) if data.humidity is not None else None,
             pressure=int(data.pressure) if data.pressure is not None else None,
             co2=data.co2,
@@ -398,9 +402,9 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
     import pandas as pd
     
     # Fetch raw data for the last 7 days for specific device
-    records = db.query(database.DHTRecord).filter(
-        database.DHTRecord.datetime >= start_date,
-        database.DHTRecord.device_id == device
+    records = db.query(database.SensorRecord).filter(
+        database.SensorRecord.datetime >= start_date,
+        database.SensorRecord.device_id == device
     ).all()
     
     if not records:
@@ -409,6 +413,7 @@ def get_daily_stats(device: int = 1, db: Session = Depends(database.get_db)):
     data = [{
         "datetime": r.datetime,
         "temperature": r.temperature,
+        "temperature_dht11": r.temperature_dht11,
         "humidity": r.humidity,
         "pressure": r.pressure if r.pressure else None,
         "co2": r.co2,
@@ -618,11 +623,12 @@ def _normalize_pressure_hpa(pressure: Optional[int]) -> Optional[float]:
     return float(pressure)
 
 
-def _format_record_row(record: database.DHTRecord) -> dict:
+def _format_record_row(record: database.SensorRecord) -> dict:
     return {
         "datetime": record.datetime.strftime("%Y-%m-%d %H:%M:%S"),
         "device_id": record.device_id,
         "temperature": record.temperature,
+        "temperature_dht11": record.temperature_dht11,
         "humidity": record.humidity,
         "pressure": _normalize_pressure_hpa(record.pressure),
         "co2": record.co2,
@@ -674,6 +680,7 @@ def get_sensor_records(
                 "datetime": row["datetime"].strftime("%Y-%m-%d %H:%M:%S"),
                 "device_id": device,
                 "temperature": row.get("temperature"),
+                "temperature_dht11": row.get("temperature_dht11"),
                 "humidity": row.get("humidity"),
                 "pressure": row.get("pressure"),
                 "co2": row.get("co2"),
@@ -683,20 +690,20 @@ def get_sensor_records(
         ]
         return {"records": records, "total": total, "limit": limit, "offset": offset}
 
-    filters = [database.DHTRecord.device_id == device]
+    filters = [database.SensorRecord.device_id == device]
     if use_date_filter:
         filters.extend(
             [
-                database.DHTRecord.datetime >= start_time,
-                database.DHTRecord.datetime <= end_time,
+                database.SensorRecord.datetime >= start_time,
+                database.SensorRecord.datetime <= end_time,
             ]
         )
 
-    total = db.query(database.DHTRecord).filter(*filters).count()
+    total = db.query(database.SensorRecord).filter(*filters).count()
     rows = (
-        db.query(database.DHTRecord)
+        db.query(database.SensorRecord)
         .filter(*filters)
-        .order_by(database.DHTRecord.datetime.desc())
+        .order_by(database.SensorRecord.datetime.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -726,10 +733,10 @@ def delete_sensor_record(
         return {"status": "mock_ok", "deleted": True}
 
     deleted = (
-        db.query(database.DHTRecord)
+        db.query(database.SensorRecord)
         .filter(
-            database.DHTRecord.device_id == device,
-            database.DHTRecord.datetime == dt,
+            database.SensorRecord.device_id == device,
+            database.SensorRecord.datetime == dt,
         )
         .delete(synchronize_session=False)
     )
@@ -746,17 +753,18 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
     if database.DB_MOCK:
         records_raw = database.generate_mock_history_for_range(start_time, end_time, device)
     else:
-        records_raw_unformatted = db.query(database.DHTRecord).filter(
-            database.DHTRecord.datetime >= start_time,
-            database.DHTRecord.datetime <= end_time,
-            database.DHTRecord.device_id == device
-        ).order_by(database.DHTRecord.datetime.asc()).all()
+        records_raw_unformatted = db.query(database.SensorRecord).filter(
+            database.SensorRecord.datetime >= start_time,
+            database.SensorRecord.datetime <= end_time,
+            database.SensorRecord.device_id == device
+        ).order_by(database.SensorRecord.datetime.asc()).all()
         # Convert SQLAlchemy objects to dicts
         records_raw = []
         for r in records_raw_unformatted:
             records_raw.append({
                 "datetime": r.datetime,
                 "temperature": r.temperature,
+                "temperature_dht11": r.temperature_dht11,
                 "humidity": r.humidity,
                 "pressure": r.pressure,
                 "co2": r.co2,
@@ -860,6 +868,7 @@ def get_history(date: Optional[str] = None, range: Optional[str] = None, start: 
         formatted_records.append({
             "datetime": r['datetime'],
             "temperature": r.get('temperature'),
+            "temperature_dht11": r.get('temperature_dht11'),
             "humidity": r.get('humidity'),
             "pressure": r.get('pressure'),
             "co2": r.get('co2'),

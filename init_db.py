@@ -1,4 +1,4 @@
-from backend.database import engine, Base, DHTRecord, DHTDaily
+from backend.database import engine, Base, SensorRecord
 
 def init_db():
     if engine is None:

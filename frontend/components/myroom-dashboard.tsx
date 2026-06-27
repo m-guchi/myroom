@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ChevronRight,
@@ -17,8 +18,6 @@ import {
 import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
-import { DeviceNameSettings } from "@/components/device-name-settings";
-import { AirconNameSettings } from "@/components/aircon-name-settings";
 import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
 import { DisplayOrderSettings } from "@/components/display-order-settings";
 import { NotificationSettings } from "@/components/notification-settings";
@@ -49,10 +48,9 @@ import {
   type DisplayOrderItem,
 } from "@/lib/display-order";
 import {
-  AIRCON_TARGET_COLOR_KEY,
   buildDefaultChartColors,
+  CHART_COLORS_CHANGED_EVENT,
   deviceColorKey,
-  getAirconTargetChartColor,
   getDeviceChartColor,
   getOutdoorChartColor,
   loadChartColors,
@@ -67,12 +65,18 @@ import {
   isChartLineVisible,
   loadChartLineVisibility,
   mergeEffectiveChartLineVisibility,
-  AIRCON_TARGET_VISIBILITY_KEY,
   OUTDOOR_VISIBILITY_KEY,
   saveChartLineVisibility,
   type ChartLineVisibilityOverrides,
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
+import {
+  filterDisplayOrderByVisibility,
+  getVisibleChartDeviceIds,
+  getVisibleSensorDeviceIds,
+  loadHiddenDeviceKeys,
+  VISIBLE_DEVICES_CHANGED_EVENT,
+} from "@/lib/visible-devices";
 import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
@@ -106,7 +110,6 @@ interface DeviceCardProps {
   accentColor?: string;
   action?: React.ReactNode;
   onClick?: () => void;
-  onSettingsClick?: () => void;
   statusNote?: string;
 }
 
@@ -228,7 +231,6 @@ function DeviceCard({
   accentColor,
   action,
   onClick,
-  onSettingsClick,
   statusNote,
 }: DeviceCardProps) {
   const className = onClick
@@ -246,22 +248,7 @@ function DeviceCard({
         >
           {title}
         </p>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {onSettingsClick && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onSettingsClick();
-              }}
-              className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground"
-              aria-label={`${title}の設定`}
-            >
-              <Settings className="size-4" strokeWidth={1.75} />
-            </button>
-          )}
-          {action}
-        </div>
+        {action && <div className="flex shrink-0 items-center">{action}</div>}
       </div>
       {statusNote && (
         <p className="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -328,8 +315,6 @@ export function MyRoomDashboard() {
   const [dailyLimit, setDailyLimit] = useState(7);
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
   const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
-  const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
-  const [deviceSettingsId, setDeviceSettingsId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [recordsPanelOpen, setRecordsPanelOpen] = useState(false);
   const [recordsDeviceId, setRecordsDeviceId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
@@ -339,6 +324,7 @@ export function MyRoomDashboard() {
   const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>(() =>
     buildDefaultDisplayOrder()
   );
+  const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState<Set<string>>(() => new Set());
   const [chartColors, setChartColors] = useState<ChartColorSettings>(() =>
     buildDefaultChartColors()
   );
@@ -354,14 +340,12 @@ export function MyRoomDashboard() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconLatest, setAirconLatest] = useState<AirconData | null>(null);
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
-  const [airconSettingsOpen, setAirconSettingsOpen] = useState(false);
-  const [airconSettingsId, setAirconSettingsId] = useState(1);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [offlineSnapshot, setOfflineSnapshot] = useState<DashboardOfflineSnapshot | null>(
     null
   );
 
-  const activeAirconId = airconLatest?.ac_id ?? airconSettingsId;
+  const activeAirconId = airconLatest?.ac_id ?? 1;
   const airconChartTitle =
     airconLatest?.name ??
     airconUnits.find((unit) => unit.ac_id === activeAirconId)?.name ??
@@ -370,9 +354,19 @@ export function MyRoomDashboard() {
   const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
   const sensorDeviceIdsKey = sensorDeviceIds.join(",");
 
+  const visibleSensorDeviceIds = useMemo(
+    () => getVisibleSensorDeviceIds(sensorDeviceIds, hiddenDeviceKeys),
+    [sensorDeviceIds, hiddenDeviceKeys]
+  );
+
   const chartDeviceIds = useMemo(
-    () => [...sensorDeviceIds, AIRCON_CHART_DEVICE_ID],
-    [sensorDeviceIds]
+    () => getVisibleChartDeviceIds(sensorDeviceIds, hiddenDeviceKeys),
+    [sensorDeviceIds, hiddenDeviceKeys]
+  );
+
+  const visibleDisplayOrder = useMemo(
+    () => filterDisplayOrderByVisibility(displayOrder, hiddenDeviceKeys),
+    [displayOrder, hiddenDeviceKeys]
   );
 
   const {
@@ -383,7 +377,7 @@ export function MyRoomDashboard() {
     resetAndLoad,
     refreshLatest,
     ensureVisibleRangeLoaded,
-  } = useChartHistory(sensorDeviceIds, viewRange, {
+  } = useChartHistory(visibleSensorDeviceIds, viewRange, {
     airconAcId: activeAirconId,
     airconChartDeviceId: AIRCON_CHART_DEVICE_ID,
     pollIntervalMs: 30000,
@@ -426,8 +420,25 @@ export function MyRoomDashboard() {
   useEffect(() => {
     setDisplayOrder(loadDisplayOrder(sensorDeviceIds));
     setDefaultLineVisibility(loadChartLineVisibility(sensorDeviceIds));
+    setHiddenDeviceKeys(loadHiddenDeviceKeys(sensorDeviceIds));
     setSessionLineOverrides({});
   }, [sensorDeviceIdsKey]);
+
+  useEffect(() => {
+    const reloadVisibility = () => {
+      setHiddenDeviceKeys(loadHiddenDeviceKeys(sensorDeviceIds));
+    };
+    const reloadChartColors = () => {
+      setChartColors(loadChartColors());
+    };
+
+    window.addEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
+    window.addEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
+    return () => {
+      window.removeEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
+      window.removeEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
+    };
+  }, [sensorDeviceIdsKey, sensorDeviceIds]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -458,7 +469,7 @@ export function MyRoomDashboard() {
         }
 
         const [data, sensorsStatus] = await Promise.all([
-          fetchDashboardData(airconLatest?.ac_id ?? airconSettingsId, sensorDeviceIds),
+          fetchDashboardData(airconLatest?.ac_id ?? 1, visibleSensorDeviceIds),
           fetchSensorsStatus().catch(() => null),
         ]);
         setIsOfflineMode(false);
@@ -487,8 +498,7 @@ export function MyRoomDashboard() {
     [
       resetAndLoad,
       airconLatest?.ac_id,
-      airconSettingsId,
-      sensorDeviceIds,
+      visibleSensorDeviceIds,
       applyOfflineSnapshot,
     ]
   );
@@ -572,7 +582,7 @@ export function MyRoomDashboard() {
 
   const dailyStatsDeviceIds = useMemo(() => {
     const ids: number[] = [];
-    for (const item of displayOrder) {
+    for (const item of visibleDisplayOrder) {
       if (item.type === "device") {
         ids.push(item.deviceId);
       } else if (
@@ -583,7 +593,7 @@ export function MyRoomDashboard() {
       }
     }
     return ids;
-  }, [displayOrder, dailyStatsByDevice]);
+  }, [visibleDisplayOrder, dailyStatsByDevice]);
 
   const handleDisplayOrderChange = (order: DisplayOrderItem[]) => {
     setDisplayOrder(order);
@@ -746,7 +756,7 @@ export function MyRoomDashboard() {
             onVisibleDomainChange={ensureVisibleRangeLoaded}
             airconTargetDeviceId={AIRCON_CHART_DEVICE_ID}
             outdoorLocationName={outdoorLocation?.name}
-            legendOrder={displayOrder}
+            legendOrder={visibleDisplayOrder}
             chartColors={chartColors}
             lineVisibility={effectiveLineVisibility}
             onLineVisibilityChange={handleSessionChartLineVisibleChange}
@@ -755,7 +765,16 @@ export function MyRoomDashboard() {
 
         <section>
           <div className="mb-3 flex items-center justify-between px-0.5">
-            <h2 className="section-title">センサー</h2>
+            <div className="flex items-center gap-0.5">
+              <h2 className="section-title">センサー</h2>
+              <Link
+                href="/devices"
+                className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground"
+                aria-label="デバイス設定"
+              >
+                <Settings className="size-4" strokeWidth={1.75} />
+              </Link>
+            </div>
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -768,7 +787,7 @@ export function MyRoomDashboard() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {displayOrder.map((item) => {
+            {visibleDisplayOrder.map((item) => {
               if (item.type === "device") {
                 const deviceId = item.deviceId;
                 const device = getDeviceInfo(deviceId);
@@ -784,10 +803,6 @@ export function MyRoomDashboard() {
                         strokeWidth={1.75}
                       />
                     }
-                    onSettingsClick={() => {
-                      setDeviceSettingsId(deviceId);
-                      setDeviceSettingsOpen(true);
-                    }}
                     onClick={() => {
                       setRecordsDeviceId(deviceId);
                       setRecordsPanelOpen(true);
@@ -810,7 +825,6 @@ export function MyRoomDashboard() {
                         strokeWidth={1.75}
                       />
                     }
-                    onSettingsClick={() => setOutdoorSettingsOpen(true)}
                     onClick={() => setOutdoorSettingsOpen(true)}
                   />
                 );
@@ -821,20 +835,6 @@ export function MyRoomDashboard() {
                   key="aircon"
                   title={airconTitle}
                   accentColor={getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)}
-                  action={
-                    <ChevronRight
-                      className="size-5 shrink-0 text-muted-foreground/60"
-                      strokeWidth={1.75}
-                    />
-                  }
-                  onSettingsClick={() => {
-                    setAirconSettingsId(activeAirconId);
-                    setAirconSettingsOpen(true);
-                  }}
-                  onClick={() => {
-                    setAirconSettingsId(activeAirconId);
-                    setAirconSettingsOpen(true);
-                  }}
                   metrics={buildAirconMetrics(
                     airconLatest,
                     getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)
@@ -900,39 +900,11 @@ export function MyRoomDashboard() {
         onChange={handleDisplayOrderChange}
       />
 
-      <DeviceNameSettings
-        open={deviceSettingsOpen}
-        deviceId={deviceSettingsId}
-        chartColor={getDeviceChartColor(chartColors, deviceSettingsId)}
-        onChartColorChange={(color) =>
-          handleChartColorChange(deviceColorKey(deviceSettingsId), color)
-        }
-        chartLineVisible={isChartLineVisible(
-          defaultLineVisibility,
-          deviceVisibilityKey(deviceSettingsId)
-        )}
-        onChartLineVisibleChange={(visible) =>
-          handleDefaultChartLineVisibleChange(deviceVisibilityKey(deviceSettingsId), visible)
-        }
-        onClose={() => setDeviceSettingsOpen(false)}
-        onSaved={(device) => {
-          setDevices((prev) => {
-            const others = prev.filter((item) => item.id !== device.id);
-            return [...others, device].sort((a, b) => a.id - b.id);
-          });
-        }}
-      />
-
       <SensorRecordsPanel
         open={recordsPanelOpen}
         deviceId={recordsDeviceId}
         deviceName={deviceNames[recordsDeviceId] ?? `デバイス ${recordsDeviceId}`}
         onClose={() => setRecordsPanelOpen(false)}
-        onOpenSettings={() => {
-          setRecordsPanelOpen(false);
-          setDeviceSettingsId(recordsDeviceId);
-          setDeviceSettingsOpen(true);
-        }}
         onChanged={() => fetchData({ reloadHistory: true })}
       />
 
@@ -947,47 +919,6 @@ export function MyRoomDashboard() {
         onClose={() => setOutdoorSettingsOpen(false)}
         onSaved={(location) => {
           setOutdoorLocation(location);
-          fetchData();
-        }}
-      />
-
-      <AirconNameSettings
-        open={airconSettingsOpen}
-        acId={airconSettingsId}
-        roomChartColor={getDeviceChartColor(chartColors, AIRCON_CHART_DEVICE_ID)}
-        targetChartColor={getAirconTargetChartColor(chartColors)}
-        onRoomChartColorChange={(color) =>
-          handleChartColorChange(deviceColorKey(AIRCON_CHART_DEVICE_ID), color)
-        }
-        onTargetChartColorChange={(color) =>
-          handleChartColorChange(AIRCON_TARGET_COLOR_KEY, color)
-        }
-        roomChartLineVisible={isChartLineVisible(
-          defaultLineVisibility,
-          deviceVisibilityKey(AIRCON_CHART_DEVICE_ID)
-        )}
-        targetChartLineVisible={isChartLineVisible(
-          defaultLineVisibility,
-          AIRCON_TARGET_VISIBILITY_KEY
-        )}
-        onRoomChartLineVisibleChange={(visible) =>
-          handleDefaultChartLineVisibleChange(
-            deviceVisibilityKey(AIRCON_CHART_DEVICE_ID),
-            visible
-          )
-        }
-        onTargetChartLineVisibleChange={(visible) =>
-          handleDefaultChartLineVisibleChange(AIRCON_TARGET_VISIBILITY_KEY, visible)
-        }
-        onClose={() => setAirconSettingsOpen(false)}
-        onSaved={(unit: AirconUnitInfo) => {
-          setAirconUnits((prev) => {
-            const others = prev.filter((item) => item.ac_id !== unit.ac_id);
-            return [...others, unit].sort((a, b) => a.ac_id - b.ac_id);
-          });
-          setAirconLatest((prev) =>
-            prev && prev.ac_id === unit.ac_id ? { ...prev, name: unit.name } : prev
-          );
           fetchData();
         }}
       />
