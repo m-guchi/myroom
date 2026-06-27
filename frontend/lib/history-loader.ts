@@ -31,6 +31,23 @@ export function getHistoryInitialSpanMs(viewRange: ChartViewRange): number {
   }
 }
 
+/** 初回表示用の短い期間（先に取得してグラフを早く出す） */
+export function getHistoryQuickInitialSpanMs(viewRange: ChartViewRange): number {
+  const windowMs = getViewRangeMs(viewRange);
+  switch (viewRange) {
+    case "day":
+      return windowMs * 1.5;
+    case "week":
+      return windowMs * 1.2;
+    case "month":
+      return windowMs * 1.2;
+    case "year":
+      return 120 * DAY_MS;
+    default:
+      return windowMs * 1.2;
+  }
+}
+
 /** パン時に追加取得する1チャンクの長さ */
 export function getHistoryChunkMs(viewRange: ChartViewRange): number {
   if (viewRange === "year") return 180 * DAY_MS;

@@ -6,17 +6,30 @@ import { fetchAirconHistoryWindow, fetchHistoryWindow } from "@/lib/api";
 import {
   getHistoryChunkMs,
   getHistoryInitialSpanMs,
+  getHistoryQuickInitialSpanMs,
   getLoadedRange,
   mergeAirconIntoHistory,
   mergeHistoryPoints,
   mergeMultiDeviceHistory,
 } from "@/lib/history-loader";
 import {
+  loadDashboardOfflineSnapshot,
+  type DashboardOfflineSnapshot,
+} from "@/lib/offline-cache";
+import {
   expandDeviceIdsForHistory,
   applyAllDeviceInheritance,
 } from "@/lib/device-inheritance";
 import type { ChartViewRange, DeviceInfo, HistoryPoint } from "@/lib/types";
 import { AIRCON_CHART_DEVICE_ID } from "@/lib/types";
+
+function isSnapshotCompatibleWithDevices(
+  snapshot: DashboardOfflineSnapshot,
+  deviceIds: readonly number[]
+): boolean {
+  const cached = new Set(snapshot.sensorDeviceIds);
+  return deviceIds.length > 0 && deviceIds.every((id) => cached.has(id));
+}
 
 export interface UseChartHistoryOptions {
   airconAcId?: number | null;
@@ -56,30 +69,32 @@ export function useChartHistory(
   const loadedRangeRef = useRef<{ min: number; max: number } | null>(null);
   const loadingOlderRef = useRef(false);
   const loadingNewerRef = useRef(false);
+  const loadGenerationRef = useRef(0);
+  const historyDataRef = useRef<HistoryPoint[]>([]);
+  historyDataRef.current = historyData;
   const deviceIdsKey = deviceIds.join(",");
   const airconKey = airconAcId ?? "none";
 
   const fetchMergedWindow = useCallback(
     async (start: Date, end: Date) => {
       const fetchIds = expandDeviceIdsForHistory(deviceIds, devices);
-      const sensorChunks = await Promise.all(
-        fetchIds.map((deviceId) =>
-          fetchHistoryWindow(start, end, viewRange, deviceId)
-        )
-      );
+      const [sensorChunks, airconChunk] = await Promise.all([
+        Promise.all(
+          fetchIds.map((deviceId) =>
+            fetchHistoryWindow(start, end, viewRange, deviceId)
+          )
+        ),
+        airconAcId != null
+          ? fetchAirconHistoryWindow(start, end, viewRange, airconAcId)
+          : Promise.resolve([]),
+      ]);
       const byDevice = Object.fromEntries(
         fetchIds.map((deviceId, index) => [deviceId, sensorChunks[index]])
       ) as Record<number, HistoryPoint[]>;
       let merged = mergeMultiDeviceHistory(byDevice);
       merged = applyAllDeviceInheritance(merged, deviceIds, devices);
 
-      if (airconAcId != null) {
-        const airconChunk = await fetchAirconHistoryWindow(
-          start,
-          end,
-          viewRange,
-          airconAcId
-        );
+      if (airconChunk.length) {
         merged = mergeAirconIntoHistory(merged, airconChunk, airconChartDeviceId);
       }
 
@@ -89,23 +104,50 @@ export function useChartHistory(
   );
 
   const resetAndLoad = useCallback(async () => {
-    setHistoryLoading(true);
+    const generation = ++loadGenerationRef.current;
+    if (!historyDataRef.current.length) {
+      setHistoryLoading(true);
+    }
     setNoMoreOlderData(false);
     loadedRangeRef.current = null;
 
     const end = new Date();
-    const start = new Date(end.getTime() - getHistoryInitialSpanMs(viewRange));
+    const fullSpanMs = getHistoryInitialSpanMs(viewRange);
+    const quickSpanMs = Math.min(
+      getHistoryQuickInitialSpanMs(viewRange),
+      fullSpanMs
+    );
+    const quickStart = new Date(end.getTime() - quickSpanMs);
 
     try {
-      const chunk = await fetchMergedWindow(start, end);
-      setHistoryData(chunk);
-      loadedRangeRef.current = getLoadedRange(chunk);
+      const quickChunk = await fetchMergedWindow(quickStart, end);
+      if (generation !== loadGenerationRef.current) return;
+
+      setHistoryData(quickChunk);
+      loadedRangeRef.current = getLoadedRange(quickChunk);
       setHistoryEpoch((epoch) => epoch + 1);
+      setHistoryLoading(false);
+
+      if (fullSpanMs > quickSpanMs) {
+        const fullStart = new Date(end.getTime() - fullSpanMs);
+        const olderChunk = await fetchMergedWindow(fullStart, quickStart);
+        if (generation !== loadGenerationRef.current) return;
+
+        if (olderChunk.length) {
+          setHistoryData((prev) => {
+            const merged = mergeHistoryPoints(prev, olderChunk);
+            loadedRangeRef.current = getLoadedRange(merged);
+            return merged;
+          });
+        }
+      }
     } catch (err) {
+      if (generation !== loadGenerationRef.current) return;
       console.error(err);
-      setHistoryData([]);
-      loadedRangeRef.current = null;
-    } finally {
+      if (!historyDataRef.current.length) {
+        setHistoryData([]);
+        loadedRangeRef.current = null;
+      }
       setHistoryLoading(false);
     }
   }, [fetchMergedWindow, viewRange]);
@@ -125,8 +167,36 @@ export function useChartHistory(
       }
       return;
     }
-    resetAndLoad();
-  }, [resetAndLoad, deviceIdsKey, airconKey, offlineMode, offlineCacheKey, hydrateFromCache]);
+
+    let cancelled = false;
+
+    async function init() {
+      try {
+        const snapshot = await loadDashboardOfflineSnapshot();
+        if (
+          !cancelled &&
+          snapshot?.historyData.length &&
+          isSnapshotCompatibleWithDevices(snapshot, deviceIds)
+        ) {
+          setHistoryLoading(false);
+          setHistoryData(snapshot.historyData);
+          loadedRangeRef.current = getLoadedRange(snapshot.historyData);
+        }
+      } catch {
+        // IndexedDB が使えない環境では無視
+      }
+
+      if (!cancelled) {
+        await resetAndLoad();
+      }
+    }
+
+    void init();
+    return () => {
+      cancelled = true;
+      loadGenerationRef.current += 1;
+    };
+  }, [resetAndLoad, deviceIdsKey, airconKey, offlineMode, offlineCacheKey, hydrateFromCache, deviceIds]);
 
   const ensureVisibleRangeLoaded = useCallback(
     async (visibleMin: number, visibleMax: number) => {
