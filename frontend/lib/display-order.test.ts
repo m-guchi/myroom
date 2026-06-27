@@ -8,6 +8,7 @@ import {
   orderItemKey,
   saveDisplayOrder,
 } from "@/lib/display-order";
+import { AIRCON_CHART_DEVICE_ID } from "@/lib/types";
 
 describe("display-order", () => {
   it("builds default order with sensors, outdoor, and aircon", () => {
@@ -85,6 +86,6 @@ describe("display-order", () => {
         { type: "device", deviceId: 1 },
         { type: "aircon" },
       ])
-    ).toEqual([2, 1, 3]);
+    ).toEqual([2, 1, AIRCON_CHART_DEVICE_ID]);
   });
 });

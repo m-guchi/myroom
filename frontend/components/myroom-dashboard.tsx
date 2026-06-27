@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ChevronRight,
@@ -8,6 +9,7 @@ import {
   Gauge,
   ListOrdered,
   RefreshCw,
+  Settings,
   Snowflake,
   Sun,
   Thermometer,
@@ -47,6 +49,7 @@ import {
 } from "@/lib/display-order";
 import {
   buildDefaultChartColors,
+  CHART_COLORS_CHANGED_EVENT,
   deviceColorKey,
   getDeviceChartColor,
   getOutdoorChartColor,
@@ -67,6 +70,13 @@ import {
   type ChartLineVisibilityOverrides,
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
+import {
+  filterDisplayOrderByVisibility,
+  getVisibleChartDeviceIds,
+  getVisibleSensorDeviceIds,
+  loadHiddenDeviceKeys,
+  VISIBLE_DEVICES_CHANGED_EVENT,
+} from "@/lib/visible-devices";
 import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
@@ -314,6 +324,7 @@ export function MyRoomDashboard() {
   const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>(() =>
     buildDefaultDisplayOrder()
   );
+  const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState<Set<string>>(() => new Set());
   const [chartColors, setChartColors] = useState<ChartColorSettings>(() =>
     buildDefaultChartColors()
   );
@@ -343,9 +354,19 @@ export function MyRoomDashboard() {
   const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
   const sensorDeviceIdsKey = sensorDeviceIds.join(",");
 
+  const visibleSensorDeviceIds = useMemo(
+    () => getVisibleSensorDeviceIds(sensorDeviceIds, hiddenDeviceKeys),
+    [sensorDeviceIds, hiddenDeviceKeys]
+  );
+
   const chartDeviceIds = useMemo(
-    () => [...sensorDeviceIds, AIRCON_CHART_DEVICE_ID],
-    [sensorDeviceIds]
+    () => getVisibleChartDeviceIds(sensorDeviceIds, hiddenDeviceKeys),
+    [sensorDeviceIds, hiddenDeviceKeys]
+  );
+
+  const visibleDisplayOrder = useMemo(
+    () => filterDisplayOrderByVisibility(displayOrder, hiddenDeviceKeys),
+    [displayOrder, hiddenDeviceKeys]
   );
 
   const {
@@ -356,7 +377,7 @@ export function MyRoomDashboard() {
     resetAndLoad,
     refreshLatest,
     ensureVisibleRangeLoaded,
-  } = useChartHistory(sensorDeviceIds, viewRange, {
+  } = useChartHistory(visibleSensorDeviceIds, viewRange, {
     airconAcId: activeAirconId,
     airconChartDeviceId: AIRCON_CHART_DEVICE_ID,
     pollIntervalMs: 30000,
@@ -399,8 +420,25 @@ export function MyRoomDashboard() {
   useEffect(() => {
     setDisplayOrder(loadDisplayOrder(sensorDeviceIds));
     setDefaultLineVisibility(loadChartLineVisibility(sensorDeviceIds));
+    setHiddenDeviceKeys(loadHiddenDeviceKeys(sensorDeviceIds));
     setSessionLineOverrides({});
   }, [sensorDeviceIdsKey]);
+
+  useEffect(() => {
+    const reloadVisibility = () => {
+      setHiddenDeviceKeys(loadHiddenDeviceKeys(sensorDeviceIds));
+    };
+    const reloadChartColors = () => {
+      setChartColors(loadChartColors());
+    };
+
+    window.addEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
+    window.addEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
+    return () => {
+      window.removeEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
+      window.removeEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
+    };
+  }, [sensorDeviceIdsKey, sensorDeviceIds]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -431,7 +469,7 @@ export function MyRoomDashboard() {
         }
 
         const [data, sensorsStatus] = await Promise.all([
-          fetchDashboardData(airconLatest?.ac_id ?? 1, sensorDeviceIds),
+          fetchDashboardData(airconLatest?.ac_id ?? 1, visibleSensorDeviceIds),
           fetchSensorsStatus().catch(() => null),
         ]);
         setIsOfflineMode(false);
@@ -460,7 +498,7 @@ export function MyRoomDashboard() {
     [
       resetAndLoad,
       airconLatest?.ac_id,
-      sensorDeviceIds,
+      visibleSensorDeviceIds,
       applyOfflineSnapshot,
     ]
   );
@@ -544,7 +582,7 @@ export function MyRoomDashboard() {
 
   const dailyStatsDeviceIds = useMemo(() => {
     const ids: number[] = [];
-    for (const item of displayOrder) {
+    for (const item of visibleDisplayOrder) {
       if (item.type === "device") {
         ids.push(item.deviceId);
       } else if (
@@ -555,7 +593,7 @@ export function MyRoomDashboard() {
       }
     }
     return ids;
-  }, [displayOrder, dailyStatsByDevice]);
+  }, [visibleDisplayOrder, dailyStatsByDevice]);
 
   const handleDisplayOrderChange = (order: DisplayOrderItem[]) => {
     setDisplayOrder(order);
@@ -718,7 +756,7 @@ export function MyRoomDashboard() {
             onVisibleDomainChange={ensureVisibleRangeLoaded}
             airconTargetDeviceId={AIRCON_CHART_DEVICE_ID}
             outdoorLocationName={outdoorLocation?.name}
-            legendOrder={displayOrder}
+            legendOrder={visibleDisplayOrder}
             chartColors={chartColors}
             lineVisibility={effectiveLineVisibility}
             onLineVisibilityChange={handleSessionChartLineVisibleChange}
@@ -727,7 +765,16 @@ export function MyRoomDashboard() {
 
         <section>
           <div className="mb-3 flex items-center justify-between px-0.5">
-            <h2 className="section-title">センサー</h2>
+            <div className="flex items-center gap-0.5">
+              <h2 className="section-title">センサー</h2>
+              <Link
+                href="/devices"
+                className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-muted-foreground"
+                aria-label="デバイス設定"
+              >
+                <Settings className="size-4" strokeWidth={1.75} />
+              </Link>
+            </div>
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -740,7 +787,7 @@ export function MyRoomDashboard() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {displayOrder.map((item) => {
+            {visibleDisplayOrder.map((item) => {
               if (item.type === "device") {
                 const deviceId = item.deviceId;
                 const device = getDeviceInfo(deviceId);

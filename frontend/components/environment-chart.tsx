@@ -241,12 +241,17 @@ export function EnvironmentChart({
   );
 
   const canShowOutdoor = hasOutdoorMetricData(historyData, chartMetric);
+  const showAirconInOrder = resolvedLegendOrder.some((item) => item.type === "aircon");
   const showAirconTargetLine =
     chartMetric === "temperature" &&
     airconTargetDeviceId != null &&
+    showAirconInOrder &&
     hasDeviceTargetStateData(historyData, airconTargetDeviceId);
+  const showOutdoorInOrder = resolvedLegendOrder.some((item) => item.type === "outdoor");
   const showOutdoorLine =
-    canShowOutdoor && isChartLineVisible(lineVisibility, OUTDOOR_VISIBILITY_KEY);
+    canShowOutdoor &&
+    showOutdoorInOrder &&
+    isChartLineVisible(lineVisibility, OUTDOOR_VISIBILITY_KEY);
   const showTargetLine =
     showAirconTargetLine &&
     airconTargetDeviceId != null &&
