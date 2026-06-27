@@ -1,6 +1,7 @@
 import {
   AIRCON_CHART_DEVICE_ID,
   DASHBOARD_SENSOR_DEVICE_IDS,
+  formatOutdoorApiLabel,
 } from "@/lib/types";
 
 export const OUTDOOR_COLOR_KEY = "outdoor";
@@ -149,7 +150,7 @@ export function getChartColorConfigItems(
   });
   items.push({
     key: OUTDOOR_COLOR_KEY,
-    label: outdoorName ?? "屋外",
+    label: formatOutdoorApiLabel(outdoorName),
   });
 
   return items;

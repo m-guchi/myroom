@@ -1,49 +1,54 @@
+import datetime
 import os
-from typing import Optional
-from jose import JWTError, jwt
-from fastapi import HTTPException, status, Depends
-from fastapi.security import OAuth2PasswordBearer
+from typing import Any, Dict, Optional
+
 from dotenv import load_dotenv
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+TOKEN_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "168"))
 
-# OAuth2PasswordBearer is used to extract the token from the header
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
-def verify_token(token: str):
-    """
-    Verifies the JWT token locally using the secret key.
-    Returns the payload if valid, raises HTTPException otherwise.
-    """
-    if not SECRET_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server misconfiguration: JWT key missing"
-        )
 
+def get_secret_key() -> str:
+    secret = os.getenv("JWT_SECRET_KEY")
+    if secret:
+        return secret
+    app_password = os.getenv("APP_PASSWORD", "admin")
+    return f"myroom-jwt-{app_password}"
+
+
+def create_access_token(expires_hours: Optional[int] = None) -> str:
+    hours = expires_hours if expires_hours is not None else TOKEN_EXPIRE_HOURS
+    payload = {
+        "sub": "myroom-user",
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=hours),
+    }
+    return jwt.encode(payload, get_secret_key(), algorithm=ALGORITHM)
+
+
+def verify_token(token: str) -> Dict[str, Any]:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError as e:
+        return jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Could not validate credentials",
+            detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    """
-    Dependency to get the current user from the token.
-    If no token is provided or it's invalid, raises 401.
-    """
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return verify_token(token)

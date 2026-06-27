@@ -32,6 +32,8 @@ interface DeviceSettingsCardProps {
   saveDisabled?: boolean;
   error?: string;
   footer?: ReactNode;
+  /** 編集シート内など、ヘッダーを省略する */
+  compact?: boolean;
 }
 
 export function DeviceSettingsCard({
@@ -52,23 +54,26 @@ export function DeviceSettingsCard({
   saveDisabled = false,
   error,
   footer,
+  compact = false,
 }: DeviceSettingsCardProps) {
   return (
-    <div className="rounded-[18px] border bg-card px-4 py-4">
-      <div className="mb-4 flex items-center gap-3">
-        <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-full"
-          style={{ backgroundColor: `${accentColor}22`, color: accentColor }}
-        >
-          <Icon className="size-4" strokeWidth={1.75} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{title}</p>
-          {subtitle ? (
-            <p className="text-xs text-muted-foreground">{subtitle}</p>
-          ) : null}
+    <div className={cn(!compact && "rounded-[18px] border bg-card px-4 py-4")}>
+      {!compact ? (
+        <div className="mb-4 flex items-center gap-3">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-full"
+            style={{ backgroundColor: `${accentColor}22`, color: accentColor }}
+          >
+            <Icon className="size-4" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{title}</p>
+            {subtitle ? (
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="space-y-3">
         <div className="space-y-2">

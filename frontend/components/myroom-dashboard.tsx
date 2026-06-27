@@ -42,9 +42,8 @@ import {
 } from "@/lib/offline-cache";
 import { useChartHistory } from "@/lib/use-chart-history";
 import {
+  DISPLAY_ORDER_CHANGED_EVENT,
   buildDefaultDisplayOrder,
-  loadDisplayOrder,
-  saveDisplayOrder,
   type DisplayOrderItem,
 } from "@/lib/display-order";
 import {
@@ -53,9 +52,7 @@ import {
   deviceColorKey,
   getDeviceChartColor,
   getOutdoorChartColor,
-  loadChartColors,
   OUTDOOR_COLOR_KEY,
-  saveChartColors,
   setChartColor,
   type ChartColorSettings,
 } from "@/lib/chart-colors";
@@ -74,9 +71,18 @@ import {
   filterDisplayOrderByVisibility,
   getVisibleChartDeviceIds,
   getVisibleSensorDeviceIds,
-  loadHiddenDeviceKeys,
   VISIBLE_DEVICES_CHANGED_EVENT,
 } from "@/lib/visible-devices";
+import {
+  loadUiSettingsFromServer,
+  saveChartColorsToServer,
+  saveDisplayOrderToServer,
+} from "@/lib/ui-settings-client";
+import {
+  AuthError,
+  clearAuthToken,
+  isAuthenticated as hasStoredAuthToken,
+} from "@/lib/auth";
 import { APP_VERSION } from "@/lib/app-version";
 import {
   AIRCON_CHART_DEVICE_ID,
@@ -84,6 +90,7 @@ import {
   formatAirconTargetTemperature,
   getSensorDeviceIds,
   isAirconPowerOff,
+  formatOutdoorApiLabel,
   PRIMARY_SENSOR_DEVICE_ID,
   type AirconData,
   type AirconUnitInfo,
@@ -95,8 +102,6 @@ import {
   type OutdoorLocation,
   type SensorDeviceStatus,
 } from "@/lib/types";
-
-const AUTH_KEY = "app_auth";
 
 interface DeviceMetric {
   key: string;
@@ -380,6 +385,7 @@ export function MyRoomDashboard() {
   } = useChartHistory(visibleSensorDeviceIds, viewRange, {
     airconAcId: activeAirconId,
     airconChartDeviceId: AIRCON_CHART_DEVICE_ID,
+    devices,
     pollIntervalMs: 30000,
     offlineMode: isOfflineMode,
     offlineHistory: offlineSnapshot?.historyData ?? null,
@@ -411,34 +417,48 @@ export function MyRoomDashboard() {
   }, [devices, sensorDeviceIds, airconChartTitle]);
 
   useEffect(() => {
-    if (localStorage.getItem(AUTH_KEY) === "true") {
+    if (hasStoredAuthToken()) {
       setIsAuthenticated(true);
     }
-    setChartColors(loadChartColors());
   }, []);
 
+  const reloadUiSettings = useCallback(async () => {
+    try {
+      const settings = await loadUiSettingsFromServer(sensorDeviceIds);
+      setDisplayOrder(settings.displayOrder);
+      setChartColors(settings.chartColors);
+      setHiddenDeviceKeys(settings.hiddenDeviceKeys);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        setIsAuthenticated(false);
+      }
+    }
+  }, [sensorDeviceIds]);
+
   useEffect(() => {
-    setDisplayOrder(loadDisplayOrder(sensorDeviceIds));
+    if (!isAuthenticated) return;
+    void reloadUiSettings();
     setDefaultLineVisibility(loadChartLineVisibility(sensorDeviceIds));
-    setHiddenDeviceKeys(loadHiddenDeviceKeys(sensorDeviceIds));
     setSessionLineOverrides({});
-  }, [sensorDeviceIdsKey]);
+  }, [isAuthenticated, sensorDeviceIdsKey, reloadUiSettings, sensorDeviceIds]);
 
   useEffect(() => {
     const reloadVisibility = () => {
-      setHiddenDeviceKeys(loadHiddenDeviceKeys(sensorDeviceIds));
+      void reloadUiSettings();
     };
     const reloadChartColors = () => {
-      setChartColors(loadChartColors());
+      void reloadUiSettings();
     };
 
     window.addEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
     window.addEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
+    window.addEventListener(DISPLAY_ORDER_CHANGED_EVENT, reloadVisibility);
     return () => {
       window.removeEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
       window.removeEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
+      window.removeEventListener(DISPLAY_ORDER_CHANGED_EVENT, reloadVisibility);
     };
-  }, [sensorDeviceIdsKey, sensorDeviceIds]);
+  }, [reloadUiSettings]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -485,6 +505,10 @@ export function MyRoomDashboard() {
           await resetAndLoad();
         }
       } catch (err) {
+        if (err instanceof AuthError) {
+          setIsAuthenticated(false);
+          return;
+        }
         console.error(err);
         const snapshot = await loadDashboardOfflineSnapshot();
         if (snapshot) {
@@ -559,7 +583,6 @@ export function MyRoomDashboard() {
     const ok = await login(password);
     if (ok) {
       setIsAuthenticated(true);
-      localStorage.setItem(AUTH_KEY, "true");
       return true;
     }
     return false;
@@ -567,7 +590,7 @@ export function MyRoomDashboard() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem(AUTH_KEY);
+    clearAuthToken();
   };
 
   const maxDailyStatsDays = useMemo(() => {
@@ -597,13 +620,17 @@ export function MyRoomDashboard() {
 
   const handleDisplayOrderChange = (order: DisplayOrderItem[]) => {
     setDisplayOrder(order);
-    saveDisplayOrder(order);
+    void saveDisplayOrderToServer(order).catch((err) => {
+      if (err instanceof AuthError) setIsAuthenticated(false);
+    });
   };
 
   const handleChartColorChange = (key: string, color: string) => {
     setChartColors((prev) => {
       const next = setChartColor(prev, key, color);
-      saveChartColors(next);
+      void saveChartColorsToServer(next).catch((err) => {
+        if (err instanceof AuthError) setIsAuthenticated(false);
+      });
       return next;
     });
   };
@@ -817,7 +844,7 @@ export function MyRoomDashboard() {
                 return (
                   <DeviceCard
                     key="outdoor"
-                    title={outdoorLocation?.name ?? "屋外"}
+                    title={formatOutdoorApiLabel(outdoorLocation?.name)}
                     metrics={outdoorMetrics}
                     action={
                       <ChevronRight

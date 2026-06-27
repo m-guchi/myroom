@@ -1,6 +1,7 @@
 import os
 
 os.environ["DB_MOCK"] = "true"
+os.environ.setdefault("APP_PASSWORD", "admin")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,7 +21,19 @@ def data_dir(tmp_path, monkeypatch):
         "backend.outdoor_config.CONFIG_PATH",
         tmp_path / "outdoor_location.json",
     )
+    monkeypatch.setattr(
+        "backend.ui_settings.CONFIG_PATH",
+        tmp_path / "ui_settings.json",
+    )
     return tmp_path
+
+
+@pytest.fixture
+def auth_headers(client):
+    response = client.post("/api/login", json={"password": os.environ["APP_PASSWORD"]})
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture

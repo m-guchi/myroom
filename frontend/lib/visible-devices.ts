@@ -93,6 +93,23 @@ export function filterDisplayOrderByVisibility(
   return order.filter((item) => isTargetVisible(hiddenKeys, item));
 }
 
+/** 非表示デバイスを末尾にまとめた表示順（各グループ内の相対順は維持） */
+export function sortDisplayOrderHiddenLast(
+  order: DisplayOrderItem[],
+  hiddenKeys: Set<string>
+): DisplayOrderItem[] {
+  const visible: DisplayOrderItem[] = [];
+  const hidden: DisplayOrderItem[] = [];
+  for (const item of order) {
+    if (isTargetVisible(hiddenKeys, item)) {
+      visible.push(item);
+    } else {
+      hidden.push(item);
+    }
+  }
+  return [...visible, ...hidden];
+}
+
 export function getVisibleSensorDeviceIds(
   sensorDeviceIds: readonly number[],
   hiddenKeys: Set<string>

@@ -26,6 +26,7 @@ import {
   METRIC_COLORS,
   METRIC_LABELS,
   METRIC_UNITS,
+  formatOutdoorApiLabel,
 } from "@/lib/types";
 import {
   clampDomainOffset,
@@ -579,7 +580,7 @@ export function EnvironmentChart({
       if (item.type === "outdoor" && canShowOutdoor) {
         rows.push({
           id: "outdoor",
-          name: outdoorLocationName ?? "屋外",
+          name: formatOutdoorApiLabel(outdoorLocationName),
           color: outdoorLineColor,
           value: activeOutdoor,
           visible: isChartLineVisible(lineVisibility, OUTDOOR_VISIBILITY_KEY),
@@ -855,7 +856,7 @@ export function EnvironmentChart({
                   stroke={outdoorLineColor}
                   strokeWidth={1.5}
                   dot={false}
-                  name="屋外"
+                  name={formatOutdoorApiLabel(outdoorLocationName)}
                   isAnimationActive={false}
                   connectNulls
                 />

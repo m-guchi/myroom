@@ -11,12 +11,18 @@ import {
   mergeHistoryPoints,
   mergeMultiDeviceHistory,
 } from "@/lib/history-loader";
+import {
+  expandDeviceIdsForHistory,
+  applyAllDeviceInheritance,
+} from "@/lib/device-inheritance";
+import type { ChartViewRange, DeviceInfo, HistoryPoint } from "@/lib/types";
 import { AIRCON_CHART_DEVICE_ID } from "@/lib/types";
-import type { ChartViewRange, HistoryPoint } from "@/lib/types";
 
 export interface UseChartHistoryOptions {
   airconAcId?: number | null;
   airconChartDeviceId?: number;
+  /** 継承チェーン解決用のデバイス一覧 */
+  devices?: readonly DeviceInfo[];
   /** グラフ履歴の自動更新間隔（ms）。0 で無効。既定 30 秒 */
   pollIntervalMs?: number;
   /** オフライン時に表示するキャッシュ済み履歴 */
@@ -34,6 +40,7 @@ export function useChartHistory(
 ) {
   const airconAcId = options?.airconAcId ?? null;
   const airconChartDeviceId = options?.airconChartDeviceId ?? AIRCON_CHART_DEVICE_ID;
+  const devices = options?.devices ?? [];
   const pollIntervalMs = options?.pollIntervalMs ?? 30000;
   const offlineHistory = options?.offlineHistory ?? null;
   const offlineCacheKey = options?.offlineCacheKey ?? null;
@@ -54,15 +61,17 @@ export function useChartHistory(
 
   const fetchMergedWindow = useCallback(
     async (start: Date, end: Date) => {
+      const fetchIds = expandDeviceIdsForHistory(deviceIds, devices);
       const sensorChunks = await Promise.all(
-        deviceIds.map((deviceId) =>
+        fetchIds.map((deviceId) =>
           fetchHistoryWindow(start, end, viewRange, deviceId)
         )
       );
       const byDevice = Object.fromEntries(
-        deviceIds.map((deviceId, index) => [deviceId, sensorChunks[index]])
+        fetchIds.map((deviceId, index) => [deviceId, sensorChunks[index]])
       ) as Record<number, HistoryPoint[]>;
       let merged = mergeMultiDeviceHistory(byDevice);
+      merged = applyAllDeviceInheritance(merged, deviceIds, devices);
 
       if (airconAcId != null) {
         const airconChunk = await fetchAirconHistoryWindow(
@@ -76,7 +85,7 @@ export function useChartHistory(
 
       return merged;
     },
-    [deviceIds, viewRange, airconAcId, airconChartDeviceId]
+    [deviceIds, devices, viewRange, airconAcId, airconChartDeviceId]
   );
 
   const resetAndLoad = useCallback(async () => {

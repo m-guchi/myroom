@@ -8,6 +8,7 @@ import {
   normalizeHiddenDeviceKeys,
   saveHiddenDeviceKeys,
   setTargetVisible,
+  sortDisplayOrderHiddenLast,
   HIDDEN_DEVICES_STORAGE_KEY,
 } from "@/lib/visible-devices";
 import { AIRCON_CHART_DEVICE_ID, getSensorDeviceIds } from "@/lib/types";
@@ -51,6 +52,21 @@ describe("visible-devices", () => {
     expect(hidden.has("device:1")).toBe(true);
     const shown = setTargetVisible(hidden, { type: "device", deviceId: 1 }, true);
     expect(shown.has("device:1")).toBe(false);
+  });
+
+  it("sorts hidden targets to the end", () => {
+    const order = [
+      { type: "device" as const, deviceId: 1 },
+      { type: "outdoor" as const },
+      { type: "device" as const, deviceId: 2 },
+      { type: "aircon" as const },
+    ];
+    const hidden = new Set(["device:2", "outdoor"]);
+    expect(
+      sortDisplayOrderHiddenLast(order, hidden).map((item) =>
+        item.type === "device" ? `device:${item.deviceId}` : item.type
+      )
+    ).toEqual(["device:1", "aircon", "outdoor", "device:2"]);
   });
 
   it("persists hidden devices to localStorage", () => {

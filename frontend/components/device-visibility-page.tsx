@@ -9,8 +9,10 @@ import {
   Snowflake,
   Thermometer,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { LoginScreen } from "@/components/login-screen";
-import { DeviceSettingsCard } from "@/components/device-settings-card";
+import { DeviceEditSheet } from "@/components/device-edit-sheet";
+import { DeviceListItem } from "@/components/device-list-item";
 import {
   fetchAirconUnits,
   fetchDevices,
@@ -28,17 +30,19 @@ import {
   getAirconTargetChartColor,
   getDeviceChartColor,
   getOutdoorChartColor,
-  loadChartColors,
-  saveChartColors,
   setChartColor,
   type ChartColorSettings,
 } from "@/lib/chart-colors";
 import {
+  DISPLAY_ORDER_CHANGED_EVENT,
   getDisplayOrderLabel,
+  normalizeDisplayOrder,
+  orderItemKey,
   type DisplayOrderItem,
 } from "@/lib/display-order";
 import {
   AIRCON_CHART_DEVICE_ID,
+  formatOutdoorApiLabel,
   getSensorDeviceIds,
   type AirconUnitInfo,
   type DeviceInfo,
@@ -46,13 +50,22 @@ import {
 } from "@/lib/types";
 import {
   isTargetVisible,
-  loadHiddenDeviceKeys,
-  saveHiddenDeviceKeys,
   setTargetVisible,
+  sortDisplayOrderHiddenLast,
   VISIBLE_DEVICES_CHANGED_EVENT,
 } from "@/lib/visible-devices";
+import {
+  loadUiSettingsFromServer,
+  saveChartColorsToServer,
+  saveDisplayOrderToServer,
+  saveHiddenDevicesToServer,
+} from "@/lib/ui-settings-client";
+import { AuthError, clearAuthToken, isAuthenticated as hasStoredAuthToken } from "@/lib/auth";
 
-const AUTH_KEY = "app_auth";
+type EditableTarget =
+  | { kind: "device"; item: Extract<DisplayOrderItem, { type: "device" }> }
+  | { kind: "outdoor"; item: Extract<DisplayOrderItem, { type: "outdoor" }> }
+  | { kind: "aircon"; item: Extract<DisplayOrderItem, { type: "aircon" }> };
 
 function draftKeyForItem(item: DisplayOrderItem, acId = 1): string {
   if (item.type === "device") return `device:${item.deviceId}`;
@@ -60,19 +73,36 @@ function draftKeyForItem(item: DisplayOrderItem, acId = 1): string {
   return "outdoor";
 }
 
+function getItemIcon(item: DisplayOrderItem): LucideIcon {
+  if (item.type === "outdoor") return CloudSun;
+  if (item.type === "aircon") return Snowflake;
+  return Thermometer;
+}
+
+function getItemSubtitle(item: DisplayOrderItem, primaryAirconId: number): string {
+  if (item.type === "device") return `デバイス ID: ${item.deviceId}`;
+  if (item.type === "aircon") return `エアコン ID: ${primaryAirconId}`;
+  return "Open-Meteo API";
+}
+
 export function DeviceVisibilityPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [airconUnits, setAirconUnits] = useState<AirconUnitInfo[]>([]);
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
+  const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>([]);
   const [chartColors, setChartColors] = useState<ChartColorSettings>(() =>
     buildDefaultChartColors()
   );
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
+  const [inheritsDrafts, setInheritsDrafts] = useState<Record<number, number | null>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [editingTarget, setEditingTarget] = useState<EditableTarget | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
   const sensorDeviceIdsKey = sensorDeviceIds.join(",");
@@ -89,13 +119,27 @@ export function DeviceVisibilityPage() {
   const airconName =
     airconUnits.find((unit) => unit.ac_id === primaryAirconId)?.name ?? "エアコン";
 
-  const sensorTargets = useMemo(
-    () => sensorDeviceIds.map((deviceId) => ({ type: "device" as const, deviceId })),
-    [sensorDeviceIds]
+  const orderedTargets = useMemo(
+    () => normalizeDisplayOrder(displayOrder, sensorDeviceIds),
+    [displayOrder, sensorDeviceIds]
   );
 
-  const reloadVisibility = useCallback(() => {
-    setHiddenKeys(loadHiddenDeviceKeys(sensorDeviceIds));
+  const displayedTargets = useMemo(
+    () => sortDisplayOrderHiddenLast(orderedTargets, hiddenKeys),
+    [orderedTargets, hiddenKeys]
+  );
+
+  const reloadSettings = useCallback(async () => {
+    try {
+      const settings = await loadUiSettingsFromServer(sensorDeviceIds);
+      setDisplayOrder(settings.displayOrder);
+      setHiddenKeys(settings.hiddenDeviceKeys);
+      setChartColors(settings.chartColors);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        setIsAuthenticated(false);
+      }
+    }
   }, [sensorDeviceIds]);
 
   const loadData = useCallback(async () => {
@@ -119,11 +163,15 @@ export function DeviceVisibilityPage() {
   }, []);
 
   useEffect(() => {
-    if (localStorage.getItem(AUTH_KEY) === "true") {
+    if (hasStoredAuthToken()) {
       setIsAuthenticated(true);
     }
-    setChartColors(loadChartColors());
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void reloadSettings();
+  }, [isAuthenticated, reloadSettings, sensorDeviceIdsKey]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -131,13 +179,11 @@ export function DeviceVisibilityPage() {
   }, [isAuthenticated, loadData]);
 
   useEffect(() => {
-    reloadVisibility();
-  }, [reloadVisibility, sensorDeviceIdsKey]);
-
-  useEffect(() => {
     const drafts: Record<string, string> = {};
+    const inheritDrafts: Record<number, number | null> = {};
     for (const device of devices) {
       drafts[`device:${device.id}`] = device.name;
+      inheritDrafts[device.id] = device.inherits_from ?? null;
     }
     for (const unit of airconUnits) {
       drafts[`aircon:${unit.ac_id}`] = unit.name;
@@ -146,13 +192,24 @@ export function DeviceVisibilityPage() {
       drafts.outdoor = outdoorLocation.name;
     }
     setNameDrafts(drafts);
+    setInheritsDrafts(inheritDrafts);
   }, [devices, airconUnits, outdoorLocation]);
+
+  const persistDisplayOrder = useCallback((order: DisplayOrderItem[]) => {
+    setDisplayOrder(order);
+    void saveDisplayOrderToServer(order)
+      .then(() => {
+        window.dispatchEvent(new Event(DISPLAY_ORDER_CHANGED_EVENT));
+      })
+      .catch((err) => {
+        if (err instanceof AuthError) setIsAuthenticated(false);
+      });
+  }, []);
 
   const handleLogin = async (password: string) => {
     const ok = await login(password);
     if (ok) {
       setIsAuthenticated(true);
-      localStorage.setItem(AUTH_KEY, "true");
       return true;
     }
     return false;
@@ -161,17 +218,68 @@ export function DeviceVisibilityPage() {
   const handleVisibilityChange = (item: DisplayOrderItem, visible: boolean) => {
     const next = setTargetVisible(hiddenKeys, item, visible);
     setHiddenKeys(next);
-    saveHiddenDeviceKeys(next);
-    window.dispatchEvent(new Event(VISIBLE_DEVICES_CHANGED_EVENT));
+
+    if (!visible) {
+      const normalized = normalizeDisplayOrder(displayOrder, sensorDeviceIds);
+      const key = orderItemKey(item);
+      const target = normalized.find((entry) => orderItemKey(entry) === key);
+      const rest = normalized.filter((entry) => orderItemKey(entry) !== key);
+      if (target) {
+        persistDisplayOrder([...rest, target]);
+      }
+    }
+
+    void saveHiddenDevicesToServer(next)
+      .then(() => {
+        window.dispatchEvent(new Event(VISIBLE_DEVICES_CHANGED_EVENT));
+      })
+      .catch((err) => {
+        if (err instanceof AuthError) setIsAuthenticated(false);
+      });
   };
 
   const handleColorChange = (key: string, color: string) => {
     setChartColors((prev) => {
       const next = setChartColor(prev, key, color);
-      saveChartColors(next);
+      void saveChartColorsToServer(next)
+        .then(() => {
+          window.dispatchEvent(new Event(CHART_COLORS_CHANGED_EVENT));
+        })
+        .catch((err) => {
+          if (err instanceof AuthError) setIsAuthenticated(false);
+        });
       return next;
     });
-    window.dispatchEvent(new Event(CHART_COLORS_CHANGED_EVENT));
+  };
+
+  const handleDragStart = (index: number) => (event: React.DragEvent) => {
+    setDragIndex(index);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+  };
+
+  const handleDragOver = (index: number) => (event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  };
+
+  const handleDrop = (index: number) => (event: React.DragEvent) => {
+    event.preventDefault();
+    const fromIndex = dragIndex ?? Number(event.dataTransfer.getData("text/plain"));
+    setDragIndex(null);
+    setDragOverIndex(null);
+    if (!Number.isFinite(fromIndex) || fromIndex === index) return;
+
+    const next = [...displayedTargets];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(index, 0, moved);
+    persistDisplayOrder(sortDisplayOrderHiddenLast(next, hiddenKeys));
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
   };
 
   const setDraft = (key: string, value: string) => {
@@ -195,10 +303,15 @@ export function DeviceVisibilityPage() {
     setSavingKey(key);
     setErrors((prev) => ({ ...prev, [key]: "" }));
     try {
-      const saved = await updateDeviceName(deviceId, name);
+      const saved = await updateDeviceName(
+        deviceId,
+        name,
+        inheritsDrafts[deviceId] ?? null
+      );
       setDevices((prev) =>
         prev.map((device) => (device.id === deviceId ? saved : device))
       );
+      setEditingTarget(null);
     } catch (err) {
       setErrors((prev) => ({
         ...prev,
@@ -224,6 +337,7 @@ export function DeviceVisibilityPage() {
       setAirconUnits((prev) =>
         prev.map((unit) => (unit.ac_id === acId ? saved : unit))
       );
+      setEditingTarget(null);
     } catch (err) {
       setErrors((prev) => ({
         ...prev,
@@ -238,7 +352,7 @@ export function DeviceVisibilityPage() {
     const key = "outdoor";
     const name = nameDrafts[key]?.trim();
     if (!outdoorLocation) {
-      setErrors((prev) => ({ ...prev, [key]: "屋外地点が読み込めていません" }));
+      setErrors((prev) => ({ ...prev, [key]: "地点データが読み込めていません" }));
       return;
     }
     if (!name) {
@@ -254,6 +368,7 @@ export function DeviceVisibilityPage() {
         name,
       });
       setOutdoorLocation(saved);
+      setEditingTarget(null);
     } catch (err) {
       setErrors((prev) => ({
         ...prev,
@@ -272,95 +387,126 @@ export function DeviceVisibilityPage() {
     return getOutdoorChartColor(chartColors);
   };
 
-  const renderSensorCard = (item: Extract<DisplayOrderItem, { type: "device" }>) => {
-    const key = draftKeyForItem(item);
-    const label = getDisplayOrderLabel(item, deviceNames, "屋外", airconName);
-
-    return (
-      <DeviceSettingsCard
-        key={key}
-        icon={Thermometer}
-        accentColor={getAccentColor(item)}
-        title={label}
-        subtitle={`デバイス ID: ${item.deviceId}`}
-        nameLabel="表示名"
-        name={nameDrafts[key] ?? label}
-        onNameChange={(value) => setDraft(key, value)}
-        namePlaceholder="例: リビング"
-        chartColors={[
-          {
-            id: `${key}-color`,
-            label: "グラフの色",
-            color: getDeviceChartColor(chartColors, item.deviceId),
-            onChange: (color) => handleColorChange(deviceColorKey(item.deviceId), color),
-          },
-        ]}
-        visible={isTargetVisible(hiddenKeys, item)}
-        onVisibleChange={(visible) => handleVisibilityChange(item, visible)}
-        visibilityId={`visible-${key}`}
-        onSave={() => void saveDeviceName(item.deviceId)}
-        saving={savingKey === key}
-        error={errors[key]}
-      />
+  const getListTitle = (item: DisplayOrderItem) => {
+    if (item.type === "outdoor") {
+      return formatOutdoorApiLabel(outdoorLocation?.name);
+    }
+    return getDisplayOrderLabel(
+      item,
+      deviceNames,
+      outdoorLocation?.name,
+      airconName
     );
   };
 
-  const renderOutdoorCard = () => {
-    const item: DisplayOrderItem = { type: "outdoor" };
-    const key = "outdoor";
-    const label = outdoorLocation?.name ?? "屋外";
-
-    return (
-      <DeviceSettingsCard
-        key={key}
-        icon={CloudSun}
-        accentColor={getAccentColor(item)}
-        title="屋外"
-        subtitle="地点名をダッシュボードに表示します"
-        nameLabel="表示名"
-        name={nameDrafts[key] ?? label}
-        onNameChange={(value) => setDraft(key, value)}
-        namePlaceholder="例: 茨木市"
-        chartColors={[
-          {
-            id: `${key}-color`,
-            label: "グラフの色",
-            color: getOutdoorChartColor(chartColors),
-            onChange: (color) => handleColorChange("outdoor", color),
-          },
-        ]}
-        visible={isTargetVisible(hiddenKeys, item)}
-        onVisibleChange={(visible) => handleVisibilityChange(item, visible)}
-        visibilityId={`visible-${key}`}
-        onSave={() => void saveOutdoorName()}
-        saving={savingKey === key}
-        saveDisabled={!outdoorLocation}
-        error={errors[key]}
-        footer={
-          <p className="text-xs text-muted-foreground">
-            緯度・経度の変更は
-            <Link href="/" className="mx-1 underline underline-offset-2">
-              ダッシュボード
-            </Link>
-            の屋外カードから行えます
-          </p>
-        }
-      />
-    );
+  const buildInheritsFromOptions = (deviceId: number) => {
+    const options: Array<{ value: number | null; label: string }> = [
+      { value: null, label: "なし（継承しない）" },
+    ];
+    for (const device of devices) {
+      if (device.id === deviceId || device.id === AIRCON_CHART_DEVICE_ID) continue;
+      options.push({
+        value: device.id,
+        label: device.name || `デバイス ${device.id}`,
+      });
+    }
+    return options;
   };
 
-  const renderAirconCard = () => {
-    const item: DisplayOrderItem = { type: "aircon" };
-    const key = `aircon:${primaryAirconId}`;
-    const label = airconName;
+  const renderEditSheet = () => {
+    if (!editingTarget) return null;
+
+    const item = editingTarget.item;
+    const key = draftKeyForItem(item, primaryAirconId);
+    const label = getListTitle(item);
+    const Icon = getItemIcon(item);
+
+    if (editingTarget.kind === "device") {
+      const deviceId = editingTarget.item.deviceId;
+      return (
+        <DeviceEditSheet
+          open
+          onClose={() => setEditingTarget(null)}
+          icon={Icon}
+          accentColor={getAccentColor(item)}
+          title={label}
+          subtitle={getItemSubtitle(item, primaryAirconId)}
+          nameLabel="表示名"
+          name={nameDrafts[key] ?? label}
+          onNameChange={(value) => setDraft(key, value)}
+          namePlaceholder="例: リビング"
+          chartColors={[
+            {
+              id: `${key}-color`,
+              label: "グラフの色",
+              color: getDeviceChartColor(chartColors, deviceId),
+              onChange: (color) => handleColorChange(deviceColorKey(deviceId), color),
+            },
+          ]}
+          visible={isTargetVisible(hiddenKeys, item)}
+          onVisibleChange={(visible) => handleVisibilityChange(item, visible)}
+          visibilityId={`visible-${key}`}
+          onSave={() => void saveDeviceName(deviceId)}
+          saving={savingKey === key}
+          error={errors[key]}
+          inheritsFromOptions={buildInheritsFromOptions(deviceId)}
+          inheritsFrom={inheritsDrafts[deviceId] ?? null}
+          onInheritsFromChange={(value) =>
+            setInheritsDrafts((prev) => ({ ...prev, [deviceId]: value }))
+          }
+        />
+      );
+    }
+
+    if (editingTarget.kind === "outdoor") {
+      return (
+        <DeviceEditSheet
+          open
+          onClose={() => setEditingTarget(null)}
+          icon={Icon}
+          accentColor={getAccentColor(item)}
+          title={formatOutdoorApiLabel(outdoorLocation?.name)}
+          subtitle="地点名をダッシュボードに表示します"
+          nameLabel="表示名"
+          name={nameDrafts[key] ?? outdoorLocation?.name ?? ""}
+          onNameChange={(value) => setDraft(key, value)}
+          namePlaceholder="例: 茨木市"
+          chartColors={[
+            {
+              id: `${key}-color`,
+              label: "グラフの色",
+              color: getOutdoorChartColor(chartColors),
+              onChange: (color) => handleColorChange("outdoor", color),
+            },
+          ]}
+          visible={isTargetVisible(hiddenKeys, item)}
+          onVisibleChange={(visible) => handleVisibilityChange(item, visible)}
+          visibilityId={`visible-${key}`}
+          onSave={() => void saveOutdoorName()}
+          saving={savingKey === key}
+          saveDisabled={!outdoorLocation}
+          error={errors[key]}
+          footer={
+            <p className="text-xs text-muted-foreground">
+              緯度・経度の変更は
+              <Link href="/" className="mx-1 underline underline-offset-2">
+                ダッシュボード
+              </Link>
+              の地点カードから行えます
+            </p>
+          }
+        />
+      );
+    }
 
     return (
-      <DeviceSettingsCard
-        key={key}
-        icon={Snowflake}
+      <DeviceEditSheet
+        open
+        onClose={() => setEditingTarget(null)}
+        icon={Icon}
         accentColor={getAccentColor(item)}
         title={label}
-        subtitle={`エアコン ID: ${primaryAirconId}`}
+        subtitle={getItemSubtitle(item, primaryAirconId)}
         nameLabel="表示名"
         name={nameDrafts[key] ?? label}
         onNameChange={(value) => setDraft(key, value)}
@@ -411,7 +557,7 @@ export function DeviceVisibilityPage() {
               <h1 className="text-lg font-bold">デバイス</h1>
             </div>
             <p className="text-sm text-muted-foreground">
-              表示名・色・ダッシュボードへの表示を管理します
+              表示名・色・表示順・ダッシュボードへの表示を管理します
             </p>
           </div>
         </header>
@@ -419,28 +565,48 @@ export function DeviceVisibilityPage() {
         {loading ? (
           <p className="py-10 text-center text-sm text-muted-foreground">読み込み中...</p>
         ) : (
-          <>
-            <section className="space-y-3">
-              <h2 className="section-title px-0.5">屋内センサー</h2>
-              {sensorTargets.length > 0 ? (
-                sensorTargets.map((item) => renderSensorCard(item))
-              ) : (
-                <p className="rounded-[18px] border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-                  登録済みのセンサーがありません
-                </p>
-              )}
-            </section>
-
-            <section className="space-y-3">
-              <h2 className="section-title px-0.5">その他</h2>
-              <div className="space-y-3">
-                {renderOutdoorCard()}
-                {renderAirconCard()}
-              </div>
-            </section>
-          </>
+          <section className="space-y-3">
+            <p className="px-0.5 text-xs text-muted-foreground">
+              左のグリップをドラッグして順番を変更できます
+            </p>
+            {displayedTargets.length > 0 ? (
+              displayedTargets.map((item, index) => {
+                const key = draftKeyForItem(item, primaryAirconId);
+                return (
+                  <DeviceListItem
+                    key={key}
+                    icon={getItemIcon(item)}
+                    accentColor={getAccentColor(item)}
+                    title={getListTitle(item)}
+                    subtitle={getItemSubtitle(item, primaryAirconId)}
+                    visible={isTargetVisible(hiddenKeys, item)}
+                    onEdit={() => {
+                      if (item.type === "device") {
+                        setEditingTarget({ kind: "device", item });
+                      } else if (item.type === "outdoor") {
+                        setEditingTarget({ kind: "outdoor", item });
+                      } else {
+                        setEditingTarget({ kind: "aircon", item });
+                      }
+                    }}
+                    onDragStart={handleDragStart(index)}
+                    onDragOver={handleDragOver(index)}
+                    onDrop={handleDrop(index)}
+                    onDragEnd={handleDragEnd}
+                    isDragOver={dragOverIndex === index && dragIndex !== index}
+                  />
+                );
+              })
+            ) : (
+              <p className="rounded-[18px] border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+                登録済みのデバイスがありません
+              </p>
+            )}
+          </section>
         )}
       </div>
+
+      {renderEditSheet()}
     </div>
   );
 }

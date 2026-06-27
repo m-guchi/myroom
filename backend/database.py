@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, Float, DateTime, Date, String
+from sqlalchemy import create_engine, Column, Integer, Float, DateTime, Date, String, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 import datetime
 import random
@@ -53,6 +53,32 @@ class AirconRecord(Base):
     fan_swing = Column(String(20), nullable=True)
     online = Column(Integer, nullable=True)
     model = Column(String(100), nullable=True)
+
+
+class DisplayEntity(Base):
+    __tablename__ = "display_entities"
+
+    entity_type = Column(String(20), primary_key=True)
+    entity_id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    inherits_from = Column(Integer, nullable=True)
+    updated_at = Column(
+        DateTime,
+        default=datetime.datetime.utcnow,
+        onupdate=datetime.datetime.utcnow,
+    )
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    setting_key = Column(String(64), primary_key=True)
+    setting_value = Column(Text, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.datetime.utcnow,
+        onupdate=datetime.datetime.utcnow,
+    )
 
 # SensorDaily model removed as we aggregate from sensor_readings table directly
 

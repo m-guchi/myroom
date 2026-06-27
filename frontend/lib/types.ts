@@ -89,6 +89,20 @@ export interface OutdoorLocation {
 export interface DeviceInfo {
   id: number;
   name: string;
+  inherits_from?: number | null;
+}
+
+/** Open-Meteo 等 API から取得する屋外気象データの表示ラベル */
+export function formatOutdoorApiLabel(locationName?: string | null): string {
+  const trimmed = locationName?.trim();
+  if (trimmed) return `地点データ(${trimmed})`;
+  return "地点データ(未登録)";
+}
+
+export interface UiSettings {
+  display_order: string[];
+  chart_colors: Record<string, string>;
+  hidden_devices: string[];
 }
 
 export interface SensorDeviceStatus {

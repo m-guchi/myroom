@@ -191,6 +191,77 @@ def migrate():
                 """))
                 print("Table 'aircon' created.")
 
+            print("Checking if 'display_entities' table exists...")
+            result = conn.execute(text("SHOW TABLES LIKE 'display_entities'"))
+            if result.fetchone():
+                print("Table 'display_entities' already exists.")
+            else:
+                print("Creating table 'display_entities'...")
+                conn.execute(text("""
+                    CREATE TABLE display_entities (
+                        entity_type VARCHAR(20) NOT NULL,
+                        entity_id INT NOT NULL,
+                        name VARCHAR(100) NOT NULL,
+                        inherits_from INT NULL,
+                        updated_at DATETIME NULL,
+                        PRIMARY KEY (entity_type, entity_id)
+                    )
+                """))
+                print("Table 'display_entities' created.")
+
+            if _table_exists(conn, "display_entities"):
+                sensor_count = conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM display_entities "
+                        "WHERE entity_type = 'sensor'"
+                    )
+                ).scalar()
+                if sensor_count == 0 and _table_exists(conn, "device_names"):
+                    print("Migrating device_names into display_entities...")
+                    if _column_exists(conn, "device_names", "inherits_from"):
+                        conn.execute(text("""
+                            INSERT INTO display_entities (entity_type, entity_id, name, inherits_from, updated_at)
+                            SELECT 'sensor', id, name, inherits_from, updated_at
+                            FROM device_names
+                        """))
+                    else:
+                        conn.execute(text("""
+                            INSERT INTO display_entities (entity_type, entity_id, name, inherits_from, updated_at)
+                            SELECT 'sensor', id, name, NULL, updated_at
+                            FROM device_names
+                        """))
+                    print("device_names migrated.")
+
+                aircon_count = conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM display_entities "
+                        "WHERE entity_type = 'aircon'"
+                    )
+                ).scalar()
+                if aircon_count == 0 and _table_exists(conn, "aircon_unit_names"):
+                    print("Migrating aircon_unit_names into display_entities...")
+                    conn.execute(text("""
+                        INSERT INTO display_entities (entity_type, entity_id, name, inherits_from, updated_at)
+                        SELECT 'aircon', ac_id, name, NULL, updated_at
+                        FROM aircon_unit_names
+                    """))
+                    print("aircon_unit_names migrated.")
+
+            print("Checking if 'app_settings' table exists...")
+            result = conn.execute(text("SHOW TABLES LIKE 'app_settings'"))
+            if result.fetchone():
+                print("Table 'app_settings' already exists.")
+            else:
+                print("Creating table 'app_settings'...")
+                conn.execute(text("""
+                    CREATE TABLE app_settings (
+                        setting_key VARCHAR(64) NOT NULL PRIMARY KEY,
+                        setting_value TEXT NOT NULL,
+                        updated_at DATETIME NULL
+                    )
+                """))
+                print("Table 'app_settings' created.")
+
         print("Migration completed.")
 
     except Exception as e:

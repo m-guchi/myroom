@@ -17,14 +17,46 @@ import {
   type PushVapidPublicKeyResponse,
   type TimeRange,
   type ChartViewRange,
+  type UiSettings,
 } from "@/lib/types";
 import { processHistoryData, processAirconHistoryData } from "@/lib/chart-utils";
 import { toApiDateTime, type AirconHistoryPoint } from "@/lib/history-loader";
+import {
+  authHeaders,
+  AuthError,
+  clearAuthToken,
+  setAuthToken,
+} from "@/lib/auth";
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...authHeaders(),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 401) {
+    clearAuthToken();
+    throw new AuthError();
+  }
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   return res.json() as Promise<T>;
+}
+
+async function fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...authHeaders(),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 401) {
+    clearAuthToken();
+    throw new AuthError();
+  }
+  return res;
 }
 
 export async function login(password: string): Promise<boolean> {
@@ -33,7 +65,30 @@ export async function login(password: string): Promise<boolean> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
-  return res.ok;
+  if (!res.ok) return false;
+  const data = (await res.json()) as { access_token?: string };
+  if (!data.access_token) return false;
+  setAuthToken(data.access_token);
+  return true;
+}
+
+export async function fetchUiSettings(): Promise<UiSettings> {
+  return fetchJson<UiSettings>("/api/ui-settings");
+}
+
+export async function updateUiSettings(
+  settings: Partial<UiSettings>
+): Promise<UiSettings> {
+  const res = await fetchWithAuth("/api/ui-settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail || `Request failed: ${res.status}`);
+  }
+  return res.json() as Promise<UiSettings>;
 }
 
 export async function fetchLatest(deviceId = PRIMARY_SENSOR_DEVICE_ID): Promise<LatestData> {
@@ -134,12 +189,17 @@ export async function fetchDevices(): Promise<DeviceInfo[]> {
 
 export async function updateDeviceName(
   deviceId: number,
-  name: string
+  name: string,
+  inheritsFrom?: number | null
 ): Promise<DeviceInfo> {
-  const res = await fetch(`/api/devices/${deviceId}`, {
+  const body: { name: string; inherits_from?: number | null } = { name };
+  if (inheritsFrom !== undefined) {
+    body.inherits_from = inheritsFrom;
+  }
+  const res = await fetchWithAuth(`/api/devices/${deviceId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
@@ -157,7 +217,7 @@ export async function updateAirconUnitName(
   acId: number,
   name: string
 ): Promise<AirconUnitInfo> {
-  const res = await fetch(`/api/aircon/units/${acId}`, {
+  const res = await fetchWithAuth(`/api/aircon/units/${acId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -176,7 +236,7 @@ export async function fetchOutdoorLocation(): Promise<OutdoorLocation> {
 export async function updateOutdoorLocation(
   location: OutdoorLocation
 ): Promise<OutdoorLocation> {
-  const res = await fetch("/api/outdoor-location", {
+  const res = await fetchWithAuth("/api/outdoor-location", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(location),
@@ -219,7 +279,7 @@ export async function deleteSensorRecord(
     device: String(deviceId),
     datetime,
   });
-  const res = await fetch(`/api/records?${params.toString()}`, {
+  const res = await fetchWithAuth(`/api/records?${params.toString()}`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -233,7 +293,7 @@ export async function fetchSensorsStatus(): Promise<SensorsStatusResponse> {
 }
 
 export async function fetchPushVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
-  const res = await fetch("/api/push/vapid-public-key");
+  const res = await fetchWithAuth("/api/push/vapid-public-key");
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(body?.detail || `Request failed: ${res.status}`);
@@ -249,7 +309,7 @@ export async function subscribePushNotifications(
     expirationTime?: number | null;
   }
 ): Promise<void> {
-  const res = await fetch("/api/push/subscribe", {
+  const res = await fetchWithAuth("/api/push/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password, subscription }),
@@ -264,7 +324,7 @@ export async function unsubscribePushNotifications(
   password: string,
   endpoint: string
 ): Promise<void> {
-  const res = await fetch("/api/push/subscribe", {
+  const res = await fetchWithAuth("/api/push/subscribe", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password, endpoint }),
