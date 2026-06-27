@@ -87,7 +87,8 @@ def test_aircon_history_year_returns_daily_aggregation(client):
     sample = data[0]
     assert "temperature_min" in sample
     assert "temperature_max" in sample
-    assert "target_temperature" in sample
+    # 期間端の日は運転 OFF のみで target_temperature が無いことがある
+    assert any("target_temperature" in row for row in data)
 
 
 def test_daily_stats_returns_list(client):
