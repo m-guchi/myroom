@@ -77,7 +77,11 @@ import {
   saveChartColorsToServer,
   getDefaultUiSettings,
 } from "@/lib/ui-settings-client";
-import { getLocationName } from "@/lib/device-inheritance";
+import {
+  applyDailyStatsInheritance,
+  getLocationName,
+  isPredecessorDevice,
+} from "@/lib/device-inheritance";
 import {
   AuthError,
   clearAuthToken,
@@ -722,31 +726,36 @@ export function MyRoomDashboard() {
     clearAuthToken();
   };
 
+  const mergedDailyStatsByDevice = useMemo(
+    () => applyDailyStatsInheritance(dailyStatsByDevice, sensorDeviceIds, devices),
+    [dailyStatsByDevice, sensorDeviceIds, devices]
+  );
+
   const maxDailyStatsDays = useMemo(() => {
     const dates = new Set<string>();
     for (const deviceId of [...sensorDeviceIds, AIRCON_CHART_DEVICE_ID]) {
-      for (const day of dailyStatsByDevice[deviceId] ?? []) {
+      for (const day of mergedDailyStatsByDevice[deviceId] ?? []) {
         dates.add(String(day.date).slice(0, 10));
       }
     }
     return dates.size;
-  }, [dailyStatsByDevice, sensorDeviceIds]);
+  }, [mergedDailyStatsByDevice, sensorDeviceIds]);
 
   const dailyStatsDeviceIds = useMemo(() => {
     const ids: number[] = [];
     for (const item of visibleDisplayOrder) {
-      if (item.type === "device") {
+      if (item.type === "device" && !isPredecessorDevice(item.deviceId, devices)) {
         ids.push(item.deviceId);
       } else if (
         item.type === "aircon" &&
         isAirconRoomVisible(hiddenDeviceKeys) &&
-        (dailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0
+        (mergedDailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0
       ) {
         ids.push(AIRCON_CHART_DEVICE_ID);
       }
     }
     return ids;
-  }, [visibleDisplayOrder, dailyStatsByDevice]);
+  }, [visibleDisplayOrder, mergedDailyStatsByDevice, devices, hiddenDeviceKeys]);
 
   const handleChartColorChange = (key: string, color: string) => {
     setChartColors((prev) => {
@@ -1011,7 +1020,7 @@ export function MyRoomDashboard() {
           </div>
 
           <DailyStatsList
-            dailyStatsByDevice={dailyStatsByDevice}
+            dailyStatsByDevice={mergedDailyStatsByDevice}
             deviceIds={dailyStatsDeviceIds}
             deviceNames={deviceNames}
             chartMetric={chartMetric}
