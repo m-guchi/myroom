@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const changelogPath = join(__dirname, "../lib/app-changelog.ts");
+const changelogPath = join(__dirname, "../lib/changelog.ts");
 
 export function insertChangelogEntry(content, version, date) {
   if (content.includes(`version: "${version}"`)) {
@@ -17,7 +17,7 @@ export function insertChangelogEntry(content, version, date) {
   const marker = "export const APP_CHANGELOG: ChangelogEntry[] = [";
   const index = content.indexOf(marker);
   if (index === -1) {
-    throw new Error("APP_CHANGELOG marker not found in app-changelog.ts");
+    throw new Error("APP_CHANGELOG marker not found in changelog.ts");
   }
 
   const insertAt = index + marker.length;
@@ -56,7 +56,7 @@ function main() {
   );
 
   if (!inserted) {
-    console.log(`app-changelog.ts already has version ${version}; skipping.`);
+    console.log(`changelog.ts already has version ${version}; skipping.`);
     return;
   }
 

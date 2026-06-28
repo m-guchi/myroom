@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preversion": "npm run typecheck && npm test",
-    "version": "node scripts/version-changelog.mjs && git add lib/app-changelog.ts"
+    "version": "node scripts/version-changelog.mjs && git add lib/changelog.ts"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",

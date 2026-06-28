@@ -18,12 +18,25 @@ export function formatChangelogDate(date: string): string {
   return date;
 }
 
+/**
+ * アプリ内「更新履歴」に表示するデータ。
+ *
+ * ## 記載ルール（必ず守ること）
+ * - ユーザーが画面を見て体感できる変更のみを書く
+ * - 新機能・UI改善・表示内容の変更・操作性の向上・ユーザー向けバグ修正は記載可
+ * - 以下は記載しない:
+ *   - 内部実装・リファクタリング・パフォーマンス改善（画面に変化がないもの）
+ *   - バックエンド・DB・API・インフラ・CI/CD・依存関係の更新
+ *   - 開発者向けの用語 — ユーザー向けの言い方に言い換える
+ * - 過去バージョンのエントリは変更しない
+ *
+ * 新しい順。リリース時に先頭へ追記してください。
+ */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
     version: "3.0.0",
     date: "2026-06-28",
     changes: [
-      "ダッシュボードのデータ API を JWT 認証必須に変更（センサー POST は従来どおり認証不要）",
       "/devices でデバイスの表示順・色・表示名・ダッシュボード表示を一元管理",
       "センサーカードからデバイス詳細（グラフ・記録一覧・一括削除）を開けるように対応",
       "設置場所の継承（センサー交換時の履歴連続表示）と場所名表示に対応",
@@ -52,21 +65,11 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     ],
   },
   {
-    version: "2.4.0",
-    date: "2026-06-25",
-    changes: [
-      "main マージ時に Git タグ・GitHub Release を自動作成（solitaire と同様）",
-      "CI / デプロイ / リリースの Discord 通知を追加",
-      "リリース通知にバージョン番号を表示",
-    ],
-  },
-  {
     version: "2.3.0",
     date: "2026-06-25",
     changes: [
-      "API 側でセンサーデータの鮮度を監視し、未到達時に Discord / PWA プッシュ通知",
+      "センサーデータが一定時間届かない場合に Discord / PWA プッシュ通知",
       "ダッシュボードにセンサー未到達の警告表示と通知設定画面を追加",
-      "VAPID 鍵を 1Password からデプロイ時に本番 .env へ自動同期",
     ],
   },
   {
@@ -74,7 +77,6 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     date: "2026-06-19",
     changes: [
       "エアコン自動運転時に設定温度を「自動」と表示し、室温と同じ高さの点線で運転区間を表示",
-      "npm version でバージョンと更新履歴を管理できるように変更",
     ],
   },
   {
@@ -82,7 +84,7 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     date: "2026-06-07",
     changes: [
       "PWA用アイコンを追加（ホーム画面への追加に対応）",
-      "オフライン時に最新値と直近24時間のグラフを表示（IndexedDB + Service Worker）",
+      "オフライン時に最新値と直近24時間のグラフを表示",
     ],
   },
   {
@@ -96,60 +98,10 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     ],
   },
   {
-    version: "2.0.3",
-    date: "2026-06-07",
-    changes: [
-      "main への push では CI を実行せず、PR CI と Deploy のみに整理",
-      "Discord CI 通知: develop push は失敗時のみ、main 向け PR は成功・失敗どちらも通知",
-    ],
-  },
-  {
-    version: "2.0.2",
-    date: "2026-06-07",
-    changes: [
-      "GitHub Actions（CI / デプロイ）の成功・失敗を Discord へ通知（ログイン通知とは別チャンネル）",
-      "デプロイ用 SSH 接続情報（host / username / ssh-port）を 1Password の Server アイテムから参照",
-    ],
-  },
-  {
-    version: "2.0.1",
-    date: "2026-06-07",
-    changes: [
-      "DB 接続情報（DB_USER / DB_PASSWORD / DB_HOST / DB_PORT）を 1Password の DB アイテムから本番 .env に同期",
-      "DB_NAME を 1Password の MyRoom アイテムから同期",
-      "DB_MOCK はサーバー .env の手動設定のまま（1Password 同期対象外）",
-    ],
-  },
-  {
     version: "2.0.0",
     date: "2026-06-07",
     changes: [
       "ログイン成功時に Discord へ通知（日時・IP・User-Agent）",
-      "ログイン認証をサーバー API（POST /api/login）に移行",
-      "APP_PASSWORD と DISCORD_WEBHOOK_URL を 1Password から本番 .env に自動同期",
-      "フロントエンドへのパスワード埋め込み（NEXT_PUBLIC_APP_PASSWORD）を廃止",
-    ],
-  },
-  {
-    version: "1.8.2",
-    date: "2026-06-07",
-    changes: [
-      "1Password SSH 鍵参照を private_key フィールド ID に修正",
-    ],
-  },
-  {
-    version: "1.8.1",
-    date: "2026-06-07",
-    changes: [
-      "1Password の SSH 鍵参照を githubaction-sshkey アイテムに修正",
-    ],
-  },
-  {
-    version: "1.8.0",
-    date: "2026-06-07",
-    changes: [
-      "GitHub Actions のデプロイ用秘密情報を 1Password から読み込むように変更",
-      "1Password（保管庫 apps / アイテム MyRoom）の設定手順を README に追加",
     ],
   },
   {
@@ -175,13 +127,6 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     ],
   },
   {
-    version: "1.6.2",
-    date: "2026-06-04",
-    changes: [
-      "Raspberry Pi エアコン収集で .env の Permission denied を修正（install.sh の所有者設定）",
-    ],
-  },
-  {
     version: "1.6.1",
     date: "2026-06-03",
     changes: [
@@ -193,8 +138,8 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     date: "2026-06-03",
     changes: [
       "SwitchBot センサーを複数台対応（CO2・防水温湿度計）",
-      "新しい device_id は初回送信時に自動登録",
-      "ダッシュボードが API のデバイス一覧からセンサーを表示",
+      "新しいデバイスは初回データ送信時に自動登録",
+      "ダッシュボードが登録済みデバイス一覧からセンサーを表示",
     ],
   },
   {
@@ -235,7 +180,6 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
       "エアコン履歴をグラフに表示（室温・設定温度）",
       "グラフ凡例の表示切替（目のアイコン）",
       "エアコンの表示名をカスタマイズ可能に",
-      "ラズパイでのエアコン自動取得（systemd）",
     ],
   },
   {
@@ -244,7 +188,6 @@ export const APP_CHANGELOG: ChangelogEntry[] = [
     changes: [
       "AirCloud Home（白くまくん）連携でエアコン状態を取得",
       "ダッシュボードにエアコンカードを追加",
-      "エアコンデータの保存 API（POST /api/aircon）",
     ],
   },
   {

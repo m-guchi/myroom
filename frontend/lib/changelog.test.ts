@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatChangelogDate } from "./app-changelog";
+import { formatChangelogDate } from "./changelog";
 
 describe("formatChangelogDate", () => {
   it("formats YYYY-MM-DD as Japanese date", () => {
