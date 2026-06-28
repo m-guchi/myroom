@@ -79,7 +79,10 @@ import {
   saveChartColorsToServer,
   saveDisplayOrderToServer,
   saveHiddenDevicesToServer,
+  saveStaleAlertExcludedToServer,
 } from "@/lib/ui-settings-client";
+
+export const STALE_ALERT_EXCLUDED_CHANGED_EVENT = "stalealertexcluded_changed";
 import { AuthError, clearAuthToken, isAuthenticated as hasStoredAuthToken } from "@/lib/auth";
 
 type EditableTarget =
@@ -147,6 +150,7 @@ export function DeviceVisibilityPage() {
     buildDefaultChartColors()
   );
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
+  const [staleAlertExcludedKeys, setStaleAlertExcludedKeys] = useState<Set<string>>(() => new Set());
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const [inheritsDrafts, setInheritsDrafts] = useState<Record<number, number | null>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -193,6 +197,7 @@ export function DeviceVisibilityPage() {
       setDisplayOrder(settings.displayOrder);
       setHiddenKeys(settings.hiddenDeviceKeys);
       setChartColors(settings.chartColors);
+      setStaleAlertExcludedKeys(settings.staleAlertExcludedKeys);
     } catch (err) {
       if (err instanceof AuthError) {
         setIsAuthenticated(false);
@@ -349,6 +354,23 @@ export function DeviceVisibilityPage() {
     void saveHiddenDevicesToServer(next)
       .then(() => {
         window.dispatchEvent(new Event(VISIBLE_DEVICES_CHANGED_EVENT));
+      })
+      .catch((err) => {
+        if (err instanceof AuthError) setIsAuthenticated(false);
+      });
+  };
+
+  const handleStaleAlertExcludedChange = (deviceKey: string, monitored: boolean) => {
+    const next = new Set(staleAlertExcludedKeys);
+    if (monitored) {
+      next.delete(deviceKey);
+    } else {
+      next.add(deviceKey);
+    }
+    setStaleAlertExcludedKeys(next);
+    void saveStaleAlertExcludedToServer(next)
+      .then(() => {
+        window.dispatchEvent(new Event(STALE_ALERT_EXCLUDED_CHANGED_EVENT));
       })
       .catch((err) => {
         if (err instanceof AuthError) setIsAuthenticated(false);
@@ -661,6 +683,13 @@ export function DeviceVisibilityPage() {
                   deviceDht11VisibilityKey(deviceId),
                   visible
                 ),
+            },
+            {
+              id: `${key}-stale-alert`,
+              label: "データ未着信のアラートを通知",
+              description: "オフにするとこのデバイスのデータが届かなくてもトップ画面にアラートを表示しません",
+              visible: !staleAlertExcludedKeys.has(key),
+              onChange: (monitored) => handleStaleAlertExcludedChange(key, monitored),
             },
           ]}
           visibilityId={`visible-${key}`}

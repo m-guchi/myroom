@@ -113,6 +113,7 @@ export async function loadUiSettingsFromServer(
   displayOrder: DisplayOrderItem[];
   chartColors: ChartColorSettings;
   hiddenDeviceKeys: Set<string>;
+  staleAlertExcludedKeys: Set<string>;
 }> {
   await migrateLegacySettingsIfNeeded(sensorDeviceIds);
   const settings = await fetchUiSettings();
@@ -124,10 +125,15 @@ export async function loadUiSettingsFromServer(
     sensorDeviceIds
   );
 
+  const staleAlertExcluded = Array.isArray(settings.stale_alert_excluded_devices)
+    ? settings.stale_alert_excluded_devices
+    : [];
+
   return {
     displayOrder,
     chartColors: normalizeChartColors(settings.chart_colors),
     hiddenDeviceKeys: normalizeHiddenDeviceKeys(settings.hidden_devices, sensorDeviceIds),
+    staleAlertExcludedKeys: new Set(staleAlertExcluded),
   };
 }
 
@@ -143,10 +149,15 @@ export async function saveHiddenDevicesToServer(keys: Set<string>): Promise<void
   await updateUiSettings({ hidden_devices: [...keys] });
 }
 
+export async function saveStaleAlertExcludedToServer(keys: Set<string>): Promise<void> {
+  await updateUiSettings({ stale_alert_excluded_devices: [...keys] });
+}
+
 export function getDefaultUiSettings(sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS) {
   return {
     displayOrder: buildDefaultDisplayOrder(sensorDeviceIds),
     chartColors: buildDefaultChartColors(sensorDeviceIds),
     hiddenDeviceKeys: new Set<string>(),
+    staleAlertExcludedKeys: new Set<string>(),
   };
 }

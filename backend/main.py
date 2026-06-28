@@ -103,6 +103,7 @@ class UiSettingsUpdate(BaseModel):
     display_order: Optional[List[str]] = None
     chart_colors: Optional[Dict[str, str]] = None
     hidden_devices: Optional[List[str]] = None
+    stale_alert_excluded_devices: Optional[List[str]] = None
 
 class AirconData(BaseModel):
     datetime: str

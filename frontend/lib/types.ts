@@ -103,6 +103,7 @@ export interface UiSettings {
   display_order: string[];
   chart_colors: Record<string, string>;
   hidden_devices: string[];
+  stale_alert_excluded_devices: string[];
 }
 
 export interface SensorDeviceStatus {
