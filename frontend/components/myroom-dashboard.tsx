@@ -18,7 +18,7 @@ import {
 import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
-import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
+import { OutdoorDetailPanel } from "@/components/outdoor-detail-panel";
 import { NotificationSettings } from "@/components/notification-settings";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
@@ -47,19 +47,13 @@ import {
 import {
   buildDefaultChartColors,
   CHART_COLORS_CHANGED_EVENT,
-  deviceColorKey,
   getDeviceChartColor,
   getOutdoorChartColor,
-  OUTDOOR_COLOR_KEY,
-  setChartColor,
   type ChartColorSettings,
 } from "@/lib/chart-colors";
 import {
   buildDefaultChartLineVisibility,
-  deviceVisibilityKey,
-  isChartLineVisible,
   loadChartLineVisibility,
-  OUTDOOR_VISIBILITY_KEY,
   saveChartLineVisibility,
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
@@ -72,12 +66,16 @@ import {
   applyHiddenDevicesToLineVisibility,
   VISIBLE_DEVICES_CHANGED_EVENT,
 } from "@/lib/visible-devices";
+import { STALE_ALERT_EXCLUDED_CHANGED_EVENT } from "@/components/device-visibility-page";
 import {
   loadUiSettingsFromServer,
-  saveChartColorsToServer,
   getDefaultUiSettings,
 } from "@/lib/ui-settings-client";
-import { getLocationName } from "@/lib/device-inheritance";
+import {
+  applyDailyStatsInheritance,
+  getLocationName,
+  isPredecessorDevice,
+} from "@/lib/device-inheritance";
 import {
   AuthError,
   clearAuthToken,
@@ -91,10 +89,11 @@ import {
   getSensorDeviceIds,
   isAirconPowerOff,
   formatOutdoorApiLabel,
+  pickOutdoorLatestSource,
   PRIMARY_SENSOR_DEVICE_ID,
   resolveAirconDataLoadStatus,
   resolveLatestDataLoadStatus,
-  resolveOutdoorDataLoadStatus,
+  resolveOutdoorBatchLoadStatus,
   type AirconData,
   type AirconUnitInfo,
   type ChartMetric,
@@ -391,12 +390,14 @@ export function MyRoomDashboard() {
   const [viewRange, setViewRange] = useState<ChartViewRange>("day");
   const [dailyLimit, setDailyLimit] = useState(7);
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
-  const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
+  const [outdoorPanelOpen, setOutdoorPanelOpen] = useState(false);
   const [devicePanelOpen, setDevicePanelOpen] = useState(false);
   const [devicePanelId, setDevicePanelId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
   const [sensorStatuses, setSensorStatuses] = useState<SensorDeviceStatus[]>([]);
+  const [staleAlertDismissed, setStaleAlertDismissed] = useState(false);
+  const [staleAlertExcludedKeys, setStaleAlertExcludedKeys] = useState<Set<string>>(() => new Set());
   const [displayOrder, setDisplayOrder] = useState<DisplayOrderItem[]>(() =>
     buildDefaultDisplayOrder()
   );
@@ -515,6 +516,7 @@ export function MyRoomDashboard() {
       setDisplayOrder(settings.displayOrder);
       setChartColors(settings.chartColors);
       setHiddenDeviceKeys(settings.hiddenDeviceKeys);
+      setStaleAlertExcludedKeys(settings.staleAlertExcludedKeys);
     } catch (err) {
       if (err instanceof AuthError) {
         setIsAuthenticated(false);
@@ -559,6 +561,7 @@ export function MyRoomDashboard() {
         setDisplayOrder(settings.displayOrder);
         setChartColors(settings.chartColors);
         setHiddenDeviceKeys(settings.hiddenDeviceKeys);
+        setStaleAlertExcludedKeys(settings.staleAlertExcludedKeys);
         setDefaultLineVisibility(loadChartLineVisibility(sensorIds));
         setLayoutReady(true);
       } catch {
@@ -583,10 +586,12 @@ export function MyRoomDashboard() {
     window.addEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
     window.addEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
     window.addEventListener(DISPLAY_ORDER_CHANGED_EVENT, reloadVisibility);
+    window.addEventListener(STALE_ALERT_EXCLUDED_CHANGED_EVENT, reloadVisibility);
     return () => {
       window.removeEventListener(VISIBLE_DEVICES_CHANGED_EVENT, reloadVisibility);
       window.removeEventListener(CHART_COLORS_CHANGED_EVENT, reloadChartColors);
       window.removeEventListener(DISPLAY_ORDER_CHANGED_EVENT, reloadVisibility);
+      window.removeEventListener(STALE_ALERT_EXCLUDED_CHANGED_EVENT, reloadVisibility);
     };
   }, [reloadUiSettings]);
 
@@ -606,7 +611,7 @@ export function MyRoomDashboard() {
         }
 
         const [data, sensorsStatus] = await Promise.all([
-          fetchDashboardData(airconLatest?.ac_id ?? 1, visibleSensorDeviceIds),
+          fetchDashboardData(airconLatest?.ac_id ?? 1, visibleSensorDeviceIds, devices),
           fetchSensorsStatus().catch(() => null),
         ]);
         setIsOfflineMode(false);
@@ -619,6 +624,7 @@ export function MyRoomDashboard() {
         setAirconLoadStatus(data.airconLoadStatus);
         if (sensorsStatus) {
           setSensorStatuses(sensorsStatus.devices);
+          setStaleAlertDismissed(false);
         }
         if (reloadHistory) {
           await resetAndLoad();
@@ -652,6 +658,7 @@ export function MyRoomDashboard() {
       resetAndLoad,
       airconLatest?.ac_id,
       visibleSensorDeviceIds,
+      devices,
       applyOfflineSnapshot,
     ]
   );
@@ -722,41 +729,36 @@ export function MyRoomDashboard() {
     clearAuthToken();
   };
 
+  const mergedDailyStatsByDevice = useMemo(
+    () => applyDailyStatsInheritance(dailyStatsByDevice, sensorDeviceIds, devices),
+    [dailyStatsByDevice, sensorDeviceIds, devices]
+  );
+
   const maxDailyStatsDays = useMemo(() => {
     const dates = new Set<string>();
     for (const deviceId of [...sensorDeviceIds, AIRCON_CHART_DEVICE_ID]) {
-      for (const day of dailyStatsByDevice[deviceId] ?? []) {
+      for (const day of mergedDailyStatsByDevice[deviceId] ?? []) {
         dates.add(String(day.date).slice(0, 10));
       }
     }
     return dates.size;
-  }, [dailyStatsByDevice, sensorDeviceIds]);
+  }, [mergedDailyStatsByDevice, sensorDeviceIds]);
 
   const dailyStatsDeviceIds = useMemo(() => {
     const ids: number[] = [];
     for (const item of visibleDisplayOrder) {
-      if (item.type === "device") {
+      if (item.type === "device" && !isPredecessorDevice(item.deviceId, devices)) {
         ids.push(item.deviceId);
       } else if (
         item.type === "aircon" &&
         isAirconRoomVisible(hiddenDeviceKeys) &&
-        (dailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0
+        (mergedDailyStatsByDevice[AIRCON_CHART_DEVICE_ID]?.length ?? 0) > 0
       ) {
         ids.push(AIRCON_CHART_DEVICE_ID);
       }
     }
     return ids;
-  }, [visibleDisplayOrder, dailyStatsByDevice]);
-
-  const handleChartColorChange = (key: string, color: string) => {
-    setChartColors((prev) => {
-      const next = setChartColor(prev, key, color);
-      void saveChartColorsToServer(next).catch((err) => {
-        if (err instanceof AuthError) setIsAuthenticated(false);
-      });
-      return next;
-    });
-  };
+  }, [visibleDisplayOrder, mergedDailyStatsByDevice, devices, hiddenDeviceKeys]);
 
   const handleChartLineVisibleChange = (key: string, visible: boolean) => {
     setDefaultLineVisibility((prev) => {
@@ -786,9 +788,16 @@ export function MyRoomDashboard() {
     return map;
   }, [sensorStatuses]);
 
-  const hasStaleSensors = useMemo(
-    () => sensorStatuses.some((status) => status.stale),
-    [sensorStatuses]
+  const monitoredStaleStatuses = useMemo(
+    () => sensorStatuses.filter((s) => s.stale && !staleAlertExcludedKeys.has(`device:${s.device_id}`)),
+    [sensorStatuses, staleAlertExcludedKeys]
+  );
+
+  const hasStaleSensors = monitoredStaleStatuses.length > 0;
+
+  const staleDeviceNames = useMemo(
+    () => monitoredStaleStatuses.map((s) => `${s.name}（ID:${s.device_id}）`),
+    [monitoredStaleStatuses]
   );
 
   const formatStaleNote = (deviceId: number): string | undefined => {
@@ -811,8 +820,8 @@ export function MyRoomDashboard() {
       name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
     };
 
-  const sensorLatest = latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? latestData;
-  const outdoorMetrics = buildOutdoorMetrics(sensorLatest);
+  const outdoorLatest = pickOutdoorLatestSource(latestByDevice);
+  const outdoorMetrics = buildOutdoorMetrics(outdoorLatest);
   const airconTitle = airconChartTitle;
   const lastUpdatedMs = getLatestDataTimestamp(latestByDevice, airconLatest);
   const lastUpdated =
@@ -844,9 +853,18 @@ export function MyRoomDashboard() {
             {offlineCachedAt ? `（${offlineCachedAt} 時点・直近24時間）` : "（直近24時間）"}
           </div>
         )}
-        {hasStaleSensors && !isOfflineMode && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
-            センサーからのデータがしばらく届いていません。通知設定からプッシュ通知を有効にできます。
+        {hasStaleSensors && !isOfflineMode && !staleAlertDismissed && (
+          <div className="relative rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 pr-10 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+            <p>
+              センサーからのデータがしばらく届いていません（{staleDeviceNames.join("・")}）。通知設定からプッシュ通知を有効にできます。
+            </p>
+            <button
+              onClick={() => setStaleAlertDismissed(true)}
+              className="absolute right-2 top-2 rounded p-1 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40"
+              aria-label="通知を閉じる"
+            >
+              ✕
+            </button>
           </div>
         )}
         <section>
@@ -955,9 +973,9 @@ export function MyRoomDashboard() {
               }
 
               if (item.type === "outdoor") {
-                const outdoorLoadStatus = resolveOutdoorDataLoadStatus(
-                  sensorLatest,
-                  latestLoadStatusByDevice[PRIMARY_SENSOR_DEVICE_ID] === "error"
+                const outdoorLoadStatus = resolveOutdoorBatchLoadStatus(
+                  latestByDevice,
+                  latestLoadStatusByDevice
                 );
                 return (
                   <DeviceCard
@@ -975,7 +993,7 @@ export function MyRoomDashboard() {
                         strokeWidth={1.75}
                       />
                     }
-                    onClick={() => setOutdoorSettingsOpen(true)}
+                    onClick={() => setOutdoorPanelOpen(true)}
                   />
                 );
               }
@@ -1011,7 +1029,7 @@ export function MyRoomDashboard() {
           </div>
 
           <DailyStatsList
-            dailyStatsByDevice={dailyStatsByDevice}
+            dailyStatsByDevice={mergedDailyStatsByDevice}
             deviceIds={dailyStatsDeviceIds}
             deviceNames={deviceNames}
             chartMetric={chartMetric}
@@ -1064,20 +1082,19 @@ export function MyRoomDashboard() {
         onChanged={() => fetchData({ reloadHistory: true })}
       />
 
-      <OutdoorLocationSettings
-        open={outdoorSettingsOpen}
-        chartColor={getOutdoorChartColor(chartColors)}
-        onChartColorChange={(color) => handleChartColorChange(OUTDOOR_COLOR_KEY, color)}
-        chartLineVisible={isChartLineVisible(defaultLineVisibility, OUTDOOR_VISIBILITY_KEY)}
-        onChartLineVisibleChange={(visible) =>
-          handleChartLineVisibleChange(OUTDOOR_VISIBILITY_KEY, visible)
-        }
-        onClose={() => setOutdoorSettingsOpen(false)}
-        onSaved={(location) => {
-          setOutdoorLocation(location);
-          fetchData();
-        }}
-      />
+      {outdoorPanelOpen && (
+        <OutdoorDetailPanel
+          open={outdoorPanelOpen}
+          locationName={outdoorLocation?.name}
+          chartColors={chartColors}
+          lineVisibility={defaultLineVisibility}
+          isOfflineMode={isOfflineMode}
+          offlineHistory={offlineSnapshot?.historyData ?? null}
+          offlineCacheKey={offlineSnapshot?.cachedAt ?? null}
+          onLineVisibilityChange={handleChartLineVisibleChange}
+          onClose={() => setOutdoorPanelOpen(false)}
+        />
+      )}
 
       <NotificationSettings
         open={notificationSettingsOpen}

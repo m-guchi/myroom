@@ -25,6 +25,7 @@ import {
 } from "@/lib/types";
 import { processHistoryData, processAirconHistoryData } from "@/lib/chart-utils";
 import { toApiDateTime, type AirconHistoryPoint } from "@/lib/history-loader";
+import { expandDeviceIdsForHistory } from "@/lib/device-inheritance";
 import {
   authHeaders,
   AuthError,
@@ -33,13 +34,19 @@ import {
 } from "@/lib/auth";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...authHeaders(),
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: {
+        ...authHeaders(),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch";
+    throw new TypeError(`${message} (${url})`);
+  }
   if (res.status === 401) {
     clearAuthToken();
     throw new AuthError();
@@ -117,6 +124,24 @@ export async function fetchHistory(
     url = `/api/history?start=${customStartDate}&end=${customEndDate}&device=${deviceId}`;
   }
   const data = await fetchJson<Record<string, unknown>[]>(url);
+  return processHistoryData(data);
+}
+
+export async function fetchOutdoorHistoryWindow(
+  start: Date,
+  end: Date,
+  viewRange: ChartViewRange
+): Promise<HistoryPoint[]> {
+  const params = new URLSearchParams({
+    start: toApiDateTime(start),
+    end: toApiDateTime(end),
+  });
+  if (viewRange === "year") {
+    params.set("range", "year");
+  }
+  const data = await fetchJson<Record<string, unknown>[]>(
+    `/api/outdoor-history?${params.toString()}`
+  );
   return processHistoryData(data);
 }
 
@@ -398,12 +423,15 @@ export async function fetchLatestBatch(
 
 export async function fetchDashboardData(
   acId = 1,
-  sensorDeviceIds: readonly number[] = FALLBACK_SENSOR_DEVICE_IDS
+  sensorDeviceIds: readonly number[] = FALLBACK_SENSOR_DEVICE_IDS,
+  devices: readonly DeviceInfo[] = []
 ) {
+  const dailyStatsIds = expandDeviceIdsForHistory(sensorDeviceIds, devices);
+
   const [latestByDevice, dailyStatsByDevice, airconDailyStats, airconLatest] =
     await Promise.allSettled([
       fetchLatestBatch(sensorDeviceIds),
-      fetchDailyStatsBatch(sensorDeviceIds),
+      fetchDailyStatsBatch(dailyStatsIds.length > 0 ? dailyStatsIds : sensorDeviceIds),
       fetchAirconDailyStats(acId),
       fetchAirconLatest(acId),
     ]);

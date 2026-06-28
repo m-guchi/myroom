@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { APP_CHANGELOG, formatChangelogDate } from "@/lib/app-changelog";
+import { APP_CHANGELOG, formatChangelogDate } from "@/lib/changelog";
 import { APP_VERSION } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
 

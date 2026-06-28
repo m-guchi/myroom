@@ -1,7 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { GripVertical, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,10 @@ interface DeviceListItemProps {
   onDrop?: (event: React.DragEvent) => void;
   onDragEnd?: () => void;
   isDragOver?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 export function DeviceListItem({
@@ -42,7 +46,13 @@ export function DeviceListItem({
   onDrop,
   onDragEnd,
   isDragOver = false,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = false,
+  canMoveDown = false,
 }: DeviceListItemProps) {
+  const showMoveButtons = onMoveUp != null && onMoveDown != null;
+
   return (
     <div
       className={cn(
@@ -53,10 +63,43 @@ export function DeviceListItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {showMoveButtons ? (
+        <div className="flex shrink-0 flex-col gap-0.5 sm:hidden">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            className={cn(
+              "flex size-10 items-center justify-center rounded-lg transition-colors",
+              canMoveUp
+                ? "text-muted-foreground active:bg-accent active:text-foreground"
+                : "text-muted-foreground/30"
+            )}
+            aria-label={`${title}を上へ`}
+          >
+            <ArrowUp className="size-4" strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            className={cn(
+              "flex size-10 items-center justify-center rounded-lg transition-colors",
+              canMoveDown
+                ? "text-muted-foreground active:bg-accent active:text-foreground"
+                : "text-muted-foreground/30"
+            )}
+            aria-label={`${title}を下へ`}
+          >
+            <ArrowDown className="size-4" strokeWidth={1.75} />
+          </button>
+        </div>
+      ) : null}
+
       <button
         type="button"
         className={cn(
-          "flex size-8 shrink-0 cursor-grab items-center justify-center rounded-lg text-muted-foreground active:cursor-grabbing",
+          "hidden size-8 shrink-0 cursor-grab items-center justify-center rounded-lg text-muted-foreground active:cursor-grabbing sm:flex",
           !draggable && "invisible"
         )}
         draggable={draggable}

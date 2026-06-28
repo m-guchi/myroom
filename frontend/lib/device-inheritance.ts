@@ -5,6 +5,7 @@ import {
   deviceMetricKey,
   deviceMetricMaxKey,
   deviceMetricMinKey,
+  type DailyStat,
   type DeviceInfo,
   type HistoryPoint,
 } from "@/lib/types";
@@ -262,4 +263,34 @@ export function buildLocationNames(
     names[leafId] = getLocationName(leafId, devices, deviceNames);
   }
   return names;
+}
+
+/**
+ * 継承チェーンに基づき、先代デバイスの日次統計を後継デバイスにマージする。
+ * 同一日付のデータは新しいデバイス（チェーンの末尾）を優先する。
+ */
+export function applyDailyStatsInheritance(
+  dailyStatsByDevice: Record<number, DailyStat[]>,
+  targetDeviceIds: readonly number[],
+  devices: readonly DeviceInfo[]
+): Record<number, DailyStat[]> {
+  const result: Record<number, DailyStat[]> = { ...dailyStatsByDevice };
+
+  for (const deviceId of targetDeviceIds) {
+    const chain = getInheritanceChain(deviceId, devices);
+    if (chain.length <= 1) continue;
+
+    const dateToStat = new Map<string, DailyStat>();
+    for (const chainId of chain) {
+      for (const stat of dailyStatsByDevice[chainId] ?? []) {
+        dateToStat.set(String(stat.date).slice(0, 10), stat);
+      }
+    }
+
+    result[deviceId] = Array.from(dateToStat.values()).sort((a, b) =>
+      String(a.date).localeCompare(String(b.date))
+    );
+  }
+
+  return result;
 }

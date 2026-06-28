@@ -11,6 +11,7 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "ui_settings.jso
 SETTING_DISPLAY_ORDER = "display_order"
 SETTING_CHART_COLORS = "chart_colors"
 SETTING_HIDDEN_DEVICES = "hidden_devices"
+SETTING_STALE_ALERT_EXCLUDED = "stale_alert_excluded_devices"
 
 DEFAULT_DISPLAY_ORDER = ["device:1", "device:2", "outdoor", "aircon"]
 
@@ -28,6 +29,7 @@ def _default_settings() -> Dict[str, Any]:
         SETTING_DISPLAY_ORDER: list(DEFAULT_DISPLAY_ORDER),
         SETTING_CHART_COLORS: dict(DEFAULT_CHART_COLORS),
         SETTING_HIDDEN_DEVICES: [],
+        SETTING_STALE_ALERT_EXCLUDED: [],
     }
 
 
@@ -81,6 +83,23 @@ def _normalize_hidden_devices(raw: Any) -> List[str]:
     return hidden
 
 
+def _normalize_stale_alert_excluded(raw: Any) -> List[str]:
+    if not isinstance(raw, list):
+        return []
+
+    excluded: List[str] = []
+    seen: Set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, str):
+            continue
+        key = entry.strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        excluded.append(key)
+    return excluded
+
+
 def _normalize_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     defaults = _default_settings()
     if not raw:
@@ -95,6 +114,9 @@ def _normalize_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         ),
         SETTING_HIDDEN_DEVICES: _normalize_hidden_devices(
             raw.get(SETTING_HIDDEN_DEVICES, defaults[SETTING_HIDDEN_DEVICES])
+        ),
+        SETTING_STALE_ALERT_EXCLUDED: _normalize_stale_alert_excluded(
+            raw.get(SETTING_STALE_ALERT_EXCLUDED, defaults[SETTING_STALE_ALERT_EXCLUDED])
         ),
     }
 
@@ -165,6 +187,9 @@ def save_settings(
         SETTING_CHART_COLORS: updates.get(SETTING_CHART_COLORS, current[SETTING_CHART_COLORS]),
         SETTING_HIDDEN_DEVICES: updates.get(
             SETTING_HIDDEN_DEVICES, current[SETTING_HIDDEN_DEVICES]
+        ),
+        SETTING_STALE_ALERT_EXCLUDED: updates.get(
+            SETTING_STALE_ALERT_EXCLUDED, current.get(SETTING_STALE_ALERT_EXCLUDED, [])
         ),
     }
     normalized = _normalize_settings(merged)

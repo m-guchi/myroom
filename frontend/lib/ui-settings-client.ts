@@ -30,51 +30,6 @@ function parseOrderItem(key: string): DisplayOrderItem | null {
   return null;
 }
 
-function loadLegacyDisplayOrder(
-  sensorDeviceIds: readonly number[]
-): DisplayOrderItem[] | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(LEGACY_DISPLAY_ORDER_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    const items = parsed
-      .map((entry) => (typeof entry === "string" ? parseOrderItem(entry) : null))
-      .filter((item): item is DisplayOrderItem => item != null);
-    return normalizeDisplayOrder(items, sensorDeviceIds);
-  } catch {
-    return null;
-  }
-}
-
-function loadLegacyChartColors(): ChartColorSettings | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(LEGACY_CHART_COLORS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    return normalizeChartColors(parsed as ChartColorSettings);
-  } catch {
-    return null;
-  }
-}
-
-function loadLegacyHiddenDevices(sensorDeviceIds: readonly number[]): Set<string> | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(LEGACY_HIDDEN_DEVICES_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    const keys = parsed.filter((entry): entry is string => typeof entry === "string");
-    return normalizeHiddenDeviceKeys(keys, sensorDeviceIds);
-  } catch {
-    return null;
-  }
-}
-
 function clearLegacyStorage(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(LEGACY_DISPLAY_ORDER_KEY);
@@ -82,28 +37,10 @@ function clearLegacyStorage(): void {
   localStorage.removeItem(LEGACY_HIDDEN_DEVICES_KEY);
 }
 
-async function migrateLegacySettingsIfNeeded(
-  sensorDeviceIds: readonly number[]
-): Promise<void> {
+/** DB を正とし、旧 localStorage の UI 設定は破棄する（DB へは書き込まない） */
+function discardLegacyLocalStorage(): void {
   if (typeof window === "undefined") return;
-  if (localStorage.getItem(MIGRATION_FLAG_KEY) === "true") return;
-
-  const legacyOrder = loadLegacyDisplayOrder(sensorDeviceIds);
-  const legacyColors = loadLegacyChartColors();
-  const legacyHidden = loadLegacyHiddenDevices(sensorDeviceIds);
-
-  const hasLegacy =
-    legacyOrder != null || legacyColors != null || (legacyHidden != null && legacyHidden.size > 0);
-
-  if (hasLegacy) {
-    await updateUiSettings({
-      ...(legacyOrder ? { display_order: legacyOrder.map(orderItemKey) } : {}),
-      ...(legacyColors ? { chart_colors: legacyColors } : {}),
-      ...(legacyHidden ? { hidden_devices: [...legacyHidden] } : {}),
-    });
-    clearLegacyStorage();
-  }
-
+  clearLegacyStorage();
   localStorage.setItem(MIGRATION_FLAG_KEY, "true");
 }
 
@@ -113,8 +50,9 @@ export async function loadUiSettingsFromServer(
   displayOrder: DisplayOrderItem[];
   chartColors: ChartColorSettings;
   hiddenDeviceKeys: Set<string>;
+  staleAlertExcludedKeys: Set<string>;
 }> {
-  await migrateLegacySettingsIfNeeded(sensorDeviceIds);
+  discardLegacyLocalStorage();
   const settings = await fetchUiSettings();
 
   const displayOrder = normalizeDisplayOrder(
@@ -124,10 +62,15 @@ export async function loadUiSettingsFromServer(
     sensorDeviceIds
   );
 
+  const staleAlertExcluded = Array.isArray(settings.stale_alert_excluded_devices)
+    ? settings.stale_alert_excluded_devices
+    : [];
+
   return {
     displayOrder,
     chartColors: normalizeChartColors(settings.chart_colors),
     hiddenDeviceKeys: normalizeHiddenDeviceKeys(settings.hidden_devices, sensorDeviceIds),
+    staleAlertExcludedKeys: new Set(staleAlertExcluded),
   };
 }
 
@@ -143,10 +86,15 @@ export async function saveHiddenDevicesToServer(keys: Set<string>): Promise<void
   await updateUiSettings({ hidden_devices: [...keys] });
 }
 
+export async function saveStaleAlertExcludedToServer(keys: Set<string>): Promise<void> {
+  await updateUiSettings({ stale_alert_excluded_devices: [...keys] });
+}
+
 export function getDefaultUiSettings(sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS) {
   return {
     displayOrder: buildDefaultDisplayOrder(sensorDeviceIds),
     chartColors: buildDefaultChartColors(sensorDeviceIds),
     hiddenDeviceKeys: new Set<string>(),
+    staleAlertExcludedKeys: new Set<string>(),
   };
 }
