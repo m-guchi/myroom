@@ -38,10 +38,10 @@ def auth_headers(client):
 
 @pytest.fixture
 def mock_weather(monkeypatch):
-    def outdoor_weather():
+    def outdoor_weather(db=None):
         return {"temperature": 25.0, "humidity": 60.0, "pressure": 1013.0}
 
-    def outdoor_history(start, end):
+    def outdoor_history(start, end, db=None):
         return {"time": [], "temperature": [], "humidity": [], "pressure": []}
 
     def search_locations(query, count=8):

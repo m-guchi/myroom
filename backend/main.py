@@ -178,7 +178,7 @@ def _discover_ac_ids(db: Optional[Session]) -> List[int]:
 
 def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
     if database.DB_MOCK:
-        outdoor = weather.get_outdoor_weather()
+        outdoor = weather.get_outdoor_weather(db)
         offset = (device - 1) * 0.4
         payload = {
             "device_id": device,
@@ -202,10 +202,15 @@ def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
         .order_by(database.SensorRecord.datetime.desc())
         .first()
     )
+    outdoor = weather.get_outdoor_weather(db)
     if not record:
-        return {"device_id": device}
+        return {
+            "device_id": device,
+            "outdoor_temperature": outdoor["temperature"] if outdoor else None,
+            "outdoor_humidity": outdoor["humidity"] if outdoor else None,
+            "outdoor_pressure": outdoor["pressure"] if outdoor else None,
+        }
 
-    outdoor = weather.get_outdoor_weather()
     return {
         "device_id": device,
         "datetime": record.datetime,
@@ -916,7 +921,11 @@ def get_history(
             })
     
     # Fetch outdoor history
-    outdoor_hist = weather.get_outdoor_history(start_time.strftime("%Y-%m-%d"), end_time.strftime("%Y-%m-%d"))
+    outdoor_hist = weather.get_outdoor_history(
+        start_time.strftime("%Y-%m-%d"),
+        end_time.strftime("%Y-%m-%d"),
+        db,
+    )
     outdoor_map = {}
     if outdoor_hist:
         for i, t_str in enumerate(outdoor_hist["time"]):

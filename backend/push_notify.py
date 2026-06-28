@@ -58,6 +58,14 @@ def _send_to_subscription(
             exc,
         )
         return status
+    except Exception as exc:
+        logger.error(
+            "Unexpected error sending push to %s: %s",
+            subscription.get("endpoint"),
+            exc,
+            exc_info=True,
+        )
+        return -1
 
 
 def broadcast(payload: Dict[str, Any]) -> int:

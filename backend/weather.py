@@ -1,22 +1,37 @@
-import requests
 import datetime
-from typing import Optional, Dict, Any, List, Tuple
+import time
+from threading import Lock
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
+
+import requests
+from sqlalchemy.orm import Session
 
 from . import outdoor_config
 
+_OUTDOOR_WEATHER_CACHE_TTL_SECONDS = 300
+_outdoor_weather_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_cache_lock = Lock()
 
-def get_coords() -> Tuple[float, float]:
-    loc = outdoor_config.get_location()
+
+def clear_outdoor_weather_cache() -> None:
+    with _cache_lock:
+        _outdoor_weather_cache.clear()
+
+
+def get_coords(db: Optional[Session] = None) -> Tuple[float, float]:
+    loc = outdoor_config.get_location(db)
     return loc["latitude"], loc["longitude"]
 
-def get_outdoor_weather() -> Optional[Dict[str, Any]]:
-    """
-    Open-Meteo APIから設定地点の現在の気温、湿度、気圧を取得する。
-    """
-    lat, lon = get_coords()
+
+def _fetch_outdoor_weather(lat: float, lon: float) -> Optional[Dict[str, Any]]:
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,surface_pressure&timezone=Asia%2FTokyo"
+        url = (
+            "https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lon}"
+            "&current=temperature_2m,relative_humidity_2m,surface_pressure"
+            "&timezone=Asia%2FTokyo"
+        )
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
@@ -24,19 +39,44 @@ def get_outdoor_weather() -> Optional[Dict[str, Any]]:
             return {
                 "temperature": current.get("temperature_2m"),
                 "humidity": current.get("relative_humidity_2m"),
-                "pressure": current.get("surface_pressure")
+                "pressure": current.get("surface_pressure"),
             }
+        print(f"Weather API error: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"Error fetching outdoor weather: {e}")
     return None
 
-def get_outdoor_history(start_date: str, end_date: str) -> Optional[Dict[str, List[Any]]]:
+
+def get_outdoor_weather(db: Optional[Session] = None) -> Optional[Dict[str, Any]]:
+    """
+    Open-Meteo APIから設定地点の現在の気温、湿度、気圧を取得する。
+    """
+    lat, lon = get_coords(db)
+    cache_key = f"{lat:.4f},{lon:.4f}"
+    now = time.time()
+    with _cache_lock:
+        cached = _outdoor_weather_cache.get(cache_key)
+        if cached and cached[0] > now:
+            return cached[1]
+
+    data = _fetch_outdoor_weather(lat, lon)
+    if data is not None:
+        with _cache_lock:
+            _outdoor_weather_cache[cache_key] = (now + _OUTDOOR_WEATHER_CACHE_TTL_SECONDS, data)
+    return data
+
+
+def get_outdoor_history(
+    start_date: str,
+    end_date: str,
+    db: Optional[Session] = None,
+) -> Optional[Dict[str, List[Any]]]:
     """
     指定された期間の外気履歴を取得する (ISO 8601 format: YYYY-MM-DD)
     1年以上前のデータにも対応するため、期間に応じて Forecast API と Archive API を使い分ける。
     """
     try:
-        lat, lon = get_coords()
+        lat, lon = get_coords(db)
         # 取得開始日が今日から何日前かを計算
         start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d")
         days_ago = (datetime.datetime.now() - start_dt).days

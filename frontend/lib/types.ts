@@ -201,6 +201,32 @@ export function hasOutdoorValues(data: LatestData | null | undefined): boolean {
   );
 }
 
+export function pickOutdoorLatestSource(
+  latestByDevice: Record<number, LatestData | null | undefined>
+): LatestData | null {
+  const primary = latestByDevice[PRIMARY_SENSOR_DEVICE_ID];
+  if (hasOutdoorValues(primary)) return primary ?? null;
+
+  for (const data of Object.values(latestByDevice)) {
+    if (hasOutdoorValues(data)) return data ?? null;
+  }
+
+  return primary ?? null;
+}
+
+export function resolveOutdoorBatchLoadStatus(
+  latestByDevice: Record<number, LatestData | null | undefined>,
+  loadStatusByDevice: Record<number, DeviceDataLoadStatus>
+): DeviceDataLoadStatus {
+  if (hasOutdoorValues(pickOutdoorLatestSource(latestByDevice))) return "ok";
+
+  const statuses = Object.values(loadStatusByDevice);
+  if (statuses.length > 0 && statuses.every((status) => status === "error")) {
+    return "error";
+  }
+  return "empty";
+}
+
 export function resolveLatestDataLoadStatus(
   data: LatestData | null | undefined,
   fetchFailed: boolean

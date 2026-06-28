@@ -110,7 +110,12 @@ def save_location(
     }
 
     if database.DB_MOCK or db is None:
-        return _write_file_location(location)
+        saved = _write_file_location(location)
+    else:
+        _save_db_location(db, location)
+        saved = location
 
-    _save_db_location(db, location)
-    return location
+    from . import weather
+
+    weather.clear_outdoor_weather_cache()
+    return saved

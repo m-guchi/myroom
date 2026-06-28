@@ -89,10 +89,11 @@ import {
   getSensorDeviceIds,
   isAirconPowerOff,
   formatOutdoorApiLabel,
+  pickOutdoorLatestSource,
   PRIMARY_SENSOR_DEVICE_ID,
   resolveAirconDataLoadStatus,
   resolveLatestDataLoadStatus,
-  resolveOutdoorDataLoadStatus,
+  resolveOutdoorBatchLoadStatus,
   type AirconData,
   type AirconUnitInfo,
   type ChartMetric,
@@ -819,8 +820,8 @@ export function MyRoomDashboard() {
       name: deviceNames[deviceId] ?? `デバイス ${deviceId}`,
     };
 
-  const sensorLatest = latestByDevice[PRIMARY_SENSOR_DEVICE_ID] ?? latestData;
-  const outdoorMetrics = buildOutdoorMetrics(sensorLatest);
+  const outdoorLatest = pickOutdoorLatestSource(latestByDevice);
+  const outdoorMetrics = buildOutdoorMetrics(outdoorLatest);
   const airconTitle = airconChartTitle;
   const lastUpdatedMs = getLatestDataTimestamp(latestByDevice, airconLatest);
   const lastUpdated =
@@ -972,9 +973,9 @@ export function MyRoomDashboard() {
               }
 
               if (item.type === "outdoor") {
-                const outdoorLoadStatus = resolveOutdoorDataLoadStatus(
-                  sensorLatest,
-                  latestLoadStatusByDevice[PRIMARY_SENSOR_DEVICE_ID] === "error"
+                const outdoorLoadStatus = resolveOutdoorBatchLoadStatus(
+                  latestByDevice,
+                  latestLoadStatusByDevice
                 );
                 return (
                   <DeviceCard
@@ -1081,17 +1082,19 @@ export function MyRoomDashboard() {
         onChanged={() => fetchData({ reloadHistory: true })}
       />
 
-      <OutdoorDetailPanel
-        open={outdoorPanelOpen}
-        locationName={outdoorLocation?.name}
-        chartColors={chartColors}
-        lineVisibility={defaultLineVisibility}
-        isOfflineMode={isOfflineMode}
-        offlineHistory={offlineSnapshot?.historyData ?? null}
-        offlineCacheKey={offlineSnapshot?.cachedAt ?? null}
-        onLineVisibilityChange={handleChartLineVisibleChange}
-        onClose={() => setOutdoorPanelOpen(false)}
-      />
+      {outdoorPanelOpen && (
+        <OutdoorDetailPanel
+          open={outdoorPanelOpen}
+          locationName={outdoorLocation?.name}
+          chartColors={chartColors}
+          lineVisibility={defaultLineVisibility}
+          isOfflineMode={isOfflineMode}
+          offlineHistory={offlineSnapshot?.historyData ?? null}
+          offlineCacheKey={offlineSnapshot?.cachedAt ?? null}
+          onLineVisibilityChange={handleChartLineVisibleChange}
+          onClose={() => setOutdoorPanelOpen(false)}
+        />
+      )}
 
       <NotificationSettings
         open={notificationSettingsOpen}
