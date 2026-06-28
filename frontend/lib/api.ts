@@ -348,7 +348,6 @@ export async function fetchPushVapidPublicKey(): Promise<PushVapidPublicKeyRespo
 }
 
 export async function subscribePushNotifications(
-  password: string,
   subscription: {
     endpoint: string;
     keys: { p256dh: string; auth: string };
@@ -358,7 +357,7 @@ export async function subscribePushNotifications(
   const res = await fetchWithAuth("/api/push/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password, subscription }),
+    body: JSON.stringify({ subscription }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
@@ -366,14 +365,11 @@ export async function subscribePushNotifications(
   }
 }
 
-export async function unsubscribePushNotifications(
-  password: string,
-  endpoint: string
-): Promise<void> {
+export async function unsubscribePushNotifications(endpoint: string): Promise<void> {
   const res = await fetchWithAuth("/api/push/subscribe", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password, endpoint }),
+    body: JSON.stringify({ endpoint }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
@@ -381,11 +377,10 @@ export async function unsubscribePushNotifications(
   }
 }
 
-export async function sendTestPushNotification(password: string): Promise<PushTestResponse> {
+export async function sendTestPushNotification(): Promise<PushTestResponse> {
   const res = await fetchWithAuth("/api/push/test", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;

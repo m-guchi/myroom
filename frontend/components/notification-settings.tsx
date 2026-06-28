@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Eye, EyeOff, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import {
   fetchPushVapidPublicKey,
   sendTestPushNotification,
@@ -19,7 +18,6 @@ import {
   subscriptionToJson,
   unsubscribeFromPushNotifications,
 } from "@/lib/push-notifications";
-import { cn } from "@/lib/utils";
 
 interface NotificationSettingsProps {
   open: boolean;
@@ -27,8 +25,6 @@ interface NotificationSettingsProps {
 }
 
 export function NotificationSettings({ open, onClose }: NotificationSettingsProps) {
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [supported, setSupported] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -63,17 +59,10 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
   useEffect(() => {
     if (open) {
       void refreshState();
-      setPassword("");
-      setShowPassword(false);
     }
   }, [open, refreshState]);
 
   const handleEnable = async () => {
-    if (!password.trim()) {
-      setError("アプリのパスワードを入力してください");
-      return;
-    }
-
     setSaving(true);
     setError("");
     setInfo("");
@@ -86,11 +75,10 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
 
       const { publicKey } = await fetchPushVapidPublicKey();
       const subscription = await subscribeToPushNotifications(publicKey);
-      await subscribePushNotifications(password.trim(), subscriptionToJson(subscription));
+      await subscribePushNotifications(subscriptionToJson(subscription));
       setPushEnabledLocally(true);
       setEnabled(true);
       setInfo("プッシュ通知を有効にしました。センサーデータが届かない場合に通知します。");
-      setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "有効化に失敗しました");
     } finally {
@@ -99,23 +87,17 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
   };
 
   const handleDisable = async () => {
-    if (!password.trim()) {
-      setError("アプリのパスワードを入力してください");
-      return;
-    }
-
     setSaving(true);
     setError("");
     setInfo("");
     try {
       const subscription = await unsubscribeFromPushNotifications();
       if (subscription) {
-        await unsubscribePushNotifications(password.trim(), subscription.endpoint);
+        await unsubscribePushNotifications(subscription.endpoint);
       }
       setPushEnabledLocally(false);
       setEnabled(false);
       setInfo("プッシュ通知を無効にしました。");
-      setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "無効化に失敗しました");
     } finally {
@@ -124,20 +106,14 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
   };
 
   const handleTest = async () => {
-    if (!password.trim()) {
-      setError("アプリのパスワードを入力してください");
-      return;
-    }
-
     setSaving(true);
     setError("");
     setInfo("");
     try {
-      const result = await sendTestPushNotification(password.trim());
+      const result = await sendTestPushNotification();
       setInfo(
         `テスト通知を送信しました（${result.sent}/${result.total} 件）。数秒以内に届かない場合は端末の通知設定を確認してください。`
       );
-      setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "テスト送信に失敗しました");
     } finally {
@@ -192,33 +168,6 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
 
             {supported && (
               <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="notification-password">アプリのパスワード</Label>
-                  <div className="relative">
-                    <Input
-                      id="notification-password"
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      placeholder="通知の登録・解除に使用"
-                      autoComplete="current-password"
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                      aria-label={showPassword ? "パスワードを隠す" : "パスワードを表示"}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="size-4" strokeWidth={1.75} />
-                      ) : (
-                        <Eye className="size-4" strokeWidth={1.75} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
                 <div className="flex gap-2">
                   <Button
                     className="flex-1"

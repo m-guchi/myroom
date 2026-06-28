@@ -89,15 +89,13 @@ class PushSubscriptionBody(BaseModel):
     expirationTime: Optional[int] = None
 
 class PushSubscribeRequest(BaseModel):
-    password: str
     subscription: PushSubscriptionBody
 
 class PushUnsubscribeRequest(BaseModel):
-    password: str
     endpoint: str
 
 class PushTestRequest(BaseModel):
-    password: str
+    pass
 
 class UiSettingsUpdate(BaseModel):
     display_order: Optional[List[str]] = None
@@ -377,7 +375,6 @@ def get_push_vapid_public_key(_: dict = Depends(get_current_user)):
 
 @app.post("/api/push/subscribe")
 def subscribe_push(body: PushSubscribeRequest, _: dict = Depends(get_current_user)):
-    _verify_app_password(body.password)
     if not push_notify.is_configured():
         raise HTTPException(status_code=503, detail="Web Push is not configured")
 
@@ -391,7 +388,6 @@ def subscribe_push(body: PushSubscribeRequest, _: dict = Depends(get_current_use
 
 @app.delete("/api/push/subscribe")
 def unsubscribe_push(body: PushUnsubscribeRequest, _: dict = Depends(get_current_user)):
-    _verify_app_password(body.password)
     removed = push_subscriptions.remove_subscription(body.endpoint)
     if not removed:
         raise HTTPException(status_code=404, detail="Subscription not found")
@@ -399,8 +395,7 @@ def unsubscribe_push(body: PushUnsubscribeRequest, _: dict = Depends(get_current
 
 
 @app.post("/api/push/test")
-def test_push(body: PushTestRequest, _: dict = Depends(get_current_user)):
-    _verify_app_password(body.password)
+def test_push(_: dict = Depends(get_current_user)):
     if not push_notify.is_configured():
         raise HTTPException(status_code=503, detail="Web Push is not configured")
 
