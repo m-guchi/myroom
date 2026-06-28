@@ -21,6 +21,7 @@ interface DeviceEditSheetProps {
   name: string;
   onNameChange: (value: string) => void;
   namePlaceholder?: string;
+  extraContent?: ReactNode;
   chartColors: Array<{
     id: string;
     label: string;
@@ -58,6 +59,7 @@ export function DeviceEditSheet({
   name,
   onNameChange,
   namePlaceholder,
+  extraContent,
   chartColors,
   visible,
   onVisibleChange,
@@ -104,6 +106,7 @@ export function DeviceEditSheet({
             name={name}
             onNameChange={onNameChange}
             namePlaceholder={namePlaceholder}
+            extraContent={extraContent}
             chartColors={chartColors}
             visible={visible}
             onVisibleChange={onVisibleChange}

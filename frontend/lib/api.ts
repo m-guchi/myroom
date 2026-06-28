@@ -25,6 +25,7 @@ import {
 } from "@/lib/types";
 import { processHistoryData, processAirconHistoryData } from "@/lib/chart-utils";
 import { toApiDateTime, type AirconHistoryPoint } from "@/lib/history-loader";
+import { expandDeviceIdsForHistory } from "@/lib/device-inheritance";
 import {
   authHeaders,
   AuthError,
@@ -398,12 +399,15 @@ export async function fetchLatestBatch(
 
 export async function fetchDashboardData(
   acId = 1,
-  sensorDeviceIds: readonly number[] = FALLBACK_SENSOR_DEVICE_IDS
+  sensorDeviceIds: readonly number[] = FALLBACK_SENSOR_DEVICE_IDS,
+  devices: readonly DeviceInfo[] = []
 ) {
+  const dailyStatsIds = expandDeviceIdsForHistory(sensorDeviceIds, devices);
+
   const [latestByDevice, dailyStatsByDevice, airconDailyStats, airconLatest] =
     await Promise.allSettled([
       fetchLatestBatch(sensorDeviceIds),
-      fetchDailyStatsBatch(sensorDeviceIds),
+      fetchDailyStatsBatch(dailyStatsIds.length > 0 ? dailyStatsIds : sensorDeviceIds),
       fetchAirconDailyStats(acId),
       fetchAirconLatest(acId),
     ]);

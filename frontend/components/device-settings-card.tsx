@@ -18,6 +18,7 @@ interface DeviceSettingsCardProps {
   name: string;
   onNameChange: (value: string) => void;
   namePlaceholder?: string;
+  extraContent?: ReactNode;
   chartColors: Array<{
     id: string;
     label: string;
@@ -58,6 +59,7 @@ export function DeviceSettingsCard({
   name,
   onNameChange,
   namePlaceholder,
+  extraContent,
   chartColors,
   visible,
   onVisibleChange,
@@ -103,6 +105,8 @@ export function DeviceSettingsCard({
             className="rounded-xl"
           />
         </div>
+
+        {extraContent}
 
         {chartColors.map((item) => (
           <ChartColorPicker

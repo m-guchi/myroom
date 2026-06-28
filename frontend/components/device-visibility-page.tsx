@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CloudSun,
   LayoutGrid,
+  Search,
   Snowflake,
   Thermometer,
 } from "lucide-react";
@@ -16,11 +17,14 @@ import {
   DeviceListItem,
   type DeviceListItemTrack,
 } from "@/components/device-list-item";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   fetchAirconUnits,
   fetchDevices,
   fetchOutdoorLocation,
   login,
+  searchOutdoorLocations,
   updateAirconUnitName,
   updateDeviceName,
   updateOutdoorLocation,
@@ -50,6 +54,7 @@ import {
   type AirconUnitInfo,
   type DeviceInfo,
   type OutdoorLocation,
+  type OutdoorLocationSearchResult,
 } from "@/lib/types";
 import {
   findLeafDeviceId,
@@ -151,6 +156,12 @@ export function DeviceVisibilityPage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  const [locationSearch, setLocationSearch] = useState("");
+  const [locationSearchResults, setLocationSearchResults] = useState<OutdoorLocationSearchResult[]>([]);
+  const [locationSearching, setLocationSearching] = useState(false);
+  const [latDraft, setLatDraft] = useState("");
+  const [lonDraft, setLonDraft] = useState("");
+
   const sensorDeviceIds = useMemo(() => getSensorDeviceIds(devices), [devices]);
   const sensorDeviceIdsKey = sensorDeviceIds.join(",");
   const primaryAirconId = airconUnits[0]?.ac_id ?? 1;
@@ -241,6 +252,38 @@ export function DeviceVisibilityPage() {
     setNameDrafts(drafts);
     setInheritsDrafts(inheritDrafts);
   }, [devices, airconUnits, outdoorLocation]);
+
+  // 屋外編集シートを開いたとき、緯度・経度を初期化
+  useEffect(() => {
+    if (editingTarget?.kind !== "outdoor") return;
+    setLocationSearch("");
+    setLocationSearchResults([]);
+    setLatDraft(outdoorLocation ? String(outdoorLocation.latitude) : "");
+    setLonDraft(outdoorLocation ? String(outdoorLocation.longitude) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingTarget?.kind]);
+
+  // 地名検索（デバウンス）
+  useEffect(() => {
+    if (editingTarget?.kind !== "outdoor") return;
+    const q = locationSearch.trim();
+    if (q.length < 2) {
+      setLocationSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setLocationSearching(true);
+      try {
+        const results = await searchOutdoorLocations(q);
+        setLocationSearchResults(results);
+      } catch {
+        setLocationSearchResults([]);
+      } finally {
+        setLocationSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [locationSearch, editingTarget?.kind]);
 
   const persistDisplayOrder = useCallback((order: DisplayOrderItem[]) => {
     setDisplayOrder(order);
@@ -434,13 +477,21 @@ export function DeviceVisibilityPage() {
       return;
     }
 
+    const lat = Number(latDraft);
+    const lon = Number(lonDraft);
+    if (Number.isNaN(lat) || lat < -90 || lat > 90) {
+      setErrors((prev) => ({ ...prev, [key]: "緯度が正しくありません（-90〜90）" }));
+      return;
+    }
+    if (Number.isNaN(lon) || lon < -180 || lon > 180) {
+      setErrors((prev) => ({ ...prev, [key]: "経度が正しくありません（-180〜180）" }));
+      return;
+    }
+
     setSavingKey(key);
     setErrors((prev) => ({ ...prev, [key]: "" }));
     try {
-      const saved = await updateOutdoorLocation({
-        ...outdoorLocation,
-        name,
-      });
+      const saved = await updateOutdoorLocation({ name, latitude: lat, longitude: lon });
       setOutdoorLocation(saved);
       setEditingTarget(null);
     } catch (err) {
@@ -494,6 +545,74 @@ export function DeviceVisibilityPage() {
     }
     return options;
   };
+
+  const renderOutdoorLocationExtra = () => (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor="outdoor-location-search">地名で検索</Label>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="outdoor-location-search"
+            value={locationSearch}
+            onChange={(e) => setLocationSearch(e.target.value)}
+            placeholder="例: 大阪, 渋谷, 札幌"
+            className="rounded-xl pl-9"
+          />
+        </div>
+        {locationSearching && (
+          <p className="text-xs text-muted-foreground">検索中...</p>
+        )}
+        {locationSearchResults.length > 0 && (
+          <ul className="max-h-40 overflow-y-auto rounded-xl border bg-muted">
+            {locationSearchResults.map((result) => (
+              <li key={`${result.latitude}-${result.longitude}-${result.label}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft("outdoor", result.name);
+                    setLatDraft(String(result.latitude));
+                    setLonDraft(String(result.longitude));
+                    setLocationSearch(result.label);
+                    setLocationSearchResults([]);
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm hover:bg-accent"
+                >
+                  <span className="font-medium">{result.label}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {result.latitude.toFixed(4)}, {result.longitude.toFixed(4)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="outdoor-lat">緯度</Label>
+          <Input
+            id="outdoor-lat"
+            inputMode="decimal"
+            value={latDraft}
+            onChange={(e) => setLatDraft(e.target.value)}
+            className="rounded-xl"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="outdoor-lon">経度</Label>
+          <Input
+            id="outdoor-lon"
+            inputMode="decimal"
+            value={lonDraft}
+            onChange={(e) => setLonDraft(e.target.value)}
+            className="rounded-xl"
+          />
+        </div>
+      </div>
+    </>
+  );
 
   const renderEditSheet = () => {
     if (!editingTarget) return null;
@@ -565,11 +684,12 @@ export function DeviceVisibilityPage() {
           icon={Icon}
           accentColor={getAccentColor(item)}
           title={formatOutdoorApiLabel(outdoorLocation?.name)}
-          subtitle="地点名をダッシュボードに表示します"
+          subtitle="地点名・座標・グラフの色を設定します"
           nameLabel="表示名"
           name={nameDrafts[key] ?? outdoorLocation?.name ?? ""}
           onNameChange={(value) => setDraft(key, value)}
           namePlaceholder="例: 茨木市"
+          extraContent={renderOutdoorLocationExtra()}
           chartColors={[
             {
               id: `${key}-color`,
@@ -585,15 +705,6 @@ export function DeviceVisibilityPage() {
           saving={savingKey === key}
           saveDisabled={!outdoorLocation}
           error={errors[key]}
-          footer={
-            <p className="text-xs text-muted-foreground">
-              緯度・経度の変更は
-              <Link href="/" className="mx-1 underline underline-offset-2">
-                ダッシュボード
-              </Link>
-              の地点カードから行えます
-            </p>
-          }
         />
       );
     }

@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ChevronRight,
@@ -18,7 +19,6 @@ import {
 import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
-import { OutdoorLocationSettings } from "@/components/outdoor-location-settings";
 import { NotificationSettings } from "@/components/notification-settings";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
@@ -47,19 +47,13 @@ import {
 import {
   buildDefaultChartColors,
   CHART_COLORS_CHANGED_EVENT,
-  deviceColorKey,
   getDeviceChartColor,
   getOutdoorChartColor,
-  OUTDOOR_COLOR_KEY,
-  setChartColor,
   type ChartColorSettings,
 } from "@/lib/chart-colors";
 import {
   buildDefaultChartLineVisibility,
-  deviceVisibilityKey,
-  isChartLineVisible,
   loadChartLineVisibility,
-  OUTDOOR_VISIBILITY_KEY,
   saveChartLineVisibility,
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
@@ -74,7 +68,6 @@ import {
 } from "@/lib/visible-devices";
 import {
   loadUiSettingsFromServer,
-  saveChartColorsToServer,
   getDefaultUiSettings,
 } from "@/lib/ui-settings-client";
 import {
@@ -395,7 +388,6 @@ export function MyRoomDashboard() {
   const [viewRange, setViewRange] = useState<ChartViewRange>("day");
   const [dailyLimit, setDailyLimit] = useState(7);
   const [outdoorLocation, setOutdoorLocation] = useState<OutdoorLocation | null>(null);
-  const [outdoorSettingsOpen, setOutdoorSettingsOpen] = useState(false);
   const [devicePanelOpen, setDevicePanelOpen] = useState(false);
   const [devicePanelId, setDevicePanelId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
@@ -420,6 +412,7 @@ export function MyRoomDashboard() {
   );
   const [layoutReady, setLayoutReady] = useState(false);
   const [dashboardDataLoaded, setDashboardDataLoaded] = useState(false);
+  const router = useRouter();
   const [latestLoadStatusByDevice, setLatestLoadStatusByDevice] = useState<
     Record<number, DeviceDataLoadStatus>
   >({});
@@ -610,7 +603,7 @@ export function MyRoomDashboard() {
         }
 
         const [data, sensorsStatus] = await Promise.all([
-          fetchDashboardData(airconLatest?.ac_id ?? 1, visibleSensorDeviceIds),
+          fetchDashboardData(airconLatest?.ac_id ?? 1, visibleSensorDeviceIds, devices),
           fetchSensorsStatus().catch(() => null),
         ]);
         setIsOfflineMode(false);
@@ -656,6 +649,7 @@ export function MyRoomDashboard() {
       resetAndLoad,
       airconLatest?.ac_id,
       visibleSensorDeviceIds,
+      devices,
       applyOfflineSnapshot,
     ]
   );
@@ -756,16 +750,6 @@ export function MyRoomDashboard() {
     }
     return ids;
   }, [visibleDisplayOrder, mergedDailyStatsByDevice, devices, hiddenDeviceKeys]);
-
-  const handleChartColorChange = (key: string, color: string) => {
-    setChartColors((prev) => {
-      const next = setChartColor(prev, key, color);
-      void saveChartColorsToServer(next).catch((err) => {
-        if (err instanceof AuthError) setIsAuthenticated(false);
-      });
-      return next;
-    });
-  };
 
   const handleChartLineVisibleChange = (key: string, visible: boolean) => {
     setDefaultLineVisibility((prev) => {
@@ -984,7 +968,7 @@ export function MyRoomDashboard() {
                         strokeWidth={1.75}
                       />
                     }
-                    onClick={() => setOutdoorSettingsOpen(true)}
+                    onClick={() => router.push("/devices")}
                   />
                 );
               }
@@ -1071,21 +1055,6 @@ export function MyRoomDashboard() {
         onLineVisibilityChange={handleChartLineVisibleChange}
         onClose={() => setDevicePanelOpen(false)}
         onChanged={() => fetchData({ reloadHistory: true })}
-      />
-
-      <OutdoorLocationSettings
-        open={outdoorSettingsOpen}
-        chartColor={getOutdoorChartColor(chartColors)}
-        onChartColorChange={(color) => handleChartColorChange(OUTDOOR_COLOR_KEY, color)}
-        chartLineVisible={isChartLineVisible(defaultLineVisibility, OUTDOOR_VISIBILITY_KEY)}
-        onChartLineVisibleChange={(visible) =>
-          handleChartLineVisibleChange(OUTDOOR_VISIBILITY_KEY, visible)
-        }
-        onClose={() => setOutdoorSettingsOpen(false)}
-        onSaved={(location) => {
-          setOutdoorLocation(location);
-          fetchData();
-        }}
       />
 
       <NotificationSettings
