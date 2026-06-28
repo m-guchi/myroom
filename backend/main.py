@@ -326,17 +326,22 @@ async def login(body: LoginRequest, request: Request):
 
 
 @app.get("/api/outdoor-location")
-def get_outdoor_location(_: dict = Depends(get_current_user)):
-    return outdoor_config.get_location()
+def get_outdoor_location(db: Session = Depends(database.get_db), _: dict = Depends(get_current_user)):
+    return outdoor_config.get_location(db)
 
 
 @app.put("/api/outdoor-location")
-def update_outdoor_location(location: OutdoorLocation, _: dict = Depends(get_current_user)):
+def update_outdoor_location(
+    location: OutdoorLocation,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
     try:
         return outdoor_config.save_location(
             location.latitude,
             location.longitude,
             location.name,
+            db,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
