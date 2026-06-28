@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, X } from "lucide-react";
+import { Bell, Eye, EyeOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ interface NotificationSettingsProps {
 
 export function NotificationSettings({ open, onClose }: NotificationSettingsProps) {
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [supported, setSupported] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -63,6 +64,7 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
     if (open) {
       void refreshState();
       setPassword("");
+      setShowPassword(false);
     }
   }, [open, refreshState]);
 
@@ -192,14 +194,29 @@ export function NotificationSettings({ open, onClose }: NotificationSettingsProp
               <div className="space-y-3">
                 <div className="space-y-2">
                   <Label htmlFor="notification-password">アプリのパスワード</Label>
-                  <Input
-                    id="notification-password"
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="通知の登録・解除に使用"
-                    autoComplete="current-password"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="notification-password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="通知の登録・解除に使用"
+                      autoComplete="current-password"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      aria-label={showPassword ? "パスワードを隠す" : "パスワードを表示"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="size-4" strokeWidth={1.75} />
+                      ) : (
+                        <Eye className="size-4" strokeWidth={1.75} />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
