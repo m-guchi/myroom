@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict
+from typing import Any, Dict, List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
@@ -174,6 +174,117 @@ def _discover_ac_ids(db: Optional[Session]) -> List[int]:
         return []
     rows = db.query(database.AirconRecord.ac_id).distinct().all()
     return sorted({row[0] for row in rows if row[0] is not None})
+
+
+def _outdoor_only_day_records(
+    outdoor_map: Dict[datetime.datetime, Dict[str, Any]],
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+) -> List[dict]:
+    records: List[dict] = []
+    for hour_dt, out_data in sorted(outdoor_map.items()):
+        if hour_dt < start_time or hour_dt > end_time:
+            continue
+        if not any(out_data.get(key) is not None for key in ("temp", "humid", "press")):
+            continue
+        records.append(
+            {
+                "datetime": hour_dt,
+                "outdoor_temperature": out_data.get("temp"),
+                "outdoor_humidity": out_data.get("humid"),
+                "outdoor_pressure": out_data.get("press"),
+            }
+        )
+    return records
+
+
+def _outdoor_only_year_records(
+    outdoor_map: Dict[datetime.datetime, Dict[str, Any]],
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+) -> List[dict]:
+    daily_outdoor: Dict[str, Dict[str, List[float]]] = {}
+    for hour_dt, out_data in outdoor_map.items():
+        if hour_dt < start_time or hour_dt > end_time:
+            continue
+        date_str = hour_dt.strftime("%Y-%m-%d")
+        bucket = daily_outdoor.setdefault(
+            date_str, {"temps": [], "humids": [], "pressures": []}
+        )
+        if out_data.get("temp") is not None:
+            bucket["temps"].append(out_data["temp"])
+        if out_data.get("humid") is not None:
+            bucket["humids"].append(out_data["humid"])
+        if out_data.get("press") is not None:
+            bucket["pressures"].append(out_data["press"])
+
+    aggregated: List[dict] = []
+    for date_str, values in daily_outdoor.items():
+        if not any(values.values()):
+            continue
+        dt = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(hour=12)
+        entry: Dict[str, Any] = {"datetime": dt}
+        if values["temps"]:
+            entry["outdoor_temperature"] = round(
+                sum(values["temps"]) / len(values["temps"]), 1
+            )
+            entry["outdoor_temperature_min"] = min(values["temps"])
+            entry["outdoor_temperature_max"] = max(values["temps"])
+        if values["humids"]:
+            entry["outdoor_humidity"] = round(
+                sum(values["humids"]) / len(values["humids"]), 1
+            )
+            entry["outdoor_humidity_min"] = min(values["humids"])
+            entry["outdoor_humidity_max"] = max(values["humids"])
+        if values["pressures"]:
+            entry["outdoor_pressure"] = round(
+                sum(values["pressures"]) / len(values["pressures"]), 1
+            )
+            entry["outdoor_pressure_min"] = min(values["pressures"])
+            entry["outdoor_pressure_max"] = max(values["pressures"])
+        aggregated.append(entry)
+
+    aggregated.sort(key=lambda row: row["datetime"])
+    return aggregated
+
+
+def _build_outdoor_map(
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+    db: Optional[Session],
+) -> Dict[datetime.datetime, Dict[str, Any]]:
+    outdoor_hist = weather.get_outdoor_history(
+        start_time.strftime("%Y-%m-%d"),
+        end_time.strftime("%Y-%m-%d"),
+        db,
+    )
+    outdoor_map: Dict[datetime.datetime, Dict[str, Any]] = {}
+    if not outdoor_hist:
+        return outdoor_map
+
+    for i, t_str in enumerate(outdoor_hist["time"]):
+        try:
+            dt_key = datetime.datetime.fromisoformat(t_str)
+            outdoor_map[dt_key.replace(tzinfo=None)] = {
+                "temp": outdoor_hist["temperature"][i],
+                "humid": outdoor_hist["humidity"][i],
+                "press": outdoor_hist["pressure"][i],
+            }
+        except Exception:
+            pass
+    return outdoor_map
+
+
+def _build_outdoor_history_records(
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+    effective_range: Optional[str],
+    db: Optional[Session],
+) -> List[dict]:
+    outdoor_map = _build_outdoor_map(start_time, end_time, db)
+    if effective_range == "year":
+        return _outdoor_only_year_records(outdoor_map, start_time, end_time)
+    return _outdoor_only_day_records(outdoor_map, start_time, end_time)
 
 
 def _build_latest_payload(device: int, db: Optional[Session]) -> dict:
@@ -362,6 +473,19 @@ def search_outdoor_locations(
     if limit < 1 or limit > 20:
         limit = 8
     return {"results": weather.search_locations(q, count=limit)}
+
+
+@app.get("/api/outdoor-history")
+def get_outdoor_history(
+    date: Optional[str] = None,
+    range: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    db: Session = Depends(database.get_db),
+    _: dict = Depends(get_current_user),
+):
+    start_time, end_time, effective_range = _resolve_history_window(date, range, start, end)
+    return _build_outdoor_history_records(start_time, end_time, effective_range, db)
 
 
 @app.get("/api/devices")
@@ -921,23 +1045,7 @@ def get_history(
             })
     
     # Fetch outdoor history
-    outdoor_hist = weather.get_outdoor_history(
-        start_time.strftime("%Y-%m-%d"),
-        end_time.strftime("%Y-%m-%d"),
-        db,
-    )
-    outdoor_map = {}
-    if outdoor_hist:
-        for i, t_str in enumerate(outdoor_hist["time"]):
-            try:
-                dt_key = datetime.datetime.fromisoformat(t_str)
-                outdoor_map[dt_key.replace(tzinfo=None)] = {
-                    "temp": outdoor_hist["temperature"][i],
-                    "humid": outdoor_hist["humidity"][i],
-                    "press": outdoor_hist["pressure"][i]
-                }
-            except Exception:
-                pass
+    outdoor_map = _build_outdoor_map(start_time, end_time, db)
 
     # 日次集計は年表示のみ。月以下は生データ（10分間隔等）を返す
     if effective_range == 'year':
@@ -1002,6 +1110,8 @@ def get_history(
 
             aggregated.append(entry)
         aggregated.sort(key=lambda x: x['datetime'])
+        if not aggregated:
+            return _outdoor_only_year_records(outdoor_map, start_time, end_time)
         return aggregated
 
     # For day/week, return all records with merged outdoor data
@@ -1032,6 +1142,8 @@ def get_history(
         })
         
     formatted_records.sort(key=lambda x: x['datetime'])
+    if not formatted_records:
+        return _outdoor_only_day_records(outdoor_map, start_time, end_time)
     return formatted_records
 
 

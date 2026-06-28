@@ -1,3 +1,4 @@
+import datetime
 import os
 
 os.environ["DB_MOCK"] = "true"
@@ -42,7 +43,25 @@ def mock_weather(monkeypatch):
         return {"temperature": 25.0, "humidity": 60.0, "pressure": 1013.0}
 
     def outdoor_history(start, end, db=None):
-        return {"time": [], "temperature": [], "humidity": [], "pressure": []}
+        start_dt = datetime.datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.datetime.strptime(end, "%Y-%m-%d")
+        times = []
+        temps = []
+        humids = []
+        pressures = []
+        cursor = start_dt
+        while cursor <= end_dt + datetime.timedelta(hours=23):
+            times.append(cursor.strftime("%Y-%m-%dT%H:00"))
+            temps.append(22.0)
+            humids.append(55.0)
+            pressures.append(1013.0)
+            cursor += datetime.timedelta(hours=1)
+        return {
+            "time": times,
+            "temperature": temps,
+            "humidity": humids,
+            "pressure": pressures,
+        }
 
     def search_locations(query, count=8):
         if query.strip() == "大阪":

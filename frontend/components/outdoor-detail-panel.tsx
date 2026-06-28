@@ -9,10 +9,9 @@ import {
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
 import type { DisplayOrderItem } from "@/lib/display-order";
-import { useChartHistory } from "@/lib/use-chart-history";
+import { useOutdoorChartHistory } from "@/lib/use-outdoor-chart-history";
 import {
   formatOutdoorApiLabel,
-  PRIMARY_SENSOR_DEVICE_ID,
   type ChartMetric,
   type ChartViewRange,
   type HistoryPoint,
@@ -66,7 +65,7 @@ export function OutdoorDetailPanel({
     historyEpoch,
     noMoreOlderData,
     ensureVisibleRangeLoaded,
-  } = useChartHistory([PRIMARY_SENSOR_DEVICE_ID], viewRange, {
+  } = useOutdoorChartHistory(viewRange, {
     offlineMode: isOfflineMode,
     offlineHistory,
     offlineCacheKey,

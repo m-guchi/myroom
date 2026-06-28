@@ -127,6 +127,24 @@ export async function fetchHistory(
   return processHistoryData(data);
 }
 
+export async function fetchOutdoorHistoryWindow(
+  start: Date,
+  end: Date,
+  viewRange: ChartViewRange
+): Promise<HistoryPoint[]> {
+  const params = new URLSearchParams({
+    start: toApiDateTime(start),
+    end: toApiDateTime(end),
+  });
+  if (viewRange === "year") {
+    params.set("range", "year");
+  }
+  const data = await fetchJson<Record<string, unknown>[]>(
+    `/api/outdoor-history?${params.toString()}`
+  );
+  return processHistoryData(data);
+}
+
 export async function fetchHistoryWindow(
   start: Date,
   end: Date,

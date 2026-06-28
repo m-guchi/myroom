@@ -88,6 +88,17 @@ def test_sensor_rejects_empty_payload(client):
     assert response.status_code == 422
 
 
+def test_outdoor_history_day_returns_open_meteo_records(client, auth_headers):
+    response = client.get("/api/outdoor-history?range=day", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert data[0]["outdoor_temperature"] == 22.0
+    assert data[0]["outdoor_humidity"] == 55.0
+    assert data[0]["outdoor_pressure"] == 1013
+
+
 def test_history_day_returns_records(client, auth_headers):
     response = client.get("/api/history?range=day&device=1", headers=auth_headers)
     assert response.status_code == 200
