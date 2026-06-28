@@ -858,15 +858,24 @@ export function EnvironmentChart({
           )}
           <div className="flex flex-col gap-2">
             {chartSeriesRows.map((row) => (
-              <div key={row.id} className="flex items-center justify-between gap-3 px-1">
+              <div key={row.id} className="flex items-center gap-1.5 px-1">
                 <p
-                  className={cn(
-                    "min-w-0 flex-1 text-lg font-bold",
-                    !row.visible && "opacity-40"
-                  )}
+                  className={cn("shrink-0 text-sm font-bold", !row.visible && "opacity-40")}
                   style={{ color: row.color }}
                 >
-                  {row.name}: {formatSeriesRowValue(row, chartMetric, unit)}
+                  {row.name}
+                </p>
+                <div
+                  className={cn(
+                    "min-w-2 flex-1 border-b border-dashed",
+                    !row.visible ? "border-muted-foreground/20" : "border-muted-foreground/40"
+                  )}
+                />
+                <p
+                  className={cn("shrink-0 text-lg font-bold", !row.visible && "opacity-40")}
+                  style={{ color: row.color }}
+                >
+                  {formatSeriesRowValue(row, chartMetric, unit)}
                 </p>
                 <button
                   type="button"
