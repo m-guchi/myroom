@@ -421,6 +421,15 @@ export function DeviceVisibilityPage() {
     setDragOverIndex(null);
   };
 
+  const handleMove = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= displayedTargets.length) return;
+
+    const next = [...displayedTargets];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    persistDisplayOrder(sortDisplayOrderHiddenLast(next, hiddenKeys));
+  };
+
   const setDraft = (key: string, value: string) => {
     setNameDrafts((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => {
@@ -822,7 +831,8 @@ export function DeviceVisibilityPage() {
         ) : (
           <section className="space-y-3">
             <p className="px-0.5 text-xs text-muted-foreground">
-              左のグリップをドラッグして順番を変更できます
+              <span className="sm:hidden">矢印ボタンで順番を変更できます</span>
+              <span className="hidden sm:inline">左のグリップをドラッグして順番を変更できます</span>
             </p>
             {displayedTargets.length > 0 ? (
               displayedTargets.map((item, index) => {
@@ -854,6 +864,10 @@ export function DeviceVisibilityPage() {
                     onDrop={handleDrop(index)}
                     onDragEnd={handleDragEnd}
                     isDragOver={dragOverIndex === index && dragIndex !== index}
+                    onMoveUp={() => handleMove(index, -1)}
+                    onMoveDown={() => handleMove(index, 1)}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < displayedTargets.length - 1}
                   />
                 );
               })
