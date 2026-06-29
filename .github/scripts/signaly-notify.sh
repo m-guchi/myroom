@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
-# Send a GitHub Actions result to Discord via webhook.
-# Requires: DISCORD_WEBHOOK_URL, NOTIFY_STATUS (success|failure|cancelled)
-# Optional: NOTIFY_APP, NOTIFY_KIND (e.g. デプロイ / CI), NOTIFY_JOB, NOTIFY_WORKFLOW, NOTIFY_VERSION
+# Signaly CI / デプロイ通知スクリプト（GitHub Actions 用）
+#
+# 手順の詳細: ../_docs/DESIGN_GUIDE.md（CI / デプロイ通知セクション）
+# 各アプリの .github/scripts/ にコピーして使用する。
+#
+# Requires: SIGNALY_WEBHOOK_URL, NOTIFY_STATUS (success|failure|cancelled)
+# Optional: NOTIFY_APP, NOTIFY_KIND (e.g. デプロイ / CI), NOTIFY_JOB, NOTIFY_VERSION (リリース時)
 set -euo pipefail
 
-if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
-  echo "DISCORD_WEBHOOK_URL not set; skipping Discord notification"
+if [[ -z "${SIGNALY_WEBHOOK_URL:-}" ]]; then
+  echo "SIGNALY_WEBHOOK_URL not set; skipping Signaly notification"
   exit 0
 fi
 
 status="${NOTIFY_STATUS:-unknown}"
 app_name="${NOTIFY_APP:-}"
 kind="${NOTIFY_KIND:-}"
-version="${NOTIFY_VERSION:-}"
 workflow_name="${NOTIFY_WORKFLOW:-${GITHUB_WORKFLOW:-GitHub Actions}}"
 job_name="${NOTIFY_JOB:-${GITHUB_JOB:-}}"
+version="${NOTIFY_VERSION:-}"
 repository="${GITHUB_REPOSITORY:-}"
 ref_name="${GITHUB_REF_NAME:-}"
 sha="${GITHUB_SHA:-}"
@@ -24,28 +28,28 @@ run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 case "$status" in
   success)
     emoji="✅"
-    color=5763719
+    color="#57f287"
     status_label="成功"
     ;;
   failure)
     emoji="❌"
-    color=15548997
+    color="#ed4245"
     status_label="失敗"
     ;;
   cancelled)
     emoji="⚪"
-    color=9807270
+    color="#95a5a6"
     status_label="キャンセル"
     ;;
   *)
     emoji="ℹ️"
-    color=3447003
+    color="#5865f2"
     status_label="$status"
     ;;
 esac
 
 if [[ -n "$app_name" && -n "$kind" ]]; then
-  if [[ "$kind" = "リリース" && -n "$version" ]]; then
+  if [[ "$kind" == "リリース" && -n "$version" ]]; then
     title="${emoji} [${app_name}] ${kind} ${version} ${status_label}"
   else
     title="${emoji} [${app_name}] ${kind} ${status_label}"
@@ -59,9 +63,9 @@ fi
 export NOTIFY_STATUS="$status"
 export NOTIFY_APP="$app_name"
 export NOTIFY_KIND="$kind"
-export NOTIFY_VERSION="$version"
 export NOTIFY_WORKFLOW="$workflow_name"
 export NOTIFY_JOB="$job_name"
+export NOTIFY_VERSION="$version"
 export REPOSITORY="$repository"
 export SHA_SHORT="$sha_short"
 export RUN_URL="$run_url"
@@ -82,7 +86,7 @@ ref_name = os.environ.get("GITHUB_REF_NAME", "")
 sha_short = os.environ.get("SHA_SHORT", "")
 actor = os.environ.get("GITHUB_ACTOR", "")
 run_url = os.environ.get("RUN_URL", "")
-color = int(os.environ["COLOR"])
+color = os.environ["COLOR"]
 title = os.environ["TITLE"]
 
 fields = []
@@ -107,11 +111,9 @@ if event_name:
 fields.append({"name": "Run", "value": f"[Workflow Run]({run_url})", "inline": False})
 
 print(json.dumps({
-    "embeds": [{
-        "title": title,
-        "color": color,
-        "fields": fields,
-    }]
+    "title": title,
+    "color": color,
+    "fields": fields,
 }))
 PY
 )
@@ -119,4 +121,4 @@ PY
 curl -fsS \
   -H "Content-Type: application/json" \
   -d "$payload" \
-  "$DISCORD_WEBHOOK_URL"
+  "$SIGNALY_WEBHOOK_URL"
