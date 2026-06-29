@@ -323,12 +323,18 @@ export function EnvironmentChart({
   const dragDomainRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const preservedSelectionTimeRef = useRef<number | null>(null);
+  const lastScrolledEpochRef = useRef(-1);
 
   useEffect(() => {
     dragDomainRef.current = domainOffset;
   }, [domainOffset]);
 
   useEffect(() => {
+    const epochChanged = lastScrolledEpochRef.current !== historyEpoch;
+    if (epochChanged) {
+      lastScrolledEpochRef.current = historyEpoch;
+      preservedSelectionTimeRef.current = null;
+    }
     const preserved = preservedSelectionTimeRef.current;
     const nextOffset =
       preserved != null && historyData.length
