@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, weather, outdoor_config, device_config, aircon_config, discord_notify, push_notify, push_subscriptions, sensor_monitor, ui_settings
+from . import database, weather, outdoor_config, device_config, aircon_config, signaly_notify, push_notify, push_subscriptions, sensor_monitor, ui_settings
 from .auth import create_access_token, get_current_user
 from pydantic import BaseModel, model_validator
 
@@ -429,7 +429,7 @@ async def login(body: LoginRequest, request: Request):
 
     user_agent = request.headers.get("User-Agent", "unknown")
     timestamp = get_now_jst().strftime("%Y-%m-%d %H:%M:%S")
-    discord_notify.send_login_notification(timestamp, client_ip, user_agent)
+    signaly_notify.send_login_notification(timestamp, client_ip, user_agent)
     return {
         "status": "ok",
         "access_token": create_access_token(),
