@@ -295,21 +295,22 @@ python3 migrate_db.py   # aircon テーブルを作成
 - **最近の記録**: 直近7日分から表示し、「もっと見る」で追加読み込み
 - **モバイルアプリ対応 (PWA)**: ホーム画面に追加して全画面起動可能。専用アプリアイコン設定済み
 - **オフライン表示**: ネットワーク切断時、IndexedDB に保存した最新値と直近24時間のグラフを表示
-- **センサー未到達通知**: API 側で鮮度を監視し、Discord / Web Push（PWA）で通知。ダッシュボードに警告表示
+- **センサー未到達通知**: API 側で鮮度を監視し、Signaly / Web Push（PWA）で通知。ダッシュボードに警告表示
 - **死活監視用 API**: `/api/health` が `GET` / `HEAD` で `200 OK` を返す
 - **ログイン管理**:
   - ダッシュボードのデータ取得 API は **JWT 認証必須**（`Authorization: Bearer <token>`）。センサー POST（`/api/sensor`）・エアコン POST（`/api/aircon`）は認証なし
   - デフォルトパスワード: `admin`（ローカル開発時）
   - 本番: 1Password の `app-password` を `APP_PASSWORD` としてサーバー `.env` に同期
-  - ログイン成功時: Discord Webhook（1Password の `discord-webhook-url`）へ通知
-  - GitHub Actions（CI / デプロイ）の成功・失敗: 共通 Webhook（1Password `discord_webhook` の `CI_URL`）へ通知
+  - ログイン成功時: Signaly（1Password の `login-webhook-url`）へ通知
+  - センサー異常・復旧時: Signaly（1Password の `sensor-webhook-url`）へ通知
+  - GitHub Actions（CI / デプロイ）の成功・失敗: Signaly へ通知
 
 ## API 概要
 
 | メソッド | パス | 説明 |
 |----------|------|------|
 | GET/HEAD | `/api/health` | 死活監視 |
-| POST | `/api/login` | ログイン（JWT 発行、成功時に Discord 通知） |
+| POST | `/api/login` | ログイン（JWT 発行、成功時に Signaly 通知） |
 | GET | `/api/latest?device=1` | 最新の屋内＋屋外データ（要認証） |
 | GET | `/api/history?range=day&device=1` | 履歴（`range`: day/week/month/year、または `start`/`end`、要認証） |
 | GET | `/api/daily-stats?device=1` | 日次統計（最近の記録、要認証） |
@@ -382,7 +383,8 @@ python3 migrate_pressure_to_hpa.py
 | フィールド名 | 内容 |
 |-------------|------|
 | `app-password` | 画面ログイン用パスワード（`APP_PASSWORD` としてサーバー `.env` に同期） |
-| `discord-webhook-url` | ログイン通知用 Discord Webhook URL（`DISCORD_WEBHOOK_URL` としてサーバー `.env` に同期） |
+| `login-webhook-url` | ログイン通知用 Signaly Webhook URL（`LOGIN_WEBHOOK_URL` として同期） |
+| `sensor-webhook-url` | センサー異常・復旧通知用 Signaly Webhook URL（`SENSOR_WEBHOOK_URL` として同期） |
 | `vapid-private-key` | Web Push 用 VAPID 秘密鍵 PEM（`VAPID_PRIVATE_KEY` として同期） |
 | `vapid-public-key` | Web Push 用 VAPID 公開鍵（`VAPID_PUBLIC_KEY` として同期。`scripts/generate_vapid_keys.py` の `VAPID_PUBLIC_KEY` 行） |
 | `vapid-subject` | Web Push 用 VAPID subject（`VAPID_SUBJECT` として同期。例: `mailto:you@example.com`） |
@@ -396,12 +398,6 @@ python3 migrate_pressure_to_hpa.py
 ```
 
 出力の `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` を、上記フィールド `vapid-private-key` / `vapid-public-key` / `vapid-subject` にそれぞれ保存してください。秘密鍵は **PEM 形式のまま**（`-----BEGIN PRIVATE KEY-----` から改行付きで）貼り付けます。次回以降のデプロイでサーバー `.env` に自動同期されます。
-
-**アイテム `discord_webhook`**（全アプリ共通・セキュアノート等）
-
-| フィールド名 | 内容 |
-|-------------|------|
-| `CI_URL` | CI / デプロイ通知用 Discord Webhook URL（GitHub Actions のみ。`op://apps/discord_webhook/CI_URL`） |
 
 **アイテム `Server`**（セキュアノート等）
 
@@ -481,7 +477,8 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 | 環境変数 | 1Password アイテム | フィールド |
 |----------|-------------------|-----------|
 | `APP_PASSWORD` | MyRoom | `app-password` |
-| `DISCORD_WEBHOOK_URL` | MyRoom | `discord-webhook-url` |
+| `LOGIN_WEBHOOK_URL` | MyRoom | `login-webhook-url` |
+| `SENSOR_WEBHOOK_URL` | MyRoom | `sensor-webhook-url` |
 | `VAPID_PRIVATE_KEY` | MyRoom | `vapid-private-key` |
 | `VAPID_PUBLIC_KEY` | MyRoom | `vapid-public-key` |
 | `VAPID_SUBJECT` | MyRoom | `vapid-subject` |
@@ -498,15 +495,13 @@ rsync では `.env` を転送しません。サーバー上の `.env` には、1
 1. `frontend/package.json` のバージョンから Git タグ（`v*`）を作成
 2. フロントエンドのビルド（`npm run build` → `frontend/out` に静的出力）
 3. ファイルの転送 (`rsync`)
-4. 1Password から `APP_PASSWORD` / `DISCORD_WEBHOOK_URL` / `VAPID_*` / DB 接続情報をサーバー `.env` に同期
+4. 1Password から `APP_PASSWORD` / `LOGIN_WEBHOOK_URL` / `SENSOR_WEBHOOK_URL` / `VAPID_*` / DB 接続情報をサーバー `.env` に同期
 5. DB マイグレーション (`migrate_db.py`)
 6. バックエンドの依存関係更新と PM2 による再起動（`pm2 restart` では cwd が変わらないため、毎回 `delete` → `start`）
 7. **デプロイ成功後** GitHub Release を作成
-8. CI 用 Webhook へデプロイ・リリース結果を Discord 通知
+8. CI 用 Webhook へデプロイ・リリース結果を Signaly 通知
 
 ※ Actions の `GITHUB_TOKEN` で push したタグは別ワークフローを起動しないため、Release も `deploy.yml` 内で実行します。手動でタグ push した場合のみ `release.yml` が走ります。
-
-**Discord 通知（CI / デプロイ）:** 共通フォーマット・新規プロジェクトへの追加手順は [apps/.github/README.md](../.github/README.md)（Discord 通知設定）を参照してください。
 
 本番では FastAPI が `frontend/out` を配信し、API と UI を同一オリジンで提供します。
 
@@ -558,3 +553,11 @@ git push origin develop
 ```
 
 同じバージョン番号で再デプロイする場合は、先にバージョンを上げてから `main` にマージする必要があります（タグが既に別コミットを指していると workflow がエラーになります）。
+
+## CI/CD の既知の課題
+
+> 2026-06-29 時点で確認された課題です。対応が完了したら削除または更新してください。
+
+| 優先度 | 課題 | 対象ファイル |
+|--------|------|-------------|
+| 低 | サーバー上の PM2 再起動に `npx pm2` を使用している。PM2 はグローバルインストール済みのため `pm2` を直接呼ぶよう統一する（`car` / `portfolio` の実装に合わせる） | `.github/workflows/deploy.yml` |
