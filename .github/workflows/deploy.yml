@@ -185,10 +185,10 @@ jobs:
             fi
 
             echo "Managing PM2 process..."
-            npx pm2 delete myroom-backend 2>/dev/null || true
-            npx pm2 delete insight-backend 2>/dev/null || true
-            npx pm2 start ecosystem.config.js
-            npx pm2 save
+            pm2 delete myroom-backend 2>/dev/null || true
+            pm2 delete insight-backend 2>/dev/null || true
+            pm2 start ecosystem.config.js
+            pm2 save
           EOF
 
   release:
