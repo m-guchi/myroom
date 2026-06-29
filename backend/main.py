@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import datetime
 import random
 from dotenv import load_dotenv
-from . import database, weather, outdoor_config, device_config, aircon_config, signaly_notify, push_notify, push_subscriptions, sensor_monitor, ui_settings
+from . import database, weather, outdoor_config, device_config, aircon_config, signaly_notify, sensor_monitor, ui_settings
 from .auth import create_access_token, get_current_user
 from pydantic import BaseModel, model_validator
 
@@ -78,24 +78,6 @@ class BulkDeleteRecordsRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     password: str
-
-class PushSubscriptionKeys(BaseModel):
-    p256dh: str
-    auth: str
-
-class PushSubscriptionBody(BaseModel):
-    endpoint: str
-    keys: PushSubscriptionKeys
-    expirationTime: Optional[int] = None
-
-class PushSubscribeRequest(BaseModel):
-    subscription: PushSubscriptionBody
-
-class PushUnsubscribeRequest(BaseModel):
-    endpoint: str
-
-class PushTestRequest(BaseModel):
-    pass
 
 class UiSettingsUpdate(BaseModel):
     display_order: Optional[List[str]] = None
@@ -362,55 +344,37 @@ def get_sensors_status(
     }
 
 
-@app.get("/api/push/vapid-public-key")
-def get_push_vapid_public_key(_: dict = Depends(get_current_user)):
-    public_key = push_notify.get_vapid_public_key()
-    if not public_key:
-        raise HTTPException(status_code=503, detail="Web Push is not configured")
-    return {
-        "publicKey": public_key,
-        "configured": push_notify.is_configured(),
-    }
-
-
-@app.post("/api/push/subscribe")
-def subscribe_push(body: PushSubscribeRequest, _: dict = Depends(get_current_user)):
-    if not push_notify.is_configured():
-        raise HTTPException(status_code=503, detail="Web Push is not configured")
-
-    try:
-        saved = push_subscriptions.upsert_subscription(body.subscription.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return {"status": "ok", "endpoint": saved["endpoint"]}
-
-
-@app.delete("/api/push/subscribe")
-def unsubscribe_push(body: PushUnsubscribeRequest, _: dict = Depends(get_current_user)):
-    removed = push_subscriptions.remove_subscription(body.endpoint)
-    if not removed:
-        raise HTTPException(status_code=404, detail="Subscription not found")
+@app.post("/api/signaly/test/login")
+def test_signaly_login(_: dict = Depends(get_current_user)):
+    now_jst = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+    signaly_notify.send_login_notification(
+        timestamp=f"{now_jst} JST",
+        client_ip="127.0.0.1",
+        user_agent="MyRoom Webhook Test",
+    )
     return {"status": "ok"}
 
 
-@app.post("/api/push/test")
-def test_push(_: dict = Depends(get_current_user)):
-    if not push_notify.is_configured():
-        raise HTTPException(status_code=503, detail="Web Push is not configured")
+@app.post("/api/signaly/test/sensor-stale")
+def test_signaly_sensor_stale(_: dict = Depends(get_current_user)):
+    signaly_notify.send_sensor_stale_notification(
+        device_name="テストデバイス",
+        device_id=0,
+        last_seen=None,
+        age_minutes=None,
+        threshold_minutes=30,
+    )
+    return {"status": "ok"}
 
-    total = len(push_subscriptions.list_subscriptions())
-    if total == 0:
-        raise HTTPException(status_code=404, detail="No push subscriptions registered")
 
-    sent = push_notify.send_test_push()
-    if sent == 0:
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to send test notification to any subscriber",
-        )
-
-    return {"status": "ok", "sent": sent, "total": total}
+@app.post("/api/signaly/test/sensor-recovered")
+def test_signaly_sensor_recovered(_: dict = Depends(get_current_user)):
+    signaly_notify.send_sensor_recovered_notification(
+        device_name="テストデバイス",
+        device_id=0,
+        last_seen=None,
+    )
+    return {"status": "ok"}
 
 
 @app.post("/api/login")
