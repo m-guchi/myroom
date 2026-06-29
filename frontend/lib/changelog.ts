@@ -34,6 +34,17 @@ export function formatChangelogDate(date: string): string {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.2.0",
+    date: "2026-06-29",
+    changes: [
+      "アプリ起動時にグラフが最新データの位置へ自動スクロールするよう改善",
+      "グラフ凡例で非表示にしたデータも現在の測定値は引き続き表示",
+      "グラフを横スクロールして範囲外のデータを読み込む際に読み込み中バッジを表示",
+      "通知設定でパスワード入力が不要に",
+      "プッシュ通知のベルアイコンを削除し、通知設定画面から webhook テスト送信が可能に",
+    ],
+  },
+  {
     version: "3.1.0",
     date: "2026-06-28",
     changes: [
