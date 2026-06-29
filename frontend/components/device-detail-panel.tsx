@@ -121,6 +121,7 @@ export function DeviceDetailPanel({
   const {
     historyData,
     historyLoading,
+    loadingRange,
     historyEpoch,
     noMoreOlderData,
     ensureVisibleRangeLoaded,
@@ -329,7 +330,7 @@ export function DeviceDetailPanel({
                 viewRange={viewRange}
                 onViewRangeChange={setViewRange}
                 loading={false}
-                historyLoading={historyLoading}
+                historyLoading={historyLoading || loadingRange}
                 historyEpoch={historyEpoch}
                 noMoreOlderData={noMoreOlderData}
                 onVisibleDomainChange={ensureVisibleRangeLoaded}

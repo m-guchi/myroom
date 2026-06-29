@@ -63,12 +63,14 @@ export function useChartHistory(
 
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [loadingRange, setLoadingRange] = useState(false);
   const [historyEpoch, setHistoryEpoch] = useState(0);
   const [noMoreOlderData, setNoMoreOlderData] = useState(false);
 
   const loadedRangeRef = useRef<{ min: number; max: number } | null>(null);
   const loadingOlderRef = useRef(false);
   const loadingNewerRef = useRef(false);
+  const loadingRangeCountRef = useRef(0);
   const loadGenerationRef = useRef(0);
   const historyDataRef = useRef<HistoryPoint[]>([]);
   historyDataRef.current = historyData;
@@ -212,6 +214,7 @@ export function useChartHistory(
         !loadingOlderRef.current
       ) {
         loadingOlderRef.current = true;
+        if (++loadingRangeCountRef.current === 1) setLoadingRange(true);
         const chunkEnd = new Date(loaded.min - 1000);
         const chunkStart = new Date(chunkEnd.getTime() - chunkMs);
 
@@ -230,6 +233,7 @@ export function useChartHistory(
           console.error(err);
         } finally {
           loadingOlderRef.current = false;
+          if (--loadingRangeCountRef.current === 0) setLoadingRange(false);
         }
       }
 
@@ -238,11 +242,13 @@ export function useChartHistory(
         if (loaded.max >= now - 60000) return;
 
         loadingNewerRef.current = true;
+        if (++loadingRangeCountRef.current === 1) setLoadingRange(true);
         const chunkStart = new Date(loaded.max + 1000);
         const chunkEnd = new Date(Math.min(chunkStart.getTime() + chunkMs, now));
 
         if (chunkEnd.getTime() <= chunkStart.getTime()) {
           loadingNewerRef.current = false;
+          if (--loadingRangeCountRef.current === 0) setLoadingRange(false);
           return;
         }
 
@@ -259,6 +265,7 @@ export function useChartHistory(
           console.error(err);
         } finally {
           loadingNewerRef.current = false;
+          if (--loadingRangeCountRef.current === 0) setLoadingRange(false);
         }
       }
     },
@@ -306,6 +313,7 @@ export function useChartHistory(
   return {
     historyData,
     historyLoading,
+    loadingRange,
     historyEpoch,
     noMoreOlderData,
     resetAndLoad,
