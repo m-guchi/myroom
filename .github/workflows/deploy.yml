@@ -63,6 +63,7 @@ jobs:
         uses: 1password/load-secrets-action@v4
         with:
           export-env: true
+          version: "2.34.1"
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENV_FILE: .github/deploy.env.tpl
@@ -248,6 +249,7 @@ jobs:
         uses: 1password/load-secrets-action@v4
         with:
           export-env: true
+          version: "2.34.1"
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENV_FILE: .github/deploy.env.tpl
@@ -274,6 +276,7 @@ jobs:
         uses: 1password/load-secrets-action@v4
         with:
           export-env: true
+          version: "2.34.1"
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENV_FILE: .github/deploy.env.tpl
