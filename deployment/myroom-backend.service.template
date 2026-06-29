@@ -3,7 +3,7 @@ Description=MyRoom Backend
 After=network.target
 
 [Service]
-User=root
+User=www-data
 WorkingDirectory={{APP_DIR}}
 ExecStart={{PYTHON_PATH}} -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 Restart=always
