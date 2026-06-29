@@ -5,11 +5,13 @@ import {
 import {
   AIRCON_TARGET_VISIBILITY_KEY,
   deviceDht11VisibilityKey,
+  deviceMetricVisibilityKey,
   deviceVisibilityKey,
   OUTDOOR_VISIBILITY_KEY,
 } from "@/lib/chart-line-visibility";
 import {
   AIRCON_CHART_DEVICE_ID,
+  CHART_METRICS,
   DASHBOARD_SENSOR_DEVICE_IDS,
 } from "@/lib/types";
 
@@ -213,18 +215,24 @@ export function applyHiddenDevicesToLineVisibility<T extends Record<string, bool
   for (const deviceId of sensorDeviceIds) {
     const key = deviceVisibilityKey(deviceId);
     if (hiddenKeys.has(key)) {
-      merged[key as keyof T] = false as T[keyof T];
-    }
-    const dht11Key = deviceDht11VisibilityKey(deviceId);
-    if (hiddenKeys.has(dht11Key)) {
-      merged[dht11Key as keyof T] = false as T[keyof T];
+      for (const metric of CHART_METRICS) {
+        merged[deviceMetricVisibilityKey(deviceId, metric) as keyof T] = false as T[keyof T];
+      }
+      merged[deviceDht11VisibilityKey(deviceId) as keyof T] = false as T[keyof T];
+    } else {
+      const dht11Key = deviceDht11VisibilityKey(deviceId);
+      if (hiddenKeys.has(dht11Key)) {
+        merged[dht11Key as keyof T] = false as T[keyof T];
+      }
     }
   }
   if (hiddenKeys.has(OUTDOOR_VISIBILITY_KEY)) {
     merged[OUTDOOR_VISIBILITY_KEY as keyof T] = false as T[keyof T];
   }
   if (!isAirconRoomVisible(hiddenKeys)) {
-    merged[AIRCON_ROOM_HIDDEN_KEY as keyof T] = false as T[keyof T];
+    for (const metric of CHART_METRICS) {
+      merged[deviceMetricVisibilityKey(AIRCON_CHART_DEVICE_ID, metric) as keyof T] = false as T[keyof T];
+    }
   }
   if (!isAirconTargetVisible(hiddenKeys)) {
     merged[AIRCON_TARGET_VISIBILITY_KEY as keyof T] = false as T[keyof T];

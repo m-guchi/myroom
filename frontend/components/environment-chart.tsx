@@ -69,7 +69,7 @@ import {
 import {
   AIRCON_TARGET_VISIBILITY_KEY,
   deviceDht11VisibilityKey,
-  deviceVisibilityKey,
+  deviceMetricVisibilityKey,
   isChartLineVisible,
   OUTDOOR_VISIBILITY_KEY,
   type ChartLineVisibilitySettings,
@@ -274,9 +274,9 @@ export function EnvironmentChart({
   const plottedDeviceIds = useMemo(
     () =>
       visibleDeviceIds.filter((deviceId) =>
-        isChartLineVisible(lineVisibility, deviceVisibilityKey(deviceId))
+        isChartLineVisible(lineVisibility, deviceMetricVisibilityKey(deviceId, chartMetric))
       ),
-    [visibleDeviceIds, lineVisibility]
+    [visibleDeviceIds, lineVisibility, chartMetric]
   );
 
   const dht11DeviceIds = useMemo(
@@ -313,8 +313,8 @@ export function EnvironmentChart({
 
   const isDeviceLineVisible = useCallback(
     (deviceId: number) =>
-      isChartLineVisible(lineVisibility, deviceVisibilityKey(deviceId)),
-    [lineVisibility]
+      isChartLineVisible(lineVisibility, deviceMetricVisibilityKey(deviceId, chartMetric)),
+    [lineVisibility, chartMetric]
   );
 
   const [dragStartX, setDragStartX] = useState<number | null>(null);
@@ -579,8 +579,8 @@ export function EnvironmentChart({
 
   const activeOutdoor = useMemo(() => {
     if (selectionTime == null) return undefined;
-    return getOutdoorMetricValueAtTime(chartPlotData, chartMetric, selectionTime);
-  }, [selectionTime, chartPlotData, chartMetric]);
+    return getOutdoorMetricValueAtTime(historySource, chartMetric, selectionTime);
+  }, [selectionTime, historySource, chartMetric]);
 
   const activeTargetState = useMemo(() => {
     if (
@@ -621,13 +621,13 @@ export function EnvironmentChart({
               selectionTime == null
                 ? undefined
                 : getDeviceMetricValueAtTime(
-                    chartPlotData,
+                    historySource,
                     deviceId,
                     chartMetric,
                     selectionTime
                   ),
             visible: isDeviceLineVisible(deviceId),
-            visibilityKey: deviceVisibilityKey(deviceId),
+            visibilityKey: deviceMetricVisibilityKey(deviceId, chartMetric),
           });
         }
 
@@ -640,7 +640,7 @@ export function EnvironmentChart({
               selectionTime == null
                 ? undefined
                 : getDeviceDht11TemperatureValueAtTime(
-                    chartPlotData,
+                    historySource,
                     deviceId,
                     selectionTime
                   ),
@@ -689,7 +689,7 @@ export function EnvironmentChart({
     chartMetric,
     deviceNames,
     selectionTime,
-    chartPlotData,
+    historySource,
     isDeviceLineVisible,
     airconTargetDeviceId,
     showAirconTargetLine,
