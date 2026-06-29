@@ -112,7 +112,8 @@ jobs:
       - name: Restart Backend Service
         env:
           APP_PASSWORD: ${{ env.APP_PASSWORD }}
-          DISCORD_WEBHOOK_URL: ${{ env.DISCORD_WEBHOOK_URL }}
+          LOGIN_WEBHOOK_URL: ${{ env.LOGIN_WEBHOOK_URL }}
+          SENSOR_WEBHOOK_URL: ${{ env.SENSOR_WEBHOOK_URL }}
           VAPID_PRIVATE_KEY: ${{ env.VAPID_PRIVATE_KEY }}
           VAPID_PUBLIC_KEY: ${{ env.VAPID_PUBLIC_KEY }}
           VAPID_SUBJECT: ${{ env.VAPID_SUBJECT }}
@@ -124,7 +125,8 @@ jobs:
         run: |
           b64() { printf '%s' "$1" | base64 -w 0; }
           APP_PASSWORD_B64=$(b64 "$APP_PASSWORD")
-          DISCORD_WEBHOOK_URL_B64=$(b64 "$DISCORD_WEBHOOK_URL")
+          LOGIN_WEBHOOK_URL_B64=$(b64 "$LOGIN_WEBHOOK_URL")
+          SENSOR_WEBHOOK_URL_B64=$(b64 "$SENSOR_WEBHOOK_URL")
           VAPID_PRIVATE_KEY_B64=$(b64 "$VAPID_PRIVATE_KEY")
           VAPID_PUBLIC_KEY_B64=$(b64 "$VAPID_PUBLIC_KEY")
           VAPID_SUBJECT_B64=$(b64 "$VAPID_SUBJECT")
@@ -151,7 +153,8 @@ jobs:
             }
 
             sync_env_var APP_PASSWORD '${APP_PASSWORD_B64}'
-            sync_env_var DISCORD_WEBHOOK_URL '${DISCORD_WEBHOOK_URL_B64}'
+            sync_env_var LOGIN_WEBHOOK_URL '${LOGIN_WEBHOOK_URL_B64}'
+            sync_env_var SENSOR_WEBHOOK_URL '${SENSOR_WEBHOOK_URL_B64}'
             sync_env_var VAPID_PRIVATE_KEY '${VAPID_PRIVATE_KEY_B64}'
             sync_env_var VAPID_PUBLIC_KEY '${VAPID_PUBLIC_KEY_B64}'
             sync_env_var VAPID_SUBJECT '${VAPID_SUBJECT_B64}'
@@ -182,10 +185,10 @@ jobs:
             fi
 
             echo "Managing PM2 process..."
-            npx pm2 delete myroom-backend 2>/dev/null || true
-            npx pm2 delete insight-backend 2>/dev/null || true
-            npx pm2 start ecosystem.config.js
-            npx pm2 save
+            pm2 delete myroom-backend 2>/dev/null || true
+            pm2 delete insight-backend 2>/dev/null || true
+            pm2 start ecosystem.config.js
+            pm2 save
           EOF
 
   release:
@@ -249,13 +252,14 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENV_FILE: .github/deploy.env.tpl
 
-      - name: Notify Discord
+      - name: Signaly に通知
         env:
-          DISCORD_WEBHOOK_URL: ${{ env.DISCORD_CI_WEBHOOK_URL }}
+          SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
           NOTIFY_APP: MyRoom
           NOTIFY_KIND: デプロイ
           NOTIFY_STATUS: ${{ steps.status.outputs.result }}
-        run: bash .github/scripts/discord-notify.sh
+          NOTIFY_JOB: deploy
+        run: bash .github/scripts/signaly-notify.sh
 
   notify-release:
     runs-on: ubuntu-latest
@@ -274,11 +278,12 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENV_FILE: .github/deploy.env.tpl
 
-      - name: Notify Discord
+      - name: Signaly に通知
         env:
-          DISCORD_WEBHOOK_URL: ${{ env.DISCORD_CI_WEBHOOK_URL }}
+          SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
           NOTIFY_STATUS: ${{ needs.release.result }}
           NOTIFY_APP: MyRoom
           NOTIFY_KIND: リリース
           NOTIFY_VERSION: ${{ needs.tag.outputs.tag }}
-        run: bash .github/scripts/discord-notify.sh
+          NOTIFY_JOB: release
+        run: bash .github/scripts/signaly-notify.sh

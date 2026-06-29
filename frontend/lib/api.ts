@@ -17,8 +17,6 @@ import {
   type OutdoorLocationSearchResult,
   type SensorRecordsResponse,
   type SensorsStatusResponse,
-  type PushVapidPublicKeyResponse,
-  type PushTestResponse,
   type TimeRange,
   type ChartViewRange,
   type UiSettings,
@@ -338,60 +336,17 @@ export async function fetchSensorsStatus(): Promise<SensorsStatusResponse> {
   return fetchJson<SensorsStatusResponse>("/api/sensors/status");
 }
 
-export async function fetchPushVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
-  const res = await fetchWithAuth("/api/push/vapid-public-key");
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(body?.detail || `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<PushVapidPublicKeyResponse>;
-}
-
-export async function subscribePushNotifications(
-  password: string,
-  subscription: {
-    endpoint: string;
-    keys: { p256dh: string; auth: string };
-    expirationTime?: number | null;
-  }
+export async function sendTestSignalyNotification(
+  type: "login" | "sensor-stale" | "sensor-recovered"
 ): Promise<void> {
-  const res = await fetchWithAuth("/api/push/subscribe", {
+  const res = await fetchWithAuth(`/api/signaly/test/${type}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password, subscription }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(body?.detail || `Request failed: ${res.status}`);
   }
-}
-
-export async function unsubscribePushNotifications(
-  password: string,
-  endpoint: string
-): Promise<void> {
-  const res = await fetchWithAuth("/api/push/subscribe", {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password, endpoint }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(body?.detail || `Request failed: ${res.status}`);
-  }
-}
-
-export async function sendTestPushNotification(password: string): Promise<PushTestResponse> {
-  const res = await fetchWithAuth("/api/push/test", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(body?.detail || `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<PushTestResponse>;
 }
 
 export interface LatestBatchResult {

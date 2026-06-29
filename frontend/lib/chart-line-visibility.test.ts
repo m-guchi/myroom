@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AIRCON_TARGET_VISIBILITY_KEY,
   buildDefaultChartLineVisibility,
-  deviceVisibilityKey,
+  deviceDht11VisibilityKey,
+  deviceMetricVisibilityKey,
   isChartLineVisible,
   getDisplayItemVisibilityKey,
   loadChartLineVisibility,
@@ -15,11 +16,14 @@ import {
 } from "@/lib/chart-line-visibility";
 
 describe("chart-line-visibility", () => {
-  it("builds defaults with sensors visible and outdoor hidden", () => {
+  it("builds defaults with all metric keys visible per device and outdoor hidden", () => {
     const defaults = buildDefaultChartLineVisibility([1, 2]);
 
-    expect(defaults[deviceVisibilityKey(1)]).toBe(true);
-    expect(defaults[deviceVisibilityKey(2)]).toBe(true);
+    expect(defaults[deviceMetricVisibilityKey(1, "temperature")]).toBe(true);
+    expect(defaults[deviceMetricVisibilityKey(1, "humidity")]).toBe(true);
+    expect(defaults[deviceMetricVisibilityKey(2, "temperature")]).toBe(true);
+    expect(defaults[deviceMetricVisibilityKey(2, "humidity")]).toBe(true);
+    expect(defaults[deviceDht11VisibilityKey(1)]).toBe(true);
     expect(defaults[OUTDOOR_VISIBILITY_KEY]).toBe(false);
     expect(defaults[AIRCON_TARGET_VISIBILITY_KEY]).toBe(true);
   });
@@ -27,23 +31,35 @@ describe("chart-line-visibility", () => {
   it("normalizes saved settings and keeps defaults for missing keys", () => {
     const normalized = normalizeChartLineVisibility(
       {
-        [deviceVisibilityKey(1)]: false,
+        [deviceMetricVisibilityKey(1, "temperature")]: false,
         [OUTDOOR_VISIBILITY_KEY]: true,
       },
       [1, 2]
     );
 
-    expect(normalized[deviceVisibilityKey(1)]).toBe(false);
-    expect(normalized[deviceVisibilityKey(2)]).toBe(true);
+    expect(normalized[deviceMetricVisibilityKey(1, "temperature")]).toBe(false);
+    expect(normalized[deviceMetricVisibilityKey(1, "humidity")]).toBe(true);
+    expect(normalized[deviceMetricVisibilityKey(2, "temperature")]).toBe(true);
     expect(normalized[OUTDOOR_VISIBILITY_KEY]).toBe(true);
   });
 
   it("toggles visibility", () => {
     const defaults = buildDefaultChartLineVisibility([1]);
-    const hidden = toggleChartLineVisibility(defaults, deviceVisibilityKey(1));
+    const key = deviceMetricVisibilityKey(1, "temperature");
+    const hidden = toggleChartLineVisibility(defaults, key);
 
-    expect(isChartLineVisible(defaults, deviceVisibilityKey(1))).toBe(true);
-    expect(isChartLineVisible(hidden, deviceVisibilityKey(1))).toBe(false);
+    expect(isChartLineVisible(defaults, key)).toBe(true);
+    expect(isChartLineVisible(hidden, key)).toBe(false);
+  });
+
+  it("toggling temperature does not affect humidity", () => {
+    const defaults = buildDefaultChartLineVisibility([1]);
+    const tempKey = deviceMetricVisibilityKey(1, "temperature");
+    const humKey = deviceMetricVisibilityKey(1, "humidity");
+    const updated = toggleChartLineVisibility(defaults, tempKey);
+
+    expect(isChartLineVisible(updated, tempKey)).toBe(false);
+    expect(isChartLineVisible(updated, humKey)).toBe(true);
   });
 
   it("loads and saves settings from localStorage", () => {
@@ -61,13 +77,13 @@ describe("chart-line-visibility", () => {
     });
 
     saveChartLineVisibility({
-      [deviceVisibilityKey(2)]: false,
+      [deviceMetricVisibilityKey(2, "temperature")]: false,
       [OUTDOOR_VISIBILITY_KEY]: true,
     });
 
     const loaded = loadChartLineVisibility([1, 2]);
-    expect(loaded[deviceVisibilityKey(1)]).toBe(true);
-    expect(loaded[deviceVisibilityKey(2)]).toBe(false);
+    expect(loaded[deviceMetricVisibilityKey(1, "temperature")]).toBe(true);
+    expect(loaded[deviceMetricVisibilityKey(2, "temperature")]).toBe(false);
     expect(loaded[OUTDOOR_VISIBILITY_KEY]).toBe(true);
 
     vi.unstubAllGlobals();
@@ -76,7 +92,7 @@ describe("chart-line-visibility", () => {
   it("maps display order items to visibility keys", () => {
     expect(
       getDisplayItemVisibilityKey({ type: "device", deviceId: 2 })
-    ).toBe(deviceVisibilityKey(2));
+    ).toBe("device:2");
     expect(getDisplayItemVisibilityKey({ type: "outdoor" })).toBe(
       OUTDOOR_VISIBILITY_KEY
     );
@@ -84,18 +100,19 @@ describe("chart-line-visibility", () => {
 
   it("merges session overrides on top of defaults", () => {
     const defaults = buildDefaultChartLineVisibility([1]);
+    const tempKey = deviceMetricVisibilityKey(1, "temperature");
     const effective = mergeEffectiveChartLineVisibility(defaults, {
-      [deviceVisibilityKey(1)]: false,
+      [tempKey]: false,
       [OUTDOOR_VISIBILITY_KEY]: true,
     });
 
-    expect(resolveEffectiveChartLineVisibility(defaults, {}, deviceVisibilityKey(1))).toBe(
+    expect(resolveEffectiveChartLineVisibility(defaults, {}, tempKey)).toBe(
       true
     );
     expect(
-      resolveEffectiveChartLineVisibility(defaults, { [deviceVisibilityKey(1)]: false }, deviceVisibilityKey(1))
+      resolveEffectiveChartLineVisibility(defaults, { [tempKey]: false }, tempKey)
     ).toBe(false);
-    expect(isChartLineVisible(effective, deviceVisibilityKey(1))).toBe(false);
+    expect(isChartLineVisible(effective, tempKey)).toBe(false);
     expect(isChartLineVisible(effective, OUTDOOR_VISIBILITY_KEY)).toBe(true);
   });
 });

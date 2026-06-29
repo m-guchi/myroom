@@ -121,17 +121,6 @@ export interface SensorsStatusResponse {
   devices: SensorDeviceStatus[];
 }
 
-export interface PushVapidPublicKeyResponse {
-  publicKey: string;
-  configured: boolean;
-}
-
-export interface PushTestResponse {
-  status: string;
-  sent: number;
-  total: number;
-}
-
 export interface AirconUnitInfo {
   ac_id: number;
   name: string;

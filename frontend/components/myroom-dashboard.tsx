@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ChevronRight,
-  Bell,
+  Send,
   Droplets,
   Gauge,
   RefreshCw,
@@ -19,7 +19,7 @@ import { LoginScreen } from "@/components/login-screen";
 import { EnvironmentChart } from "@/components/environment-chart";
 import { DailyStatsList } from "@/components/daily-stats-list";
 import { OutdoorDetailPanel } from "@/components/outdoor-detail-panel";
-import { NotificationSettings } from "@/components/notification-settings";
+import { WebhookTest } from "@/components/webhook-test";
 import { VersionHistoryDialog } from "@/components/version-history-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -394,7 +394,7 @@ export function MyRoomDashboard() {
   const [devicePanelOpen, setDevicePanelOpen] = useState(false);
   const [devicePanelId, setDevicePanelId] = useState(PRIMARY_SENSOR_DEVICE_ID);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
-  const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
+  const [webhookTestOpen, setWebhookTestOpen] = useState(false);
   const [sensorStatuses, setSensorStatuses] = useState<SensorDeviceStatus[]>([]);
   const [staleAlertDismissed, setStaleAlertDismissed] = useState(false);
   const [staleAlertExcludedKeys, setStaleAlertExcludedKeys] = useState<Set<string>>(() => new Set());
@@ -458,6 +458,7 @@ export function MyRoomDashboard() {
   const {
     historyData,
     historyLoading,
+    loadingRange,
     historyEpoch,
     noMoreOlderData,
     resetAndLoad,
@@ -876,12 +877,12 @@ export function MyRoomDashboard() {
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setNotificationSettingsOpen(true)}
+                onClick={() => setWebhookTestOpen(true)}
                 disabled={isOfflineMode}
                 className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="通知設定"
+                aria-label="通知テスト"
               >
-                <Bell className="size-5" strokeWidth={1.75} />
+                <Send className="size-5" strokeWidth={1.75} />
               </button>
               <button
                 type="button"
@@ -908,7 +909,7 @@ export function MyRoomDashboard() {
             viewRange={viewRange}
             onViewRangeChange={setViewRange}
             loading={chartLoading}
-            historyLoading={historyLoading}
+            historyLoading={historyLoading || loadingRange}
             historyEpoch={historyEpoch}
             noMoreOlderData={noMoreOlderData}
             onVisibleDomainChange={ensureVisibleRangeLoaded}
@@ -1096,9 +1097,9 @@ export function MyRoomDashboard() {
         />
       )}
 
-      <NotificationSettings
-        open={notificationSettingsOpen}
-        onClose={() => setNotificationSettingsOpen(false)}
+      <WebhookTest
+        open={webhookTestOpen}
+        onClose={() => setWebhookTestOpen(false)}
       />
 
       <VersionHistoryDialog

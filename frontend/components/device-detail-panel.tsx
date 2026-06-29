@@ -11,7 +11,7 @@ import {
 } from "@/lib/api";
 import type { ChartColorSettings } from "@/lib/chart-colors";
 import {
-  deviceVisibilityKey,
+  buildDefaultChartLineVisibility,
   type ChartLineVisibilitySettings,
 } from "@/lib/chart-line-visibility";
 import type { DisplayOrderItem } from "@/lib/display-order";
@@ -113,14 +113,14 @@ export function DeviceDetailPanel({
     [deviceId]
   );
   const lineVisibility = useMemo(
-    () =>
-      lineVisibilityProp ?? ({ [deviceVisibilityKey(deviceId)]: true } as ChartLineVisibilitySettings),
+    () => lineVisibilityProp ?? buildDefaultChartLineVisibility([deviceId]),
     [lineVisibilityProp, deviceId]
   );
 
   const {
     historyData,
     historyLoading,
+    loadingRange,
     historyEpoch,
     noMoreOlderData,
     ensureVisibleRangeLoaded,
@@ -329,7 +329,7 @@ export function DeviceDetailPanel({
                 viewRange={viewRange}
                 onViewRangeChange={setViewRange}
                 loading={false}
-                historyLoading={historyLoading}
+                historyLoading={historyLoading || loadingRange}
                 historyEpoch={historyEpoch}
                 noMoreOlderData={noMoreOlderData}
                 onVisibleDomainChange={ensureVisibleRangeLoaded}

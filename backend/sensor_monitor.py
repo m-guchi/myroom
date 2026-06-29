@@ -1,4 +1,4 @@
-"""センサーデータの鮮度を監視し、未到達時に Discord / Web Push で通知する。"""
+"""センサーデータの鮮度を監視し、未到達時に Signaly で通知する。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import database, device_config, discord_notify, push_notify
+from . import database, device_config, signaly_notify
 
 load_dotenv()
 
@@ -175,14 +175,7 @@ def run_monitor(db: Optional[Session] = None, notify: bool = True) -> List[Senso
                 entry.get("notified_at"), now
             )
             if should_notify:
-                discord_notify.send_sensor_stale_notification(
-                    device_name=status["name"],
-                    device_id=device_id,
-                    last_seen=status["last_seen"],
-                    age_minutes=status["age_minutes"],
-                    threshold_minutes=stale_threshold_minutes(),
-                )
-                push_notify.send_sensor_stale_push(
+                signaly_notify.send_sensor_stale_notification(
                     device_name=status["name"],
                     device_id=device_id,
                     last_seen=status["last_seen"],
@@ -194,12 +187,7 @@ def run_monitor(db: Optional[Session] = None, notify: bool = True) -> List[Senso
                 changed = True
         elif previous == "alerting":
             if NOTIFY_ON_RECOVERY:
-                discord_notify.send_sensor_recovered_notification(
-                    device_name=status["name"],
-                    device_id=device_id,
-                    last_seen=status["last_seen"],
-                )
-                push_notify.send_sensor_recovered_push(
+                signaly_notify.send_sensor_recovered_notification(
                     device_name=status["name"],
                     device_id=device_id,
                     last_seen=status["last_seen"],
