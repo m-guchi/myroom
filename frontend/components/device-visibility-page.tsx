@@ -86,6 +86,7 @@ import { deviceDht11VisibilityKey } from "@/lib/chart-line-visibility";
 import {
   loadUiSettingsFromServer,
   saveChartColorsToServer,
+  saveDisplayOrderAndHiddenDevicesToServer,
   saveDisplayOrderToServer,
   saveHiddenDevicesToServer,
   savePressureOffsetsToServer,
@@ -329,13 +330,31 @@ export function DeviceVisibilityPage() {
       });
   }, [setIsAuthenticated]);
 
+  // 表示順の並べ替えと非表示キーの更新が同時に起きる操作（カードを隠す等）用。
+  // 2本のPUTを別々に投げると、サーバー側が全キーを読み直して書き戻す都合で
+  // 片方がもう片方を古い値で上書きすることがあるため、1回のPUTにまとめる（#377）
+  const persistDisplayOrderAndHiddenKeys = useCallback(
+    (order: DisplayOrderItem[], hidden: Set<string>) => {
+      setDisplayOrder(order);
+      setHiddenKeys(hidden);
+      void saveDisplayOrderAndHiddenDevicesToServer(order, hidden)
+        .then(() => {
+          window.dispatchEvent(new Event(DISPLAY_ORDER_CHANGED_EVENT));
+          window.dispatchEvent(new Event(VISIBLE_DEVICES_CHANGED_EVENT));
+        })
+        .catch((err) => {
+          if (err instanceof AuthError) setIsAuthenticated(false);
+        });
+    },
+    [setIsAuthenticated]
+  );
+
   const handleHiddenKeyVisibilityChange = (
     key: string,
     visible: boolean,
     item?: DisplayOrderItem
   ) => {
     const next = setHiddenKeyVisible(hiddenKeys, key, visible);
-    setHiddenKeys(next);
 
     if (!visible && item && !isTargetVisible(next, item)) {
       const normalized = normalizeDisplayOrder(
@@ -347,10 +366,12 @@ export function DeviceVisibilityPage() {
       const target = normalized.find((entry) => orderItemKey(entry) === itemKey);
       const rest = normalized.filter((entry) => orderItemKey(entry) !== itemKey);
       if (target) {
-        persistDisplayOrder([...rest, target]);
+        persistDisplayOrderAndHiddenKeys([...rest, target], next);
+        return;
       }
     }
 
+    setHiddenKeys(next);
     void saveHiddenDevicesToServer(next)
       .then(() => {
         window.dispatchEvent(new Event(VISIBLE_DEVICES_CHANGED_EVENT));
@@ -362,7 +383,6 @@ export function DeviceVisibilityPage() {
 
   const handleVisibilityChange = (item: DisplayOrderItem, visible: boolean) => {
     const next = setTargetVisible(hiddenKeys, item, visible);
-    setHiddenKeys(next);
 
     if (!visible) {
       const normalized = normalizeDisplayOrder(
@@ -374,10 +394,12 @@ export function DeviceVisibilityPage() {
       const target = normalized.find((entry) => orderItemKey(entry) === key);
       const rest = normalized.filter((entry) => orderItemKey(entry) !== key);
       if (target) {
-        persistDisplayOrder([...rest, target]);
+        persistDisplayOrderAndHiddenKeys([...rest, target], next);
+        return;
       }
     }
 
+    setHiddenKeys(next);
     void saveHiddenDevicesToServer(next)
       .then(() => {
         window.dispatchEvent(new Event(VISIBLE_DEVICES_CHANGED_EVENT));
