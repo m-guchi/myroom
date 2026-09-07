@@ -23,6 +23,10 @@ SUPABASE_JWKS_URL = f"{SUPABASE_ISSUER}/.well-known/jwks.json"
 SUPABASE_AUDIENCE = "authenticated"
 JWKS_CACHE_TTL_SECONDS = 3600
 
+# Supabaseが署名に使うアルゴリズムの固定値。検証対象のトークン自身のヘッダー（未検証・
+# 攻撃者が書き換え可能）からは取らない。JWKSのキーがalgを持っていればそちらを優先する。
+ALLOWED_ALGORITHMS = ("ES256", "RS256")
+
 ALLOWED_GOOGLE_EMAILS = {
     email.strip().lower()
     for email in os.getenv("ALLOWED_GOOGLE_EMAILS", "").split(",")
@@ -63,10 +67,13 @@ def verify_token(token: str) -> Dict[str, Any]:
         if not kid:
             raise JWTError("Missing kid in token header")
         key = _get_signing_key(kid)
+        alg = key.get("alg", "ES256")
+        if alg not in ALLOWED_ALGORITHMS:
+            raise JWTError(f"Unsupported JWT alg: {alg}")
         payload = jwt.decode(
             token,
             key,
-            algorithms=[header.get("alg", "ES256")],
+            algorithms=[alg],
             audience=SUPABASE_AUDIENCE,
             issuer=SUPABASE_ISSUER,
         )

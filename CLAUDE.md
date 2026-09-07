@@ -350,6 +350,18 @@ Android は中央80%の円で切り抜くため、絵柄は中心 (256,256)・�
 数百KBになるものだけは別の置き場を考える。時系列で伸び続けるもの・期間で絞って引くものは
 この器に向かないので、そのときは下記に従ってテーブルを足す。
 
+**複数のキーが同時に変わる操作は、フロント側で1回のPUTにまとめること**（#377）。
+`save_settings()` は呼ばれるたびに `current = get_settings(db)` で**全キー**を読み直し、
+`merged` を作って**全キーを書き戻す**。`PUT /api/ui-settings` は同期関数なのでFastAPIは
+スレッドプールで並行に処理するため、2本のPUTを`await`せずに続けて投げると
+「A読み→B読み→A全書き→B全書き」の順に噛み合うことがあり、**Bが読んだ時点の古い値で
+Aの変更が上書きされて消える**（`_save_db_setting()` はキーごとに`commit()`するため、
+途中まで反映された状態にもなる）。カードを隠す操作で`display_order`と`hidden_devices`の
+2本を続けて投げていたのが実例（`frontend/components/device-visibility-page.tsx`の
+`handleVisibilityChange()`）。直し方は`updateUiSettings({ key1, key2 })`のように
+1回のPUTへキーを並べるだけで済む（`exclude_unset`の部分更新なので他のキーは変わらない）。
+バックエンド側（読み直し→全書き戻しという設計自体）は変えていない。
+
 - 新しいテーブル・列を足すときは `migrate_db.py` に「存在チェック → 無ければ作る」の形で追記する
 - **マイグレーション専用ユーザーにそのDBのGRANTが無ければ、上記を渡しても落ちる。**
   その場合はVPS上で管理者ユーザーからGRANTを1度だけ実行する必要がある（手作業。Git管理外）
@@ -509,6 +521,36 @@ POST し直している（`daily_energy` は同じ `(date, source)` を上書き
   `"9:15"` は `ValueError` になる（`"08:30"` は通るので、既定値だけを試すと気付かない）。
   `":"` で割って `int()` する形にして、`f"{hour:02d}:{minute:02d}"` へ揃えて持つ
   （#270 の `collection_time`）
+
+## data/*.json への読み書きは atomic_json を使う（複数プロセスが読み→加工→書き戻しする場合）
+
+**`open(path, "w")` してから `json.dump` するだけの書き込みは、書き込み中にプロセスが落ちる
+（`pm2 restart` は毎回起きる）と壊れたJSONを残し、複数経路の書き込みが競合すると片方の更新を
+消し飛ばす**（#382）。`backend/push_subscriptions.py` の購読情報は、バックエンド本体（同期
+ハンドラなのでスレッドプールで並行）と別プロセスの `backend.sensor_monitor`（10分ごと）の
+両方が読み→加工→書き戻しで更新するため、この問題を実際に踏む経路になっていた。
+
+`backend/atomic_json.py` の `read_json()` / `write_json()` / `update_json()` を使うと解決する。
+
+- **アトミック**: 書き込みは同ディレクトリへの一時ファイル + `os.replace()` で行う。途中で
+  落ちても既存ファイルはそのまま残る
+- **排他**: 対象パスごとの `threading.Lock`（同一プロセス内の並行リクエスト用）と、専用の
+  `.lock` ファイルへの `fcntl.flock`（別プロセスとの排他用）の両方で読み→加工→書き戻しの
+  一連の操作を囲む。**ロックは対象ファイル自体ではなく専用の `.lock` ファイルに取ること**
+  ——対象ファイルは `os.replace()` で差し替わり inode が変わるため、対象ファイル自体に
+  `flock` すると「別プロセスが古い inode をロックしたまま古い内容を読む」という取り違えが起きる
+- **read-modify-write は `update_json(path, default, mutate)` を使う。** `read_json()` →
+  加工 → `write_json()` と個別に呼ぶと、その間に別プロセスが割り込んで更新を消し飛ばす余地が
+  残る。`mutate` に現在の内容を受け取って書き戻す内容を返す関数を渡すと、読み込みから書き戻し
+  までが1つのロックに収まる（`push_subscriptions.py` の `upsert_subscription()` 等がこの形）
+- **`.lock` ファイルは対象の `data/*.json` と同じ命名で `.gitignore` へ追記すること**
+  （`data/push_subscriptions.json.lock` のように）。追記を忘れると次のデプロイでリポジトリの
+  中身が本番のロックファイルを消しはしないが、コミット候補に紛れ込む
+- **他の `data/*.json` 書き込み（`aircon_config.py`・`cleaning.py`・`device_config.py`・
+  `garbage_notion.py`・`garbage_notify.py`・`outdoor_config.py`・`sensor_monitor.py`・
+  `ui_settings.py` 等）は、このIssueでは対象にしていない。** 同じ非アトミック・排他なしの
+  書き方が残っているが、#382 の指摘は「壊れても再通知で済む」ものは対象外としている。同種の
+  問題を踏んだ／踏みそうな箇所を直すときは、このモジュールへの移行で解決できる
 
 ## デプロイの値の取得先
 
