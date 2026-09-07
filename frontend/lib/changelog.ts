@@ -34,6 +34,14 @@ export function formatChangelogDate(date: string): string {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.13.4",
+    date: "2026-09-08",
+    changes: [
+      "デバイスの設定で「データ未着信のアラートを通知」をオフにしたとき、画面上の表示だけでなくプッシュ通知も届かなくなるように修正しました。",
+      "ダッシュボードでカードを非表示にする操作が、まれに正しく保存されない不具合を修正しました。",
+    ],
+  },
+  {
     version: "4.13.3",
     date: "2026-09-07",
     changes: [
