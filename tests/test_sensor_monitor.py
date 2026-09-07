@@ -129,3 +129,57 @@ def test_stale_device_is_not_evaluated_for_anomaly(data_dir, monkeypatch):
     assert not any(kind.startswith("room_anomaly_") for kind in kinds)
     # 鮮度の通知は従来どおり動く
     assert "sensor_stale" in kinds
+
+
+def test_stale_alert_excluded_device_does_not_notify(data_dir, monkeypatch):
+    dispatched = _setup(
+        monkeypatch,
+        data_dir,
+        statuses=[_fake_status(device_id=1, stale=True)],
+    )
+    ui_settings.save_settings({ui_settings.SETTING_STALE_ALERT_EXCLUDED: ["device:1"]})
+
+    signaly_calls = []
+    monkeypatch.setattr(
+        sensor_monitor.signaly_notify,
+        "send_sensor_stale_notification",
+        lambda **kw: signaly_calls.append(kw),
+    )
+
+    sensor_monitor.run_monitor(db=object(), notify=True)
+
+    assert dispatched == []
+    assert signaly_calls == []
+
+
+def test_stale_alert_excluded_device_state_is_not_recorded(data_dir, monkeypatch):
+    _setup(
+        monkeypatch,
+        data_dir,
+        statuses=[_fake_status(device_id=1, stale=True)],
+    )
+    ui_settings.save_settings({ui_settings.SETTING_STALE_ALERT_EXCLUDED: ["device:1"]})
+
+    sensor_monitor.run_monitor(db=object(), notify=True)
+
+    # 状態遷移も記録されない（除外を解除した直後に「復旧しました」が出ないことの担保）
+    state = sensor_monitor._load_state()
+    assert state["devices"].get("1", {}).get("status", "ok") == "ok"
+
+
+def test_other_device_still_notified_when_one_is_excluded(data_dir, monkeypatch):
+    dispatched = _setup(
+        monkeypatch,
+        data_dir,
+        statuses=[
+            _fake_status(device_id=1, stale=True),
+            _fake_status(device_id=2, name="寝室", stale=True),
+        ],
+    )
+    ui_settings.save_settings({ui_settings.SETTING_STALE_ALERT_EXCLUDED: ["device:1"]})
+
+    sensor_monitor.run_monitor(db=object(), notify=True)
+
+    dedupe_keys = [event.dedupe_key for event in dispatched]
+    assert "sensor-stale-1" not in dedupe_keys
+    assert "sensor-stale-2" in dedupe_keys

@@ -341,62 +341,66 @@ def run_monitor(db: Optional[Session] = None, notify: bool = True) -> List[Senso
         ui_settings.SETTING_ROOM_ANOMALY_REMINDER_MINUTES,
         ui_settings.DEFAULT_ROOM_ANOMALY_REMINDER_MINUTES,
     )
+    #: 「データ未着信のアラートを通知」をオフにした端末（#383）。通知と状態遷移の記録の両方をスキップする
+    stale_alert_excluded = set(settings.get(ui_settings.SETTING_STALE_ALERT_EXCLUDED, []))
 
     for status in statuses:
         device_id = status["device_id"]
-        entry = _device_state_entry(state, device_id)
-        previous = entry.get("status", "ok")
         is_stale = status["stale"]
+        entry = _device_state_entry(state, device_id)
 
-        if is_stale:
-            should_notify = previous != "alerting" or _should_send_reminder(
-                entry.get("notified_at"), now, REMINDER_INTERVAL_MINUTES
-            )
-            if should_notify:
-                signaly_notify.send_sensor_stale_notification(
-                    device_name=status["name"],
-                    device_id=device_id,
-                    last_seen=status["last_seen"],
-                    age_minutes=status["age_minutes"],
-                    threshold_minutes=stale_threshold_minutes(),
+        if f"device:{device_id}" not in stale_alert_excluded:
+            previous = entry.get("status", "ok")
+
+            if is_stale:
+                should_notify = previous != "alerting" or _should_send_reminder(
+                    entry.get("notified_at"), now, REMINDER_INTERVAL_MINUTES
                 )
-                notify_events.dispatch_push_event(
-                    notify_events.NotificationEvent(
-                        kind="sensor_stale",
-                        title="センサーデータが届いていません",
-                        body=f"{status['name']}のデータが{stale_threshold_minutes()}分以上届いていません",
-                        priority="high",
-                        url="/",
-                        occurred_at=now.isoformat(),
-                        dedupe_key=f"sensor-stale-{device_id}",
+                if should_notify:
+                    signaly_notify.send_sensor_stale_notification(
+                        device_name=status["name"],
+                        device_id=device_id,
+                        last_seen=status["last_seen"],
+                        age_minutes=status["age_minutes"],
+                        threshold_minutes=stale_threshold_minutes(),
                     )
-                )
-                entry["status"] = "alerting"
-                entry["notified_at"] = now_str
+                    notify_events.dispatch_push_event(
+                        notify_events.NotificationEvent(
+                            kind="sensor_stale",
+                            title="センサーデータが届いていません",
+                            body=f"{status['name']}のデータが{stale_threshold_minutes()}分以上届いていません",
+                            priority="high",
+                            url="/",
+                            occurred_at=now.isoformat(),
+                            dedupe_key=f"sensor-stale-{device_id}",
+                        )
+                    )
+                    entry["status"] = "alerting"
+                    entry["notified_at"] = now_str
+                    changed = True
+            elif previous == "alerting":
+                if NOTIFY_ON_RECOVERY:
+                    signaly_notify.send_sensor_recovered_notification(
+                        device_name=status["name"],
+                        device_id=device_id,
+                        last_seen=status["last_seen"],
+                    )
+                    notify_events.dispatch_push_event(
+                        notify_events.NotificationEvent(
+                            kind="sensor_recovered",
+                            title="センサーデータが復旧しました",
+                            body=f"{status['name']}のデータを受信しました",
+                            priority="normal",
+                            url="/",
+                            occurred_at=now.isoformat(),
+                            dedupe_key=f"sensor-stale-{device_id}",
+                        )
+                    )
+                entry["status"] = "ok"
+                entry["notified_at"] = None
                 changed = True
-        elif previous == "alerting":
-            if NOTIFY_ON_RECOVERY:
-                signaly_notify.send_sensor_recovered_notification(
-                    device_name=status["name"],
-                    device_id=device_id,
-                    last_seen=status["last_seen"],
-                )
-                notify_events.dispatch_push_event(
-                    notify_events.NotificationEvent(
-                        kind="sensor_recovered",
-                        title="センサーデータが復旧しました",
-                        body=f"{status['name']}のデータを受信しました",
-                        priority="normal",
-                        url="/",
-                        occurred_at=now.isoformat(),
-                        dedupe_key=f"sensor-stale-{device_id}",
-                    )
-                )
-            entry["status"] = "ok"
-            entry["notified_at"] = None
-            changed = True
-        else:
-            entry["status"] = "ok"
+            else:
+                entry["status"] = "ok"
 
         if anomaly_enabled and not is_stale and status["has_data"] and db is not None:
             if _evaluate_device_anomalies(
