@@ -101,6 +101,21 @@ export async function saveHiddenDevicesToServer(keys: Set<string>): Promise<void
   await updateUiSettings({ hidden_devices: [...keys] });
 }
 
+/**
+ * 表示順と非表示キーが同時に変わる操作（カードを隠す等）用に1回のPUTへまとめる。
+ * 別々に投げると、サーバー側の save_settings が全キーを読み直して書き戻すため、
+ * 片方のPUTがもう片方の変更前の値で上書きして消してしまうことがある（#377）。
+ */
+export async function saveDisplayOrderAndHiddenDevicesToServer(
+  order: DisplayOrderItem[],
+  keys: Set<string>
+): Promise<void> {
+  await updateUiSettings({
+    display_order: order.map(orderItemKey),
+    hidden_devices: [...keys],
+  });
+}
+
 export async function saveStaleAlertExcludedToServer(keys: Set<string>): Promise<void> {
   await updateUiSettings({ stale_alert_excluded_devices: [...keys] });
 }
