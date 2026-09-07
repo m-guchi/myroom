@@ -8,10 +8,11 @@ gitignore 済みのJSONファイルに保存する（DDL不要・DB_MOCKでも�
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from . import atomic_json
 
 JST = timezone(timedelta(hours=9))
 SUBSCRIPTIONS_PATH = Path(__file__).resolve().parent.parent / "data" / "push_subscriptions.json"
@@ -35,23 +36,14 @@ def _normalize_subscription(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}}
 
 
+def _sanitize_items(data: Any) -> List[Dict[str, Any]]:
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
 def _load_all() -> List[Dict[str, Any]]:
-    if not SUBSCRIPTIONS_PATH.exists():
-        return []
-    try:
-        with SUBSCRIPTIONS_PATH.open(encoding="utf-8") as handle:
-            data = json.load(handle)
-        if not isinstance(data, list):
-            return []
-        return [item for item in data if isinstance(item, dict)]
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
-        return []
-
-
-def _write_all(items: List[Dict[str, Any]]) -> None:
-    SUBSCRIPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with SUBSCRIPTIONS_PATH.open("w", encoding="utf-8") as handle:
-        json.dump(items, handle, ensure_ascii=False, indent=2)
+    return _sanitize_items(atomic_json.read_json(SUBSCRIPTIONS_PATH, []))
 
 
 def list_subscriptions() -> List[Dict[str, Any]]:
@@ -68,45 +60,56 @@ def upsert_subscription(subscription: Dict[str, Any], *, user_agent: str = "") -
     if normalized is None:
         raise ValueError("invalid push subscription")
 
-    items = _load_all()
     endpoint = normalized["endpoint"]
-    updated = False
-    for item in items:
-        if item.get("endpoint") == endpoint:
-            item["keys"] = normalized["keys"]
-            item["updated_at"] = _now_iso()
+
+    def _mutate(data: Any) -> List[Dict[str, Any]]:
+        items = _sanitize_items(data)
+        updated = False
+        for item in items:
+            if item.get("endpoint") == endpoint:
+                item["keys"] = normalized["keys"]
+                item["updated_at"] = _now_iso()
+                if user_agent:
+                    item["user_agent"] = user_agent[:200]
+                updated = True
+                break
+
+        if not updated:
+            entry: Dict[str, Any] = {
+                **normalized,
+                "created_at": _now_iso(),
+                "updated_at": _now_iso(),
+            }
             if user_agent:
-                item["user_agent"] = user_agent[:200]
-            updated = True
-            break
+                entry["user_agent"] = user_agent[:200]
+            items.append(entry)
+        return items
 
-    if not updated:
-        entry: Dict[str, Any] = {
-            **normalized,
-            "created_at": _now_iso(),
-            "updated_at": _now_iso(),
-        }
-        if user_agent:
-            entry["user_agent"] = user_agent[:200]
-        items.append(entry)
-
-    _write_all(items)
+    atomic_json.update_json(SUBSCRIPTIONS_PATH, [], _mutate)
     return normalized
 
 
 def remove_subscription(endpoint: str) -> bool:
-    items = _load_all()
-    next_items = [item for item in items if item.get("endpoint") != endpoint]
-    if len(next_items) == len(items):
-        return False
-    _write_all(next_items)
-    return True
+    removed = False
+
+    def _mutate(data: Any) -> List[Dict[str, Any]]:
+        nonlocal removed
+        items = _sanitize_items(data)
+        next_items = [item for item in items if item.get("endpoint") != endpoint]
+        removed = len(next_items) != len(items)
+        return next_items
+
+    atomic_json.update_json(SUBSCRIPTIONS_PATH, [], _mutate)
+    return removed
 
 
 def remove_subscriptions(endpoints: List[str]) -> None:
     if not endpoints:
         return
     endpoint_set = set(endpoints)
-    items = _load_all()
-    next_items = [item for item in items if item.get("endpoint") not in endpoint_set]
-    _write_all(next_items)
+
+    def _mutate(data: Any) -> List[Dict[str, Any]]:
+        items = _sanitize_items(data)
+        return [item for item in items if item.get("endpoint") not in endpoint_set]
+
+    atomic_json.update_json(SUBSCRIPTIONS_PATH, [], _mutate)
