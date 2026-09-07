@@ -167,6 +167,13 @@ def _fetch_outdoor_history(
     return None
 
 
+def _evict_expired_outdoor_history(now: float) -> None:
+    """期限切れの履歴キャッシュを掃除する。呼び出し側で`_cache_lock`を保持していること。"""
+    expired_keys = [key for key, (expires_at, _) in _outdoor_history_cache.items() if expires_at <= now]
+    for key in expired_keys:
+        del _outdoor_history_cache[key]
+
+
 def get_outdoor_history(
     start_date: str,
     end_date: str,
@@ -183,6 +190,8 @@ def get_outdoor_history(
     now = time.time()
 
     with _cache_lock:
+        _evict_expired_outdoor_history(now)
+
         cached = _outdoor_history_cache.get(cache_key)
         if cached and cached[0] > now:
             return cached[1]
