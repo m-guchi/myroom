@@ -2419,6 +2419,20 @@ def get_aircon_history(
     formatted_records.sort(key=lambda x: x["datetime"])
     return formatted_records
 
+def _resolve_within_directory(base_dir: str, relative_path: str) -> Optional[str]:
+    """`relative_path` を `base_dir` 配下に解決できたときだけそのパスを返す（#376）。
+
+    `relative_path` が `/` 始まりだと `os.path.join` が `base_dir` 側を捨てて配下外の
+    絶対パスになり、`../` を含む相対パスも配下外へ抜けられる。`os.path.realpath` で
+    シンボリックリンクや `..` を解決したうえで配下かどうかを確認する。
+    """
+    base_real = os.path.realpath(base_dir)
+    candidate = os.path.realpath(os.path.join(base_dir, relative_path))
+    if os.path.commonpath([base_real, candidate]) != base_real:
+        return None
+    return candidate
+
+
 # Serve Next.js static export (frontend/out)
 frontend_dist = os.path.join(os.path.dirname(__file__), "../frontend/out")
 
@@ -2427,19 +2441,23 @@ if os.path.exists(frontend_dist):
     if os.path.isdir(next_static):
         app.mount("/_next", StaticFiles(directory=next_static), name="next_static")
 
+    def _resolve_static_path(full_path: str) -> Optional[str]:
+        return _resolve_within_directory(frontend_dist, full_path)
+
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def serve_frontend(full_path: str):
         if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
             raise HTTPException(status_code=404, detail="Not Found")
 
-        requested_file = os.path.join(frontend_dist, full_path)
-        if os.path.isfile(requested_file):
+        requested_file = _resolve_static_path(full_path)
+        if requested_file and os.path.isfile(requested_file):
             return FileResponse(requested_file)
 
         # Next.jsの静的エクスポートは "/auth/callback" のようなクリーンURLを
         # "auth/callback.html" として出力するため、拡張子付きでも解決を試みる。
-        html_file = f"{requested_file}.html"
-        if os.path.isfile(html_file):
-            return FileResponse(html_file)
+        if requested_file:
+            html_file = f"{requested_file}.html"
+            if os.path.isfile(html_file):
+                return FileResponse(html_file)
 
         return FileResponse(os.path.join(frontend_dist, "index.html"))
