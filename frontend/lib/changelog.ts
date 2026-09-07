@@ -34,6 +34,13 @@ export function formatChangelogDate(date: string): string {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.13.0",
+    date: "2026-09-07",
+    changes: [
+      "各場所の詳細パネルに、照明の点灯・消灯の履歴（回数や点灯していた時間、日射の可能性がある区間の目印）を表示できるようになりました。",
+    ],
+  },
+  {
     version: "4.12.2",
     date: "2026-09-06",
     changes: [
