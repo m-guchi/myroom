@@ -1,5 +1,4 @@
 from fastapi import BackgroundTasks, FastAPI, Depends, File, HTTPException, Query, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import asyncio
@@ -209,15 +208,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="MyRoom API", lifespan=lifespan)
-
-# Allow CORS for Streamlit (Mocking mainly, but good practice)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # --- Models ---
 class SensorData(BaseModel):
