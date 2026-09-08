@@ -198,6 +198,32 @@ envファイルに入っていない。** 別ポートで立てるなら
 `normalizeHiddenDeviceKeys()` が2つのキーへ読み替えるため、**非表示にして開き直したあとに
 表示へ戻してもカードが戻らない**（消しているキーが残っていない）。
 
+## 部屋の3Dビュー（`/room`）
+
+**センサー・エアコン・掃除タスクは、どれも「部屋のどこにあるか」を持っていない**（持っているのは
+`id` と表示名だけ）。3D上の場所と結び付ける対応表は `app_settings` の `room_layout` キー1つに
+入れてあり、**マイグレーションは1行も足していない**（#399）。**どのゾーンが存在するかの正は
+`frontend/lib/room-layout.ts` の `ROOM_ZONE_DEFS`** で、`backend/ui_settings.py` の
+`_normalize_room_layout()` は形だけを整えて素通しする（`life_card_order` と同じ分担・#283）。
+知らないキーを落として足りないキーを補うのはフロントの `normalizeRoomLayout()` の仕事。
+
+- **three.js は `next/dynamic` の `ssr: false` でしか読まない。** `output: "export"` なので
+  サーバー側では描けず、素で import するとダッシュボードの初期バンドルに three が載る。
+  分離できているかは**ビルド後に `out/index.html` が参照するチャンク一覧を見れば分かる**
+  （`grep -l WebGLRenderer out/_next/static/chunks/*.js` で出たファイルが、その一覧に
+  入っていなければよい）
+- **`<Canvas>` はエラー境界で包む。** WebGL が使えない・無効にされた端末では `<Canvas>` が
+  例外を投げ、境界が無いと**ページごと真っ白になって一覧まで読めなくなる**
+  （`components/room-view.tsx` の `RoomSceneBoundary`）
+- **3Dの中に文字を描かず、`@react-three/drei` の `<Html>` でDOMとして重ねる。** 3Dのテキストは
+  視点を回すと裏返って読めなくなり、テーマごとの色・フォントも画面の他の場所と揃わない
+- **新しいページを足したら `/devices` と同じ認証ゲートを通すこと。** `resolveAuthGate()` で
+  読み込み画面・ログイン画面へ倒さないと、静的書き出しの `out/<page>/index.html` に
+  **ログイン後の画面がそのまま焼き込まれる**（#250 と同じ理屈）
+- 実物の部屋のモデル（glTF/GLB）はまだ受け取っていない。いまは仮の1LDKを
+  `lib/room-layout.ts` の寸法データとして持ち、`components/room-scene.tsx` が描いている。
+  差し替えるときに触るのはこの2つだけで済むよう、**外から渡すのはゾーンのキーと値だけ**にしてある
+
 ## 照明の点灯履歴（アレクサ・アプリ・壁スイッチのどれでも拾う）
 
 **アレクサの操作履歴を読む公式APIは存在しない**（#368）。Alexa Smart Home Skill API は

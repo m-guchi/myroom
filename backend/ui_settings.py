@@ -41,6 +41,9 @@ SETTING_ROOM_ANOMALY_NOTIFY_ENABLED = "room_anomaly_notify_enabled"
 SETTING_ROOM_ANOMALY_THRESHOLDS = "room_anomaly_thresholds"
 #: 同じ異常が続く間の再通知間隔（分）
 SETTING_ROOM_ANOMALY_REMINDER_MINUTES = "room_anomaly_reminder_minutes"
+#: 部屋の3Dビュー（#399）で、3D上の場所とセンサー・エアコン・掃除タスクを結ぶ対応表。
+#: {"zones": [{"key": "ldk", "device_id": 1, "ac_id": 1, "cleaning_task_ids": [...]}, ...]}
+SETTING_ROOM_LAYOUT = "room_layout"
 
 DEFAULT_DISPLAY_ORDER = ["device:1", "device:2", "outdoor", "aircon"]
 
@@ -121,6 +124,10 @@ def _default_settings() -> Dict[str, Any]:
             metric: dict(values) for metric, values in DEFAULT_ROOM_ANOMALY_THRESHOLDS.items()
         },
         SETTING_ROOM_ANOMALY_REMINDER_MINUTES: DEFAULT_ROOM_ANOMALY_REMINDER_MINUTES,
+        # 空 = まだ紐付けを保存していない。どのゾーンが存在するかを知っているのは
+        # フロント側の `lib/room-layout.ts` の ROOM_ZONE_DEFS なので、既定の紐付けは
+        # ここに持たない（`life_card_order` と同じ分担・#283）
+        SETTING_ROOM_LAYOUT: {"zones": []},
     }
 
 
@@ -511,6 +518,66 @@ def _normalize_room_anomaly_reminder_minutes(raw: Any) -> int:
     )
 
 
+def _optional_id(raw: Any) -> Optional[int]:
+    """device_id / ac_id 用。null・読めない値・負の数はすべて「紐付けなし」の None。"""
+    if raw is None:
+        return None
+    try:
+        number = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _normalize_room_layout(raw: Any) -> Dict[str, Any]:
+    """3D上の場所と、センサー・エアコン・掃除タスクの対応表（#399）。
+
+    **どのゾーンが存在するかはここでは判断しない。** ゾーンの一覧・寸法を持っているのは
+    フロント側の `lib/room-layout.ts` の `ROOM_ZONE_DEFS` で、同じ一覧をここへ写すと
+    間取りを直したときに片方だけ古くなる。知らないキーを落として足りないキーを補うのは
+    `normalizeRoomLayout()` の仕事なので、ここでは形（キーは文字列・IDは整数か null・
+    掃除タスクIDは重複の無い文字列の配列）だけを整える。`_normalize_life_card_order()` と
+    同じ考え方。
+    """
+    if not isinstance(raw, dict):
+        return {"zones": []}
+
+    entries = raw.get("zones")
+    if not isinstance(entries, list):
+        return {"zones": []}
+
+    zones: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("key") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+
+        task_ids: List[str] = []
+        raw_tasks = entry.get("cleaning_task_ids")
+        if isinstance(raw_tasks, list):
+            for task in raw_tasks:
+                if not isinstance(task, str):
+                    continue
+                task_id = task.strip()
+                if not task_id or task_id in task_ids:
+                    continue
+                task_ids.append(task_id)
+
+        zones.append(
+            {
+                "key": key,
+                "device_id": _optional_id(entry.get("device_id")),
+                "ac_id": _optional_id(entry.get("ac_id")),
+                "cleaning_task_ids": task_ids,
+            }
+        )
+    return {"zones": zones}
+
+
 def _normalize_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     defaults = _default_settings()
     if not raw:
@@ -576,6 +643,9 @@ def _normalize_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         ),
         SETTING_ROOM_ANOMALY_REMINDER_MINUTES: _normalize_room_anomaly_reminder_minutes(
             raw.get(SETTING_ROOM_ANOMALY_REMINDER_MINUTES)
+        ),
+        SETTING_ROOM_LAYOUT: _normalize_room_layout(
+            raw.get(SETTING_ROOM_LAYOUT, defaults[SETTING_ROOM_LAYOUT])
         ),
     }
 
@@ -715,6 +785,9 @@ def save_settings(
             current.get(
                 SETTING_ROOM_ANOMALY_REMINDER_MINUTES, DEFAULT_ROOM_ANOMALY_REMINDER_MINUTES
             ),
+        ),
+        SETTING_ROOM_LAYOUT: updates.get(
+            SETTING_ROOM_LAYOUT, current.get(SETTING_ROOM_LAYOUT, {"zones": []})
         ),
     }
     normalized = _normalize_settings(merged)

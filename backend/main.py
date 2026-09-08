@@ -307,6 +307,10 @@ class UiSettingsUpdate(BaseModel):
     room_anomaly_thresholds: Optional[Dict[str, Dict[str, float]]] = None
     #: 同じ異常が続く間の再通知間隔（分）
     room_anomaly_reminder_minutes: Optional[int] = None
+    #: 部屋の3Dビュー（#399）の、3D上の場所とセンサー・エアコン・掃除タスクの対応表。
+    #: {"zones": [{"key": "ldk", "device_id": 1, "ac_id": 1, "cleaning_task_ids": [...]}]}
+    #: どのゾーンが存在するかはフロント（lib/room-layout.ts）が正で、ここは素通しする
+    room_layout: Optional[Dict[str, Any]] = None
 
 
 class PushSubscriptionKeys(BaseModel):

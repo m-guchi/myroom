@@ -1,8 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { ChevronRight, LineChart, RefreshCw } from "lucide-react";
+import { Box, ChevronRight, LineChart, RefreshCw } from "lucide-react";
 import { WeatherIcon } from "@/lib/weather-icon";
 import { AppSettingsSheet } from "@/components/app-settings-sheet";
 import { NotificationSettingsSheet } from "@/components/notification-settings-sheet";
@@ -1160,6 +1161,19 @@ export function MyRoomDashboard() {
                 strokeWidth={1.75}
               />
             </button>
+            {/*
+              部屋のようす（#399）。3Dは縦に大きく取りたいので、ダッシュボードの
+              カードにはせず独立した画面にしてある。設定の歯車と並ぶが、こちらは
+              設定ではなく別の見かたへの入口なので `SettingsIconButton` は使わない。
+            */}
+            <Link
+              href="/room"
+              aria-label="部屋のようす"
+              title="部屋のようす"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Box className="size-[18px]" strokeWidth={1.75} />
+            </Link>
             <SettingsIconButton
               label="設定"
               tone="header"
