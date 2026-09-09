@@ -34,6 +34,13 @@ export function formatChangelogDate(date: string): string {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.15.0",
+    date: "2026-09-09",
+    changes: [
+      "部屋の3Dビューの間取りを、実際のお部屋の形（リビング・洋室・和室・洗面所・浴室・トイレ・玄関・バルコニー）に合わせて描き直しました。窓やドアの位置、エアコンや照明の配置もより実際に近くなり、バルコニーに置いたセンサーの温度・湿度も見られるようになります。",
+    ],
+  },
+  {
     version: "4.14.0",
     date: "2026-09-09",
     changes: [
