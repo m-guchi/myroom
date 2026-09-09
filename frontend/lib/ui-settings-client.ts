@@ -19,6 +19,7 @@ import {
 import {
   normalizeHiddenDeviceKeys,
 } from "@/lib/visible-devices";
+import { normalizeRoomLayout, type RoomLayout } from "@/lib/room-layout";
 import { fetchUiSettings, updateUiSettings } from "@/lib/api";
 import { DASHBOARD_SENSOR_DEVICE_IDS, type LightSource } from "@/lib/types";
 
@@ -53,6 +54,7 @@ export async function loadUiSettingsFromServer(
   pressureOffsets: Record<string, number>;
   lightThresholds: Record<string, number>;
   lightSources: Record<string, LightSource>;
+  roomLayout: RoomLayout;
 }> {
   discardLegacyLocalStorage();
   const settings = await fetchUiSettings();
@@ -82,6 +84,7 @@ export async function loadUiSettingsFromServer(
     pressureOffsets: settings.pressure_offsets ?? {},
     lightThresholds: settings.light_thresholds ?? {},
     lightSources: settings.light_sources ?? {},
+    roomLayout: normalizeRoomLayout(settings.room_layout),
   };
 }
 
@@ -138,6 +141,10 @@ export async function saveLightSourcesToServer(
   await updateUiSettings({ light_sources: sources });
 }
 
+export async function saveRoomLayoutToServer(layout: RoomLayout): Promise<void> {
+  await updateUiSettings({ room_layout: layout });
+}
+
 export function getDefaultUiSettings(
   sensorDeviceIds: readonly number[] = DASHBOARD_SENSOR_DEVICE_IDS,
   outdoor: OutdoorOrderContext = EMPTY_OUTDOOR_ORDER_CONTEXT
@@ -151,5 +158,6 @@ export function getDefaultUiSettings(
     pressureOffsets: {} as Record<string, number>,
     lightThresholds: {} as Record<string, number>,
     lightSources: {} as Record<string, LightSource>,
+    roomLayout: normalizeRoomLayout(null),
   };
 }

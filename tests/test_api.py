@@ -1040,3 +1040,36 @@ def test_energy_source_names_reach_the_breakdown_label(authed_client):
     restored = authed_client.get("/api/energy/breakdown").json()
     back = next(row for row in restored["sources"] if row["source"] == plug["source"])
     assert back["label"] == plug["default_label"]
+
+
+def test_ui_settings_room_layout_round_trip(authed_client):
+    """部屋の3Dビューの対応表（#399）。`UiSettingsUpdate` にフィールドが無いと素通りする。"""
+    initial = authed_client.get("/api/ui-settings").json()
+    assert initial["room_layout"] == {"zones": []}
+
+    updated = authed_client.put(
+        "/api/ui-settings",
+        json={
+            "room_layout": {
+                "zones": [
+                    {
+                        "key": "ldk",
+                        "device_id": 1,
+                        "ac_id": 1,
+                        "cleaning_task_ids": ["yuka", "yuka"],
+                    },
+                    {"key": "bath", "device_id": None, "ac_id": None, "cleaning_task_ids": []},
+                ]
+            }
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["room_layout"]["zones"][0]["cleaning_task_ids"] == ["yuka"]
+
+    # 別のキーだけを保存しても消えないこと（save_settings の merged 漏れを拾う）
+    authed_client.put("/api/ui-settings", json={"energy_unit_price": 29.5})
+
+    fetched = authed_client.get("/api/ui-settings").json()
+    assert fetched["room_layout"]["zones"][0]["device_id"] == 1
+    assert fetched["room_layout"]["zones"][1]["key"] == "bath"
+    assert fetched["energy_unit_price"] == 29.5
