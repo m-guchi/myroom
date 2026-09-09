@@ -14,6 +14,8 @@ import {
   ROOM_WALL_PARTS,
   roomTemperatureColor,
   type ResolvedRoomZone,
+  type RoomBoxPart,
+  type RoomFloorTone,
   type RoomLayerState,
   type RoomSurfaceTone,
 } from "@/lib/room-layout";
@@ -22,9 +24,9 @@ import { formatAirconMode, getAirconModeColor, isAirconPowerOff } from "@/lib/ty
 /**
  * 部屋の3Dビュー本体（#399）。
  *
- * **いまの中身は仮の1LDK**で、寸法は `lib/room-layout.ts` が持っている。実物の
- * glTF/GLB を受け取ったら、床・壁・家具を描いている部分をモデルの読み込みへ差し替える。
- * 差し替えても壊れないよう、**外から渡すのはゾーンのキーと値だけ**にしてある。
+ * 間取りは実物の2LDK（#406）で、寸法は `lib/room-layout.ts` が持っている。図面を直すときは
+ * そちらのデータを置き換えるだけで済むよう、ここは受け取った箱・壁・ゾーンを描くだけにしてあり、
+ * **外から渡すのはゾーンのキーと値だけ**にしてある。
  *
  * 文字は3Dの中に描かず、`<Html>` でDOMとして重ねる。3Dのテキストは視点を回すと
  * 裏返って読めなくなるうえ、テーマごとの色・フォントを画面の他の場所と揃えられない。
@@ -33,50 +35,67 @@ import { formatAirconMode, getAirconModeColor, isAirconPowerOff } from "@/lib/ty
  * （呼び出し側が `next/dynamic` の `ssr: false` で読む）。
  */
 
-interface RoomScenePalette {
-  floor: string;
-  wall: string;
-  partition: string;
-  wood: string;
-  woodDark: string;
-  metal: string;
-  screen: string;
-  fixture: string;
-}
+type RoomScenePalette = Record<RoomSurfaceTone | RoomFloorTone | "fixture", string>;
 
 const PALETTES: Record<"light" | "dark", RoomScenePalette> = {
   light: {
     floor: "#e7e2d8",
+    tatami: "#b7c39a",
+    balcony: "#d3cfc7",
     wall: "#f2efe9",
     partition: "#e6e1d7",
     wood: "#cfc7b8",
     woodDark: "#b9afa0",
     metal: "#d9dde2",
     screen: "#5b626c",
+    glass: "#9fc4dc",
     fixture: "#ffffff",
   },
   dark: {
     floor: "#55504a",
+    tatami: "#57634a",
+    balcony: "#46423d",
     wall: "#6b6660",
     partition: "#5c5751",
     wood: "#7d766c",
     woodDark: "#6a6459",
     metal: "#8a9099",
     screen: "#3b4048",
+    glass: "#6f93ab",
     fixture: "#f2ede2",
   },
 };
 
-function toneColor(palette: RoomScenePalette, tone: RoomSurfaceTone): string {
-  return palette[tone];
+/** ガラスの透け具合。窓越しに部屋の中が見える程度で、手すりとしても読める濃さ */
+const GLASS_OPACITY = 0.32;
+
+/**
+ * 床に敷く色。温度そのままだと彩度が高すぎるので、床の地の色へ寄せる。
+ * 地の色はゾーンごと（畳・バルコニー）に違うので、パレットではなく色そのものを受け取る。
+ * 温度レイヤがオンでも地の色が残り、オフのときは素の床色に戻る。
+ */
+function floorColor(base: string, temperature: number | null, tinted: boolean): string {
+  if (!tinted || temperature == null) return base;
+  return `#${new Color(roomTemperatureColor(temperature)).lerp(new Color(base), 0.42).getHexString()}`;
 }
 
-/** 床に敷く色。温度そのままだと彩度が高すぎるので、床の地の色へ寄せる */
-function floorColor(palette: RoomScenePalette, temperature: number | null, tinted: boolean): string {
-  if (!tinted || temperature == null) return palette.floor;
-  return `#${new Color(roomTemperatureColor(temperature))
-    .lerp(new Color(palette.floor), 0.42)
-    .getHexString()}`;
+/** 壁・家具の1つ。ガラスだけ半透明にし、円柱は `size[0]` を直径として描く */
+function RoomBox({ part, palette }: { part: RoomBoxPart; palette: RoomScenePalette }) {
+  const color = palette[part.tone];
+  return (
+    <mesh position={part.position}>
+      {part.shape === "cylinder" ? (
+        <cylinderGeometry args={[part.size[0] / 2, part.size[0] / 2, part.size[1], 24]} />
+      ) : (
+        <boxGeometry args={part.size} />
+      )}
+      {part.tone === "glass" ? (
+        <meshLambertMaterial color={color} transparent opacity={GLASS_OPACITY} depthWrite={false} />
+      ) : (
+        <meshLambertMaterial color={color} />
+      )}
+    </mesh>
+  );
 }
 
 interface RoomSceneProps {
@@ -91,10 +110,14 @@ interface RoomSceneProps {
   onSelectZone: (key: string) => void;
 }
 
-/** 見下ろす角度（ラジアン）。真上からだと壁で中が隠れ、低すぎると奥の部屋が見えない */
+/**
+ * 見下ろす角度（ラジアン）。真上からだと壁で中が隠れ、低すぎると奥の部屋が見えない。
+ * 方位は負にして、バルコニー側の手前（X が負・Z が正）から見下ろす。玄関側が奥になる。
+ * 回転の中心はバルコニーを含めた間取りの中央（X が少し負）に置く
+ */
 const CAMERA_ELEVATION = 0.78;
-const CAMERA_AZIMUTH = 0.62;
-const CAMERA_TARGET: [number, number, number] = [0, 0.4, 0];
+const CAMERA_AZIMUTH = -0.62;
+const CAMERA_TARGET: [number, number, number] = [-0.4, 0.3, 0];
 
 function cameraPosition(distance: number): [number, number, number] {
   return [
@@ -128,17 +151,11 @@ export function RoomScene({
       <directionalLight position={[-8, 5, -6]} intensity={0.24} color="#bcd4e8" />
 
       {ROOM_WALL_PARTS.map((part, index) => (
-        <mesh key={`wall-${index}`} position={part.position}>
-          <boxGeometry args={part.size} />
-          <meshLambertMaterial color={toneColor(palette, part.tone)} />
-        </mesh>
+        <RoomBox key={`wall-${index}`} part={part} palette={palette} />
       ))}
 
       {ROOM_FURNITURE.map((part, index) => (
-        <mesh key={`furniture-${index}`} position={part.position}>
-          <boxGeometry args={part.size} />
-          <meshLambertMaterial color={toneColor(palette, part.tone)} />
-        </mesh>
+        <RoomBox key={`furniture-${index}`} part={part} palette={palette} />
       ))}
 
       {zones.map((zone) => (
@@ -186,6 +203,8 @@ function RoomZoneParts({
   const [centerX, centerZ] = zone.center;
   const width = zone.rect.x1 - zone.rect.x0;
   const depth = zone.rect.z1 - zone.rect.z0;
+  const shortSide = Math.min(width, depth);
+  const floorTop = zone.raise;
 
   const airconMount = zone.acId != null ? ROOM_AIRCON_MOUNTS[zone.key] : undefined;
   const airconOn = zone.aircon != null && !isAirconPowerOff(zone.aircon.power);
@@ -193,19 +212,23 @@ function RoomZoneParts({
 
   const ceiling = ROOM_CEILING_LIGHTS[zone.key];
   const lightOn = zone.light?.status === "on";
+  // 器具と光の円錐は部屋の広さに合わせる。トイレ・洗面所のような1畳前後の場所に
+  // LDKと同じ大きさで置くと、器具が天井を埋め、円錐が隣の部屋まではみ出す
+  const lampRadius = Math.min(0.42, Math.max(0.16, shortSide * 0.22));
+  const coneRadius = Math.min(1.75, Math.max(0.3, shortSide / 2 - 0.08));
 
   // 掃除は「いちばん急ぐ1件」だけを3Dに出す。1つの場所に複数を重ねると帯もピンも読めない
   const urgentCleaning =
     zone.cleaning.length > 0
       ? [...zone.cleaning].sort((a, b) => a.days_until - b.days_until)[0]
       : null;
-  const cleaningRadius = Math.max(Math.min(width, depth) / 2 - 0.35, 0.3);
+  const cleaningRadius = Math.max(shortSide / 2 - 0.35, 0.3);
 
   return (
     <group>
-      {/* 床。温度の色を敷き、押すとその場所を選ぶ */}
+      {/* 床。温度の色を敷き、押すとその場所を選ぶ。玄関は上がり框ぶん高く、バルコニーは低い */}
       <mesh
-        position={[centerX, -0.06, centerZ]}
+        position={[centerX, -0.06 + floorTop, centerZ]}
         onClick={(event) => {
           event.stopPropagation();
           onSelect(zone.key);
@@ -213,13 +236,13 @@ function RoomZoneParts({
       >
         <boxGeometry args={[width - 0.04, 0.12, depth - 0.04]} />
         <meshLambertMaterial
-          color={floorColor(palette, zone.temperature, layers.temperature)}
+          color={floorColor(palette[zone.floor], zone.temperature, layers.temperature)}
           emissive={focused ? "#1b3d55" : "#000000"}
         />
       </mesh>
 
       {focused ? (
-        <mesh rotation-x={-Math.PI / 2} position={[centerX, 0.02, centerZ]}>
+        <mesh rotation-x={-Math.PI / 2} position={[centerX, 0.02 + floorTop, centerZ]}>
           <planeGeometry args={[width - 0.1, depth - 0.1]} />
           <meshBasicMaterial
             color="#3498db"
@@ -231,9 +254,12 @@ function RoomZoneParts({
         </mesh>
       ) : null}
 
-      {/* エアコン本体。運転中だけ吹き出し口がモードの色で光る */}
+      {/*
+        エアコン。本体・風・ピンを同じ回転の中に入れる。壁の向きに合わせて本体だけ回すと、
+        風が壁の外へ流れてピンが本体の裏に出る（#406）。運転中だけ吹き出し口がモードの色で光る
+      */}
       {airconMount ? (
-        <group position={airconMount}>
+        <group position={airconMount.position} rotation-y={airconMount.rotationY}>
           <mesh>
             <boxGeometry args={[1.05, 0.3, 0.26]} />
             <meshLambertMaterial color={palette.fixture} />
@@ -245,18 +271,28 @@ function RoomZoneParts({
               emissive={layers.aircon && airconOn ? airconColor : "#000000"}
             />
           </mesh>
+          {layers.aircon && airconOn && !reduceMotion ? <AirconAirflow color={airconColor} /> : null}
+          {layers.aircon && zone.aircon ? (
+            <RoomPin
+              position={[0, 0.44, 0.14]}
+              color={airconOn ? airconColor : "#93999f"}
+              name={airconOn ? formatAirconMode(zone.aircon.mode) : "エアコン"}
+              value={
+                airconOn && zone.aircon.target_temperature != null
+                  ? `${zone.aircon.target_temperature}℃`
+                  : "停止中"
+              }
+              highlighted={focused}
+            />
+          ) : null}
         </group>
-      ) : null}
-
-      {airconMount && layers.aircon && airconOn && !reduceMotion ? (
-        <AirconAirflow origin={airconMount} color={airconColor} />
       ) : null}
 
       {/* シーリングライト。点灯していれば光の円錐を落とす */}
       {ceiling ? (
         <group>
           <mesh position={ceiling}>
-            <cylinderGeometry args={[0.42, 0.42, 0.08, 24]} />
+            <cylinderGeometry args={[lampRadius, lampRadius, 0.08, 24]} />
             <meshLambertMaterial
               color={palette.fixture}
               emissive={layers.light && lightOn ? "#e8a13a" : "#000000"}
@@ -264,7 +300,7 @@ function RoomZoneParts({
           </mesh>
           {layers.light && lightOn ? (
             <mesh position={[ceiling[0], ceiling[1] - 0.98, ceiling[2]]}>
-              <coneGeometry args={[1.75, 1.94, 28, 1, true]} />
+              <coneGeometry args={[coneRadius, 1.94, 28, 1, true]} />
               <meshBasicMaterial
                 color="#e8a13a"
                 transparent
@@ -279,7 +315,7 @@ function RoomZoneParts({
 
       {/* 掃除。その場所の床を状態の色で囲う */}
       {layers.cleaning && urgentCleaning ? (
-        <mesh rotation-x={-Math.PI / 2} position={[centerX, 0.015, centerZ]}>
+        <mesh rotation-x={-Math.PI / 2} position={[centerX, 0.015 + floorTop, centerZ]}>
           <ringGeometry args={[cleaningRadius - 0.09, cleaningRadius, 48]} />
           <meshBasicMaterial
             color={ROOM_CLEANING_STATUS_COLORS[urgentCleaning.status]}
@@ -298,20 +334,6 @@ function RoomZoneParts({
           color={roomTemperatureColor(zone.temperature)}
           name={zone.name}
           value={`${zone.temperature.toFixed(1)}℃`}
-          highlighted={focused}
-        />
-      ) : null}
-
-      {layers.aircon && airconMount && zone.aircon ? (
-        <RoomPin
-          position={[airconMount[0], airconMount[1] + 0.44, airconMount[2] + 0.14]}
-          color={airconOn ? airconColor : "#93999f"}
-          name={airconOn ? formatAirconMode(zone.aircon.mode) : "エアコン"}
-          value={
-            airconOn && zone.aircon.target_temperature != null
-              ? `${zone.aircon.target_temperature}℃`
-              : "停止中"
-          }
           highlighted={focused}
         />
       ) : null}
@@ -375,15 +397,10 @@ function RoomPin({ position, color, name, value, highlighted }: RoomPinProps) {
 
 /**
  * エアコンの風。運転中であることを、色だけでなく動きでも伝える。
+ * 本体と同じ回転つきの `<group>` の中に置く前提で、座標は本体から見た向き（+Z が吹き出し口）。
  * `prefers-reduced-motion` のときは呼び出し側がこれ自体を描かない。
  */
-function AirconAirflow({
-  origin,
-  color,
-}: {
-  origin: [number, number, number];
-  color: string;
-}) {
+function AirconAirflow({ color }: { color: string }) {
   const group = useRef<Group>(null);
 
   useFrame(({ clock }) => {
@@ -400,7 +417,7 @@ function AirconAirflow({
   });
 
   return (
-    <group ref={group} position={origin}>
+    <group ref={group}>
       {[0, 1, 2, 3].map((index) => (
         <mesh key={index} rotation-x={-Math.PI / 2.6}>
           <circleGeometry args={[0.2, 20]} />

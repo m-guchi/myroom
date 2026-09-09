@@ -38,6 +38,36 @@ describe("normalizeRoomLayout", () => {
     );
     expect(getRoomZoneBinding(layout, "ldk").device_id).toBe(1);
     expect(getRoomZoneBinding(layout, "bedroom").device_id).toBe(2);
+    // エアコンは実物どおり洋室に1台（#406）
+    expect(getRoomZoneBinding(layout, "bedroom").ac_id).toBe(1);
+    expect(getRoomZoneBinding(layout, "ldk").ac_id).toBeNull();
+  });
+
+  it("実物の2LDKの場所がそろい、仮の1LDKのキーはそのまま残る（#406）", () => {
+    const keys = ROOM_ZONE_DEFS.map((zone) => zone.key);
+    expect(keys).toEqual([
+      "ldk",
+      "bedroom",
+      "washitsu",
+      "washroom",
+      "bath",
+      "toilet",
+      "entrance",
+      "balcony",
+    ]);
+    // 仮の1LDK時代に保存した紐付けは、キーが同じなので新しい間取りでも失われない
+    const layout = normalizeRoomLayout({
+      zones: [
+        { key: "ldk", device_id: 1, ac_id: 1, cleaning_task_ids: [] },
+        { key: "bedroom", device_id: 2, ac_id: null, cleaning_task_ids: [] },
+        { key: "bath", device_id: 3, ac_id: null, cleaning_task_ids: ["furo"] },
+        { key: "entrance", device_id: null, ac_id: null, cleaning_task_ids: ["genkan"] },
+      ],
+    });
+    expect(getRoomZoneBinding(layout, "ldk").ac_id).toBe(1);
+    expect(getRoomZoneBinding(layout, "bath").device_id).toBe(3);
+    expect(getRoomZoneBinding(layout, "entrance").cleaning_task_ids).toEqual(["genkan"]);
+    expect(getRoomZoneBinding(layout, "balcony").device_id).toBeNull();
   });
 
   it("知らないゾーンのキーを落とし、足りないゾーンを空で補う", () => {
@@ -159,6 +189,23 @@ describe("resolveRoomZones", () => {
   it("全ゾーンを必ず返す（3Dの床は紐付けの有無に関わらず描くため）", () => {
     expect(resolveRoomZones(sources)).toHaveLength(ROOM_ZONE_DEFS.length);
   });
+
+  it("床の地の色と段差を場所ごとに持ち、バルコニーは屋外センサーの値を出せる", () => {
+    const zones = resolveRoomZones({
+      ...sources,
+      layout: normalizeRoomLayout({
+        zones: [{ key: "balcony", device_id: 1, ac_id: null, cleaning_task_ids: [] }],
+      }),
+    });
+    const byKey = Object.fromEntries(zones.map((zone) => [zone.key, zone]));
+
+    expect(byKey.washitsu.floor).toBe("tatami");
+    expect(byKey.ldk.floor).toBe("floor");
+    expect(byKey.entrance.raise).toBeGreaterThan(0);
+    expect(byKey.balcony.floor).toBe("balcony");
+    expect(byKey.balcony.temperature).toBe(26.4);
+    expect(byKey.balcony.humidity).toBe(58);
+  });
 });
 
 describe("findUnassignedCleaningTaskIds", () => {
@@ -207,7 +254,23 @@ describe("buildRoomWallParts", () => {
     expect(parts[1].size[0]).toBeCloseTo(1.5);
   });
 
-  it("仮の間取りの壁がすべて正の大きさになる", () => {
+  it("開口の並び順が逆でも同じ位置に穴が空く（#406）", () => {
+    const base: RoomWallDefinition = {
+      runs: "z",
+      at: 0,
+      from: -3,
+      to: 3,
+      height: 1,
+      thickness: 0.1,
+      tone: "wall",
+    };
+    const ordered = buildRoomWallParts([{ ...base, gaps: [[-1.5, 1], [1.5, 1]] }]);
+    const reversed = buildRoomWallParts([{ ...base, gaps: [[1.5, 1], [-1.5, 1]] }]);
+    expect(reversed).toEqual(ordered);
+    expect(ordered.map((part) => part.position[2])).toEqual([-2.5, 0, 2.5]);
+  });
+
+  it("間取りの壁がすべて正の大きさになる", () => {
     for (const part of ROOM_WALL_PARTS) {
       for (const value of part.size) expect(value).toBeGreaterThan(0);
     }
