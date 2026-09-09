@@ -9,6 +9,7 @@ import { formatCleaningCountdown } from "@/lib/cleaning";
 import {
   ROOM_AIRCON_MOUNTS,
   ROOM_APPLIANCE_ACTIVE_COLOR,
+  ROOM_APPLIANCE_IDLE_COLOR,
   ROOM_CEILING_LIGHTS,
   ROOM_CLEANING_STATUS_COLORS,
   ROOM_FURNITURE,
@@ -359,19 +360,22 @@ function RoomZoneParts({
         />
       ) : null}
 
-      {/* 動作中のスマートプラグ。複数あれば横に並べる（#410） */}
+      {/*
+        紐付けたスマートプラグ。照明・エアコンと同じく、動作中かどうかに関わらずピンを出す
+        （動作中だけ出すと「待機中」と「紐付けていない」が見分けられない・#410）。複数あれば横に並べる
+      */}
       {layers.appliance
-        ? zone.activeAppliances.map((appliance, index) => (
+        ? zone.appliances.map((appliance, index) => (
             <RoomPin
               key={appliance.source}
               position={[
-                centerX + (index - (zone.activeAppliances.length - 1) / 2) * 0.9,
+                centerX + (index - (zone.appliances.length - 1) / 2) * 0.9,
                 1.55,
                 centerZ - 0.5,
               ]}
-              color={ROOM_APPLIANCE_ACTIVE_COLOR}
+              color={appliance.active ? ROOM_APPLIANCE_ACTIVE_COLOR : ROOM_APPLIANCE_IDLE_COLOR}
               name={appliance.label}
-              value="動作中"
+              value={appliance.active ? "動作中" : "待機中"}
               highlighted={focused}
             />
           ))

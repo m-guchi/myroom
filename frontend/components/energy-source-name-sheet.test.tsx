@@ -16,6 +16,7 @@ function row(overrides: Partial<EnergySourceRow> = {}): EnergySourceRow {
     today_kwh: 0.46,
     today_cost_yen: 14.3,
     power_w: 38.2,
+    power_updated_at: "2026-08-22T03:00:00Z",
     this_month_kwh: 12.4,
     latest_date: "2026-08-22",
     ...overrides,

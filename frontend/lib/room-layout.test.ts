@@ -17,7 +17,13 @@ import {
   type RoomWallDefinition,
 } from "@/lib/room-layout";
 
-function energySource(source: string, powerW: number | null): EnergySourceRow {
+const NOW = new Date("2026-09-08T12:00:00Z");
+
+function energySource(
+  source: string,
+  powerW: number | null,
+  updatedAt: string | null = NOW.toISOString()
+): EnergySourceRow {
   return {
     source,
     label: source.replace(/^tapo:/, ""),
@@ -25,6 +31,7 @@ function energySource(source: string, powerW: number | null): EnergySourceRow {
     today_kwh: 0,
     today_cost_yen: 0,
     power_w: powerW,
+    power_updated_at: updatedAt,
     this_month_kwh: 0,
     latest_date: "2026-09-08",
   };
@@ -178,6 +185,7 @@ describe("resolveRoomZones", () => {
       energySource("tapo:テレビ", 0.4),
       energySource("tapo:洗濯機", 400),
     ],
+    now: NOW,
   };
 
   it("場所ごとに室温・照明・エアコン・掃除をまとめる", () => {
@@ -190,18 +198,33 @@ describe("resolveRoomZones", () => {
     expect(ldk?.cleaning.map((entry) => entry.id)).toEqual(["yuka"]);
   });
 
-  it("しきい値を超えたプラグだけを動作中として返す", () => {
+  it("紐付けたプラグを、動作中かどうかに関わらずすべて返す", () => {
     const zones = resolveRoomZones(sources);
     const ldk = zones.find((zone) => zone.key === "ldk");
 
-    // 冷蔵庫（45W）は動作中、テレビ（0.4W・待機電力）は動作中に含めない。
+    // 冷蔵庫（45W）は動作中、テレビ（0.4W・待機電力）は待機中として出す。
     // 洗濯機（400W）はどのゾーンにも紐付けていないので出ない
-    expect(ldk?.activeAppliances).toEqual([{ source: "tapo:冷蔵庫", label: "冷蔵庫", powerW: 45 }]);
+    expect(ldk?.appliances).toEqual([
+      { source: "tapo:冷蔵庫", label: "冷蔵庫", active: true, powerW: 45 },
+      { source: "tapo:テレビ", label: "テレビ", active: false, powerW: 0.4 },
+    ]);
   });
 
-  it("プラグを紐付けていない場所は動作中の家電を持たない", () => {
+  it("プラグを紐付けていない場所は家電を持たない", () => {
     const zones = resolveRoomZones(sources);
-    expect(zones.find((zone) => zone.key === "bedroom")?.activeAppliances).toEqual([]);
+    expect(zones.find((zone) => zone.key === "bedroom")?.appliances).toEqual([]);
+  });
+
+  it("記録の無いプラグは待機中として返す（ラベルはsourceそのもの）", () => {
+    const zones = resolveRoomZones({
+      ...sources,
+      layout: normalizeRoomLayout({
+        zones: [{ key: "ldk", device_id: 1, ac_id: null, cleaning_task_ids: [], tapo_sources: ["tapo:未接続"] }],
+      }),
+    });
+    expect(zones.find((zone) => zone.key === "ldk")?.appliances).toEqual([
+      { source: "tapo:未接続", label: "tapo:未接続", active: false, powerW: null },
+    ]);
   });
 
   it("しきい値を下回れば消灯として返す", () => {
@@ -335,14 +358,27 @@ describe("buildDefaultRoomLayers", () => {
 });
 
 describe("isApplianceActive", () => {
-  it("しきい値（3W）以上なら動作中", () => {
-    expect(isApplianceActive(3)).toBe(true);
-    expect(isApplianceActive(45)).toBe(true);
+  it("しきい値（3W）以上・値が新しければ動作中", () => {
+    expect(isApplianceActive(3, NOW.toISOString(), NOW)).toBe(true);
+    expect(isApplianceActive(45, NOW.toISOString(), NOW)).toBe(true);
   });
 
   it("しきい値未満・値が無ければ動作中ではない", () => {
-    expect(isApplianceActive(2.9)).toBe(false);
-    expect(isApplianceActive(0)).toBe(false);
-    expect(isApplianceActive(null)).toBe(false);
+    expect(isApplianceActive(2.9, NOW.toISOString(), NOW)).toBe(false);
+    expect(isApplianceActive(0, NOW.toISOString(), NOW)).toBe(false);
+    expect(isApplianceActive(null, NOW.toISOString(), NOW)).toBe(false);
+  });
+
+  it("値が無い・壊れていれば動作中ではない", () => {
+    expect(isApplianceActive(45, null, NOW)).toBe(false);
+    expect(isApplianceActive(45, "not-a-date", NOW)).toBe(false);
+  });
+
+  it("しきい値を超えていても、値が古ければ動作中ではない（#410）", () => {
+    // プラグが応答しなくなると`power_w`は最後の値のまま残るため、15分より古い値は信用しない
+    const staleBy16Minutes = new Date(NOW.getTime() - 16 * 60 * 1000).toISOString();
+    const staleBy14Minutes = new Date(NOW.getTime() - 14 * 60 * 1000).toISOString();
+    expect(isApplianceActive(45, staleBy16Minutes, NOW)).toBe(false);
+    expect(isApplianceActive(45, staleBy14Minutes, NOW)).toBe(true);
   });
 });

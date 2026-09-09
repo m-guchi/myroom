@@ -250,6 +250,12 @@ export interface EnergySourceRow {
   today_cost_yen: number | null;
   /** いまの消費電力（W）。返すのはスマートプラグだけで、エアコンは null */
   power_w: number | null;
+  /**
+   * `power_w` を受け取った時刻（UTC・ISO8601、#410）。スマートプラグが応答しなくなると
+   * `power_w` は最後に受け取った値のまま残り続けるため、動作中判定はこの鮮度も見る
+   * （`lib/room-layout.ts` の `isApplianceActive()`）。
+   */
+  power_updated_at: string | null;
   this_month_kwh: number;
   latest_date: string | null;
 }

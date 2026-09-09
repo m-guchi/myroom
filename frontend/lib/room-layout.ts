@@ -466,20 +466,44 @@ export const ROOM_CLEANING_STATUS_COLORS: Record<CleaningStatus, string> = {
 export const ROOM_TEMPERATURE_RAMP_MIN = TEMPERATURE_RAMP[0][0];
 export const ROOM_TEMPERATURE_RAMP_MAX = TEMPERATURE_RAMP[TEMPERATURE_RAMP.length - 1][0];
 
-/** 動作中の家電を表すピンの色。`app/globals.css` の `--energy-color` と同じ値 */
-export const ROOM_APPLIANCE_ACTIVE_COLOR = "#f39c12";
+/** 動作中の家電を表すピンの色。`app/globals.css` の `--bill-color` と同じ値 */
+export const ROOM_APPLIANCE_ACTIVE_COLOR = "#2f9e8f";
+/** 待機中の家電を表すピンの色。エアコン停止中・消灯と同じ、状態を表す共通のグレー */
+export const ROOM_APPLIANCE_IDLE_COLOR = "#93999f";
 
 /**
  * Tapoスマートプラグを「動作中」と見なす消費電力（W）のしきい値（#410）。
  *
- * 収集は5分ごとなので、判定には最大5分の遅れがある。機器ごとの個別設定はまだ無く、
- * 固定値だけで判定する（待機電力が大きい機器で誤判定が出るようなら別途調整する）。
+ * 機器ごとの個別設定はまだ無く、固定値だけで判定する（待機電力が大きい機器で誤判定が
+ * 出るようなら別途調整する）。
  */
 export const ROOM_APPLIANCE_ACTIVE_THRESHOLD_W = 3;
 
-/** Tapoの消費電力（W）がしきい値を超えていれば「動作中」とみなす */
-export function isApplianceActive(powerW: number | null): boolean {
-  return powerW != null && powerW >= ROOM_APPLIANCE_ACTIVE_THRESHOLD_W;
+/**
+ * `power_w` の値をどれだけ新しいとみなすか（ミリ秒）。
+ *
+ * スマートプラグが応答しなくなると収集スクリプトはその機器ぶんを送信せず
+ * （`collectors/tapo_to_myroom.py` の `read_device()`）、`daily_energy` は上書き方式のため
+ * **最後に受け取った値がその日の残り時間ずっと残る**。値の大きさだけで判定すると、
+ * プラグやサブPCが落ちた瞬間の「動作中」が消えなくなる。収集は5分ごとなので、3回ぶん
+ * （15分）応答が無ければ「いまは分からない」として動作中の判定から外す。
+ */
+export const ROOM_APPLIANCE_FRESHNESS_MS = 15 * 60 * 1000;
+
+/**
+ * Tapoの消費電力（W）がしきい値を超え、かつ値が新しければ「動作中」とみなす。
+ * 値が古い・無いときは「動作中ではない」に倒す（誤って動作中と言い切るほうが実害が大きいため）。
+ */
+export function isApplianceActive(
+  powerW: number | null,
+  updatedAt: string | null,
+  now: Date
+): boolean {
+  if (powerW == null || powerW < ROOM_APPLIANCE_ACTIVE_THRESHOLD_W) return false;
+  if (!updatedAt) return false;
+  const updatedMs = new Date(updatedAt).getTime();
+  if (!Number.isFinite(updatedMs)) return false;
+  return now.getTime() - updatedMs <= ROOM_APPLIANCE_FRESHNESS_MS;
 }
 
 /* ────────── 重ねる情報のレイヤ ────────── */
@@ -498,7 +522,7 @@ export const ROOM_LAYERS: readonly RoomLayerDefinition[] = [
   { key: "aircon", label: "エアコン", colorVar: "--temp-color" },
   { key: "light", label: "照明", colorVar: "--remote-color" },
   { key: "cleaning", label: "掃除", colorVar: "--energy-color" },
-  { key: "appliance", label: "家電", colorVar: "--energy-color" },
+  { key: "appliance", label: "家電", colorVar: "--bill-color" },
 ];
 
 export type RoomLayerState = Record<RoomLayerKey, boolean>;
@@ -519,11 +543,17 @@ export function buildDefaultRoomLayers(compact: boolean): RoomLayerState {
 
 /* ────────── 画面に出す形へまとめる ────────── */
 
-/** 動作中と判定されたTapoスマートプラグ1台ぶん */
+/**
+ * この場所に紐付けたTapoスマートプラグ1台ぶん。
+ *
+ * 照明・エアコンと同じく、動作中のものだけでなく**紐付けた全台**を返す。動作中だけを
+ * 返すと「待機中」と「紐付けていない・記録がまだ無い」が画面上で区別できないため（#410）
+ */
 export interface ResolvedRoomAppliance {
   source: string;
   label: string;
-  powerW: number;
+  active: boolean;
+  powerW: number | null;
 }
 
 export interface ResolvedRoomZone {
@@ -541,8 +571,8 @@ export interface ResolvedRoomZone {
   acId: number | null;
   aircon: AirconData | null;
   cleaning: CleaningTask[];
-  /** この場所に紐付けたTapoスマートプラグのうち、いま動作中のもの */
-  activeAppliances: ResolvedRoomAppliance[];
+  /** この場所に紐付けたTapoスマートプラグ */
+  appliances: ResolvedRoomAppliance[];
 }
 
 export interface RoomZoneSources {
@@ -553,6 +583,8 @@ export interface RoomZoneSources {
   cleaningTasks: readonly CleaningTask[];
   /** `GET /api/energy/breakdown` の `sources`。Tapoスマートプラグの動作判定に使う */
   energySources: readonly EnergySourceRow[];
+  /** 動作中判定の鮮度チェックの基準時刻。省略時は呼び出し時点（テストでは固定値を渡す） */
+  now?: Date;
 }
 
 function finiteOrNull(value: number | null | undefined): number | null {
@@ -568,15 +600,21 @@ function finiteOrNull(value: number | null | undefined): number | null {
 export function resolveRoomZones(sources: RoomZoneSources): ResolvedRoomZone[] {
   const layout = normalizeRoomLayout(sources.layout);
   const energyBySource = new Map(sources.energySources.map((row) => [row.source, row]));
+  const now = sources.now ?? new Date();
 
   return ROOM_ZONE_DEFS.map((def) => {
     const binding = getRoomZoneBinding(layout, def.key);
     const latest = binding.device_id != null ? sources.latestByDevice[binding.device_id] : null;
     const aircon = binding.ac_id != null ? sources.airconByAcId[binding.ac_id] ?? null : null;
-    const activeAppliances: ResolvedRoomAppliance[] = binding.tapo_sources
-      .map((source) => energyBySource.get(source))
-      .filter((row): row is EnergySourceRow => row != null && isApplianceActive(row.power_w))
-      .map((row) => ({ source: row.source, label: row.label, powerW: row.power_w as number }));
+    const appliances: ResolvedRoomAppliance[] = binding.tapo_sources.map((source) => {
+      const row = energyBySource.get(source);
+      return {
+        source,
+        label: row?.label ?? source,
+        active: row != null && isApplianceActive(row.power_w, row.power_updated_at, now),
+        powerW: row?.power_w ?? null,
+      };
+    });
 
     return {
       key: def.key,
@@ -600,7 +638,7 @@ export function resolveRoomZones(sources: RoomZoneSources): ResolvedRoomZone[] {
       cleaning: binding.cleaning_task_ids
         .map((id) => sources.cleaningTasks.find((task) => task.id === id))
         .filter((task): task is CleaningTask => task != null),
-      activeAppliances,
+      appliances,
     };
   });
 }

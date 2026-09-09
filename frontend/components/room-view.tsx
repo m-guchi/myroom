@@ -251,10 +251,10 @@ export function RoomView() {
   };
 
   const sensorZones = zones.filter(
-    (zone) => zone.deviceId != null || zone.aircon != null || zone.activeAppliances.length > 0
+    (zone) => zone.deviceId != null || zone.aircon != null || zone.appliances.length > 0
   );
   const emptyZones = zones.filter(
-    (zone) => zone.deviceId == null && zone.aircon == null && zone.activeAppliances.length === 0
+    (zone) => zone.deviceId == null && zone.aircon == null && zone.appliances.length === 0
   );
   const cleaningRows = zones
     .flatMap((zone) => zone.cleaning.map((task) => ({ zone, task })))
@@ -511,8 +511,15 @@ function RoomZoneRow({
         : "エアコン停止中"
     );
   }
-  if (zone.activeAppliances.length > 0) {
-    meta.push(`${zone.activeAppliances.map((appliance) => appliance.label).join("・")} 動作中`);
+  if (zone.appliances.length > 0) {
+    const activeAppliances = zone.appliances.filter((appliance) => appliance.active);
+    meta.push(
+      activeAppliances.length > 0
+        ? `${activeAppliances.map((appliance) => appliance.label).join("・")} 動作中`
+        : zone.appliances.length === 1
+          ? `${zone.appliances[0].label} 待機中`
+          : `${zone.appliances.length}台待機中`
+    );
   }
   if (meta.length === 0) meta.push(zone.deviceId == null ? "センサーなし" : "記録がありません");
 
