@@ -427,6 +427,10 @@ def build_breakdown(
                 "today_kwh": None,
                 "today_cost_yen": None,
                 "power_w": None,
+                # `power_w` を受け取った時刻（#410）。動作中判定の鮮度チェックに使う。
+                # スマートプラグが応答しなくなると `daily_energy` は最後の値を上書きしないまま
+                # 残り続けるため、値だけでは「いま動いているか」を保証できない
+                "power_updated_at": None,
                 "this_month_kwh": 0.0,
                 "latest_date": None,
             },
@@ -439,6 +443,7 @@ def build_breakdown(
                 row.get("kwh"), row.get("cost_yen"), unit_price
             )
             entry["power_w"] = row.get("power_w")
+            entry["power_updated_at"] = row.get("updated_at")
         if in_range(row, month_start, today) and row.get("kwh") is not None:
             entry["this_month_kwh"] += float(row["kwh"])
         if entry["latest_date"] is None or row["date"] > entry["latest_date"]:
@@ -449,6 +454,11 @@ def build_breakdown(
         entry["this_month_kwh"] = round(entry["this_month_kwh"], 2)
         entry["latest_date"] = (
             entry["latest_date"].isoformat() if entry["latest_date"] else None
+        )
+        # `row.updated_at` は `datetime.utcnow()`（naive・UTC）。フロントの `new Date()` に
+        # タイムゾーン無しの文字列を渡すとローカル時刻として誤解釈されるため、`Z` を明示する
+        entry["power_updated_at"] = (
+            entry["power_updated_at"].isoformat() + "Z" if entry["power_updated_at"] else None
         )
 
     # --- 日別（取得元ごとの内訳つき） -----------------------------------

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { CleaningTask } from "@/lib/cleaning";
+import type { EnergySourceRow } from "@/lib/types";
 import {
   buildDefaultRoomLayers,
   buildDefaultRoomLayout,
   buildRoomWallParts,
   findUnassignedCleaningTaskIds,
   getRoomZoneBinding,
+  isApplianceActive,
   normalizeRoomLayout,
   resolveRoomZones,
   ROOM_WALL_PARTS,
@@ -14,6 +16,26 @@ import {
   setRoomZoneBinding,
   type RoomWallDefinition,
 } from "@/lib/room-layout";
+
+const NOW = new Date("2026-09-08T12:00:00Z");
+
+function energySource(
+  source: string,
+  powerW: number | null,
+  updatedAt: string | null = NOW.toISOString()
+): EnergySourceRow {
+  return {
+    source,
+    label: source.replace(/^tapo:/, ""),
+    default_label: source.replace(/^tapo:/, ""),
+    today_kwh: 0,
+    today_cost_yen: 0,
+    power_w: powerW,
+    power_updated_at: updatedAt,
+    this_month_kwh: 0,
+    latest_date: "2026-09-08",
+  };
+}
 
 function task(id: string, overrides: Partial<CleaningTask> = {}): CleaningTask {
   return {
@@ -73,7 +95,7 @@ describe("normalizeRoomLayout", () => {
   it("知らないゾーンのキーを落とし、足りないゾーンを空で補う", () => {
     const layout = normalizeRoomLayout({
       zones: [
-        { key: "ldk", device_id: 5, ac_id: 2, cleaning_task_ids: ["a"] },
+        { key: "ldk", device_id: 5, ac_id: 2, cleaning_task_ids: ["a"], tapo_sources: ["tapo:冷蔵庫"] },
         { key: "kitchen-that-does-not-exist", device_id: 9 },
       ],
     });
@@ -86,12 +108,13 @@ describe("normalizeRoomLayout", () => {
       device_id: 5,
       ac_id: 2,
       cleaning_task_ids: ["a"],
+      tapo_sources: ["tapo:冷蔵庫"],
     });
     // 保存に無かったゾーンは既定へ戻さず空にする。1つでも保存されていれば人の意思なので
     expect(getRoomZoneBinding(layout, "bedroom").device_id).toBeNull();
   });
 
-  it("読めないIDと重複した掃除タスクIDを落とす", () => {
+  it("読めないIDと重複した掃除タスクID・プラグのsourceを落とす", () => {
     const layout = normalizeRoomLayout({
       zones: [
         {
@@ -99,6 +122,7 @@ describe("normalizeRoomLayout", () => {
           device_id: "abc",
           ac_id: -1,
           cleaning_task_ids: ["a", "a", "", 3, " b "],
+          tapo_sources: ["tapo:冷蔵庫", "tapo:冷蔵庫", "", 3],
         },
       ],
     });
@@ -107,6 +131,7 @@ describe("normalizeRoomLayout", () => {
       device_id: null,
       ac_id: null,
       cleaning_task_ids: ["a", "b"],
+      tapo_sources: ["tapo:冷蔵庫"],
     });
   });
 
@@ -138,7 +163,13 @@ describe("resolveRoomZones", () => {
   const sources = {
     layout: normalizeRoomLayout({
       zones: [
-        { key: "ldk", device_id: 1, ac_id: 1, cleaning_task_ids: ["yuka"] },
+        {
+          key: "ldk",
+          device_id: 1,
+          ac_id: 1,
+          cleaning_task_ids: ["yuka"],
+          tapo_sources: ["tapo:冷蔵庫", "tapo:テレビ"],
+        },
         { key: "bedroom", device_id: 2, ac_id: null, cleaning_task_ids: [] },
       ],
     }),
@@ -149,6 +180,12 @@ describe("resolveRoomZones", () => {
     lightThresholds: { "1": 80, "2": 80 },
     airconByAcId: { 1: { ac_id: 1, mode: "COOLING", power: "ON", target_temperature: 26 } },
     cleaningTasks: [task("yuka"), task("furo")],
+    energySources: [
+      energySource("tapo:冷蔵庫", 45),
+      energySource("tapo:テレビ", 0.4),
+      energySource("tapo:洗濯機", 400),
+    ],
+    now: NOW,
   };
 
   it("場所ごとに室温・照明・エアコン・掃除をまとめる", () => {
@@ -159,6 +196,35 @@ describe("resolveRoomZones", () => {
     expect(ldk?.light?.status).toBe("on");
     expect(ldk?.aircon?.target_temperature).toBe(26);
     expect(ldk?.cleaning.map((entry) => entry.id)).toEqual(["yuka"]);
+  });
+
+  it("紐付けたプラグを、動作中かどうかに関わらずすべて返す", () => {
+    const zones = resolveRoomZones(sources);
+    const ldk = zones.find((zone) => zone.key === "ldk");
+
+    // 冷蔵庫（45W）は動作中、テレビ（0.4W・待機電力）は待機中として出す。
+    // 洗濯機（400W）はどのゾーンにも紐付けていないので出ない
+    expect(ldk?.appliances).toEqual([
+      { source: "tapo:冷蔵庫", label: "冷蔵庫", active: true, powerW: 45 },
+      { source: "tapo:テレビ", label: "テレビ", active: false, powerW: 0.4 },
+    ]);
+  });
+
+  it("プラグを紐付けていない場所は家電を持たない", () => {
+    const zones = resolveRoomZones(sources);
+    expect(zones.find((zone) => zone.key === "bedroom")?.appliances).toEqual([]);
+  });
+
+  it("記録の無いプラグは待機中として返す（ラベルはsourceそのもの）", () => {
+    const zones = resolveRoomZones({
+      ...sources,
+      layout: normalizeRoomLayout({
+        zones: [{ key: "ldk", device_id: 1, ac_id: null, cleaning_task_ids: [], tapo_sources: ["tapo:未接続"] }],
+      }),
+    });
+    expect(zones.find((zone) => zone.key === "ldk")?.appliances).toEqual([
+      { source: "tapo:未接続", label: "tapo:未接続", active: false, powerW: null },
+    ]);
   });
 
   it("しきい値を下回れば消灯として返す", () => {
@@ -284,7 +350,35 @@ describe("buildDefaultRoomLayers", () => {
       aircon: true,
       light: false,
       cleaning: false,
+      appliance: false,
     });
     expect(buildDefaultRoomLayers(false).cleaning).toBe(true);
+    expect(buildDefaultRoomLayers(false).appliance).toBe(true);
+  });
+});
+
+describe("isApplianceActive", () => {
+  it("しきい値（3W）以上・値が新しければ動作中", () => {
+    expect(isApplianceActive(3, NOW.toISOString(), NOW)).toBe(true);
+    expect(isApplianceActive(45, NOW.toISOString(), NOW)).toBe(true);
+  });
+
+  it("しきい値未満・値が無ければ動作中ではない", () => {
+    expect(isApplianceActive(2.9, NOW.toISOString(), NOW)).toBe(false);
+    expect(isApplianceActive(0, NOW.toISOString(), NOW)).toBe(false);
+    expect(isApplianceActive(null, NOW.toISOString(), NOW)).toBe(false);
+  });
+
+  it("値が無い・壊れていれば動作中ではない", () => {
+    expect(isApplianceActive(45, null, NOW)).toBe(false);
+    expect(isApplianceActive(45, "not-a-date", NOW)).toBe(false);
+  });
+
+  it("しきい値を超えていても、値が古ければ動作中ではない（#410）", () => {
+    // プラグが応答しなくなると`power_w`は最後の値のまま残るため、15分より古い値は信用しない
+    const staleBy16Minutes = new Date(NOW.getTime() - 16 * 60 * 1000).toISOString();
+    const staleBy14Minutes = new Date(NOW.getTime() - 14 * 60 * 1000).toISOString();
+    expect(isApplianceActive(45, staleBy16Minutes, NOW)).toBe(false);
+    expect(isApplianceActive(45, staleBy14Minutes, NOW)).toBe(true);
   });
 });

@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CleaningTask } from "@/lib/cleaning";
+import { pickRenamableEnergySources } from "@/lib/energy";
 import {
   findUnassignedCleaningTaskIds,
   getRoomZoneBinding,
@@ -11,7 +12,7 @@ import {
   setRoomZoneBinding,
   type RoomLayout,
 } from "@/lib/room-layout";
-import type { AirconUnitInfo, DeviceInfo } from "@/lib/types";
+import type { AirconUnitInfo, DeviceInfo, EnergySourceRow } from "@/lib/types";
 
 /**
  * 部屋の3Dビューの「どの場所が何か」を決めるシート（#399）。
@@ -33,6 +34,7 @@ interface RoomLayoutSheetProps {
   devices: readonly DeviceInfo[];
   airconUnits: readonly AirconUnitInfo[];
   cleaningTasks: readonly CleaningTask[];
+  energySources: readonly EnergySourceRow[];
   onClose: () => void;
   onChange: (layout: RoomLayout) => void;
 }
@@ -46,6 +48,7 @@ export function RoomLayoutSheet({
   devices,
   airconUnits,
   cleaningTasks,
+  energySources,
   onClose,
   onChange,
 }: RoomLayoutSheetProps) {
@@ -53,6 +56,7 @@ export function RoomLayoutSheet({
 
   const normalized = normalizeRoomLayout(layout);
   const unassigned = findUnassignedCleaningTaskIds(normalized, cleaningTasks);
+  const plugs = pickRenamableEnergySources(energySources);
 
   return (
     <div
@@ -70,7 +74,7 @@ export function RoomLayoutSheet({
           <div>
             <h2 className="text-[17px] font-bold text-foreground">部屋の配置</h2>
             <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-              3Dの場所と、センサー・エアコン・掃除を結び付けます
+              3Dの場所と、センサー・エアコン・掃除・スマートプラグを結び付けます
             </p>
           </div>
           <button
@@ -166,6 +170,43 @@ export function RoomLayoutSheet({
                               className="size-4 shrink-0 accent-[var(--temp-color)]"
                             />
                             <span className="truncate">{task.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3">
+                  <span className="text-[11.5px] text-muted-foreground">この場所のスマートプラグ</span>
+                  {plugs.length === 0 ? (
+                    <p className="mt-1 text-[11.5px] text-muted-foreground">
+                      Tapoスマートプラグの記録がまだありません
+                    </p>
+                  ) : (
+                    <div className="mt-1.5 flex flex-col gap-1.5">
+                      {plugs.map((plug) => {
+                        const checked = binding.tapo_sources.includes(plug.source);
+                        return (
+                          <label
+                            key={plug.source}
+                            className="flex items-center gap-2.5 text-[13px] text-foreground"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                onChange(
+                                  setRoomZoneBinding(normalized, zone.key, {
+                                    tapo_sources: checked
+                                      ? binding.tapo_sources.filter((source) => source !== plug.source)
+                                      : [...binding.tapo_sources, plug.source],
+                                  })
+                                )
+                              }
+                              className="size-4 shrink-0 accent-[var(--temp-color)]"
+                            />
+                            <span className="truncate">{plug.label}</span>
                           </label>
                         );
                       })}
