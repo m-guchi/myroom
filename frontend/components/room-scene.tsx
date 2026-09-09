@@ -8,6 +8,7 @@ import type { Group, Mesh, MeshBasicMaterial } from "three";
 import { formatCleaningCountdown } from "@/lib/cleaning";
 import {
   ROOM_AIRCON_MOUNTS,
+  ROOM_APPLIANCE_ACTIVE_COLOR,
   ROOM_CEILING_LIGHTS,
   ROOM_CLEANING_STATUS_COLORS,
   ROOM_FURNITURE,
@@ -357,6 +358,24 @@ function RoomZoneParts({
           highlighted={focused}
         />
       ) : null}
+
+      {/* 動作中のスマートプラグ。複数あれば横に並べる（#410） */}
+      {layers.appliance
+        ? zone.activeAppliances.map((appliance, index) => (
+            <RoomPin
+              key={appliance.source}
+              position={[
+                centerX + (index - (zone.activeAppliances.length - 1) / 2) * 0.9,
+                1.55,
+                centerZ - 0.5,
+              ]}
+              color={ROOM_APPLIANCE_ACTIVE_COLOR}
+              name={appliance.label}
+              value="動作中"
+              highlighted={focused}
+            />
+          ))
+        : null}
     </group>
   );
 }

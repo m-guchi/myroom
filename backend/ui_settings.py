@@ -530,14 +530,14 @@ def _optional_id(raw: Any) -> Optional[int]:
 
 
 def _normalize_room_layout(raw: Any) -> Dict[str, Any]:
-    """3D上の場所と、センサー・エアコン・掃除タスクの対応表（#399）。
+    """3D上の場所と、センサー・エアコン・掃除タスク・Tapoスマートプラグの対応表（#399・#410）。
 
     **どのゾーンが存在するかはここでは判断しない。** ゾーンの一覧・寸法を持っているのは
     フロント側の `lib/room-layout.ts` の `ROOM_ZONE_DEFS` で、同じ一覧をここへ写すと
     間取りを直したときに片方だけ古くなる。知らないキーを落として足りないキーを補うのは
     `normalizeRoomLayout()` の仕事なので、ここでは形（キーは文字列・IDは整数か null・
-    掃除タスクIDは重複の無い文字列の配列）だけを整える。`_normalize_life_card_order()` と
-    同じ考え方。
+    掃除タスクIDとTapoの `source` は重複の無い文字列の配列）だけを整える。
+    `_normalize_life_card_order()` と同じ考え方。
     """
     if not isinstance(raw, dict):
         return {"zones": []}
@@ -556,16 +556,8 @@ def _normalize_room_layout(raw: Any) -> Dict[str, Any]:
             continue
         seen.add(key)
 
-        task_ids: List[str] = []
-        raw_tasks = entry.get("cleaning_task_ids")
-        if isinstance(raw_tasks, list):
-            for task in raw_tasks:
-                if not isinstance(task, str):
-                    continue
-                task_id = task.strip()
-                if not task_id or task_id in task_ids:
-                    continue
-                task_ids.append(task_id)
+        task_ids = _string_list(entry.get("cleaning_task_ids"))
+        tapo_sources = _string_list(entry.get("tapo_sources"))
 
         zones.append(
             {
@@ -573,9 +565,25 @@ def _normalize_room_layout(raw: Any) -> Dict[str, Any]:
                 "device_id": _optional_id(entry.get("device_id")),
                 "ac_id": _optional_id(entry.get("ac_id")),
                 "cleaning_task_ids": task_ids,
+                "tapo_sources": tapo_sources,
             }
         )
     return {"zones": zones}
+
+
+def _string_list(raw: Any) -> List[str]:
+    """重複の無い文字列配列へ整える。掃除タスクIDとTapoの `source`（#410）の両方で使う。"""
+    values: List[str] = []
+    if not isinstance(raw, list):
+        return values
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        value = item.strip()
+        if not value or value in values:
+            continue
+        values.append(value)
+    return values
 
 
 def _normalize_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
