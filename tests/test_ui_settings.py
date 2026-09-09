@@ -331,3 +331,74 @@ def test_saving_other_settings_keeps_energy_source_names(data_dir):
 
     loaded = ui_settings.get_settings()
     assert loaded[ui_settings.SETTING_ENERGY_SOURCE_NAMES] == {"tapo:冷蔵庫": "キッチンの冷蔵庫"}
+
+
+def test_room_layout_default_is_empty(data_dir):
+    """まだ一度も保存していない状態。既定の紐付けはフロント側が補う（#399）。"""
+    assert ui_settings.get_settings()[ui_settings.SETTING_ROOM_LAYOUT] == {"zones": []}
+
+
+def test_room_layout_save_and_load(data_dir):
+    saved = ui_settings.save_settings(
+        {
+            ui_settings.SETTING_ROOM_LAYOUT: {
+                "zones": [
+                    {
+                        "key": "ldk",
+                        "device_id": 1,
+                        "ac_id": 1,
+                        "cleaning_task_ids": ["yuka", "yuka", "mado"],
+                    },
+                    {"key": "bath", "device_id": None, "ac_id": None, "cleaning_task_ids": []},
+                ]
+            }
+        }
+    )
+    assert saved[ui_settings.SETTING_ROOM_LAYOUT] == {
+        "zones": [
+            {"key": "ldk", "device_id": 1, "ac_id": 1, "cleaning_task_ids": ["yuka", "mado"]},
+            {"key": "bath", "device_id": None, "ac_id": None, "cleaning_task_ids": []},
+        ]
+    }
+
+    loaded = ui_settings.get_settings()[ui_settings.SETTING_ROOM_LAYOUT]
+    assert loaded["zones"][0]["device_id"] == 1
+
+
+def test_room_layout_rejects_broken_entries(data_dir):
+    """キーが空・読めないID・文字列でないタスクIDは落とす。ゾーンの実在チェックはしない。"""
+    saved = ui_settings.save_settings(
+        {
+            ui_settings.SETTING_ROOM_LAYOUT: {
+                "zones": [
+                    {"key": "", "device_id": 1},
+                    "文字列",
+                    {"key": "ldk", "device_id": "abc", "ac_id": -1, "cleaning_task_ids": [1, "ok"]},
+                    {"key": "ldk", "device_id": 2},
+                ]
+            }
+        }
+    )
+    assert saved[ui_settings.SETTING_ROOM_LAYOUT] == {
+        "zones": [
+            {"key": "ldk", "device_id": None, "ac_id": None, "cleaning_task_ids": ["ok"]},
+        ]
+    }
+
+
+def test_saving_other_settings_keeps_room_layout(data_dir):
+    """`save_settings` の `merged` へ入れ忘れると、別のキーを保存した瞬間に消える。"""
+    ui_settings.save_settings(
+        {
+            ui_settings.SETTING_ROOM_LAYOUT: {
+                "zones": [{"key": "ldk", "device_id": 2, "ac_id": None, "cleaning_task_ids": []}]
+            }
+        }
+    )
+    ui_settings.save_settings({ui_settings.SETTING_ENERGY_UNIT_PRICE: 29.5})
+
+    loaded = ui_settings.get_settings()
+    assert loaded[ui_settings.SETTING_ROOM_LAYOUT] == {
+        "zones": [{"key": "ldk", "device_id": 2, "ac_id": None, "cleaning_task_ids": []}]
+    }
+    assert loaded[ui_settings.SETTING_ENERGY_UNIT_PRICE] == 29.5
