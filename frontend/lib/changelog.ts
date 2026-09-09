@@ -34,6 +34,13 @@ export function formatChangelogDate(date: string): string {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.14.0",
+    date: "2026-09-09",
+    changes: [
+      "部屋の様子を3Dの間取りで見られる新機能を追加しました。各部屋の温度やエアコンの状態、掃除の状況をひと目で確認できます。",
+    ],
+  },
+  {
     version: "4.13.5",
     date: "2026-09-09",
     changes: [
