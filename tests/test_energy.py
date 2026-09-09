@@ -221,6 +221,32 @@ def test_breakdown_keeps_watts_only_for_today():
     assert by_source["aircon"]["power_w"] is None
 
 
+def test_breakdown_reports_when_power_was_last_seen():
+    """動作中判定の鮮度チェック（#410）に使う、`power_w`を受け取った時刻。"""
+    rows = [
+        {
+            "date": datetime.date(2026, 8, 22),
+            "source": "tapo:冷蔵庫",
+            "kwh": 0.5,
+            "cost_yen": None,
+            "power_w": 38.2,
+            # naive・UTC（`row.updated_at = datetime.datetime.utcnow()`と同じ形）
+            "updated_at": datetime.datetime(2026, 8, 22, 3, 15, 30),
+        }
+    ]
+    result = energy.build_breakdown(rows, datetime.date(2026, 8, 22), 31.0)
+    by_source = {row["source"]: row for row in result["sources"]}
+    # タイムゾーン情報の無い文字列をフロントの `new Date()` に渡すとローカル時刻として
+    # 誤解釈されるため、UTCであることを`Z`で明示する
+    assert by_source["tapo:冷蔵庫"]["power_updated_at"] == "2026-08-22T03:15:30Z"
+
+
+def test_breakdown_power_updated_at_is_none_without_a_reading():
+    rows = _mixed_rows([("2026-08-22", "aircon", 1.0, None)])
+    result = energy.build_breakdown(rows, datetime.date(2026, 8, 22), 31.0)
+    assert result["sources"][0]["power_updated_at"] is None
+
+
 def test_breakdown_daily_carries_the_split_per_source():
     rows = _mixed_rows(
         [

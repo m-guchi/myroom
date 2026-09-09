@@ -427,7 +427,17 @@ def generate_mock_daily_energy(source: str = "aircon", days: int = 75) -> list:
         kwh = max(0.0, seasonal * (1.6 + random.uniform(-0.9, 1.4)))
         if i == 0:
             kwh *= 0.3
-        data.append({"date": d, "source": source, "kwh": round(kwh, 2), "cost_yen": None})
+        data.append(
+            {
+                "date": d,
+                "source": source,
+                "kwh": round(kwh, 2),
+                "cost_yen": None,
+                # 当日ぶんだけ「いま受信した」ことにする。動作中判定の鮮度チェック（#410）が
+                # モックでも機能するように、実データの `upsert_records()` と同じ形にする
+                "updated_at": datetime.datetime.utcnow() if i == 0 else None,
+            }
+        )
     data.sort(key=lambda x: x["date"])
     return data
 

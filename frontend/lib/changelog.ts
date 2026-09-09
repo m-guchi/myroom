@@ -34,6 +34,13 @@ export function formatChangelogDate(date: string): string {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.16.0",
+    date: "2026-09-09",
+    changes: [
+      "部屋の3Dビューで、コンセントに繋いだスマートプラグ家電が今動いているか待機中かを、色分けされたピンでひと目で確認できるようになりました。",
+    ],
+  },
+  {
     version: "4.15.0",
     date: "2026-09-09",
     changes: [

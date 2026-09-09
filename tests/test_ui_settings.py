@@ -348,32 +348,58 @@ def test_room_layout_save_and_load(data_dir):
                         "device_id": 1,
                         "ac_id": 1,
                         "cleaning_task_ids": ["yuka", "yuka", "mado"],
+                        "tapo_sources": ["tapo:冷蔵庫", "tapo:冷蔵庫"],
                     },
-                    {"key": "bath", "device_id": None, "ac_id": None, "cleaning_task_ids": []},
+                    {
+                        "key": "bath",
+                        "device_id": None,
+                        "ac_id": None,
+                        "cleaning_task_ids": [],
+                        "tapo_sources": [],
+                    },
                 ]
             }
         }
     )
     assert saved[ui_settings.SETTING_ROOM_LAYOUT] == {
         "zones": [
-            {"key": "ldk", "device_id": 1, "ac_id": 1, "cleaning_task_ids": ["yuka", "mado"]},
-            {"key": "bath", "device_id": None, "ac_id": None, "cleaning_task_ids": []},
+            {
+                "key": "ldk",
+                "device_id": 1,
+                "ac_id": 1,
+                "cleaning_task_ids": ["yuka", "mado"],
+                "tapo_sources": ["tapo:冷蔵庫"],
+            },
+            {
+                "key": "bath",
+                "device_id": None,
+                "ac_id": None,
+                "cleaning_task_ids": [],
+                "tapo_sources": [],
+            },
         ]
     }
 
     loaded = ui_settings.get_settings()[ui_settings.SETTING_ROOM_LAYOUT]
     assert loaded["zones"][0]["device_id"] == 1
+    assert loaded["zones"][0]["tapo_sources"] == ["tapo:冷蔵庫"]
 
 
 def test_room_layout_rejects_broken_entries(data_dir):
-    """キーが空・読めないID・文字列でないタスクIDは落とす。ゾーンの実在チェックはしない。"""
+    """キーが空・読めないID・文字列でないタスクID・プラグの`source`は落とす。ゾーンの実在チェックはしない。"""
     saved = ui_settings.save_settings(
         {
             ui_settings.SETTING_ROOM_LAYOUT: {
                 "zones": [
                     {"key": "", "device_id": 1},
                     "文字列",
-                    {"key": "ldk", "device_id": "abc", "ac_id": -1, "cleaning_task_ids": [1, "ok"]},
+                    {
+                        "key": "ldk",
+                        "device_id": "abc",
+                        "ac_id": -1,
+                        "cleaning_task_ids": [1, "ok"],
+                        "tapo_sources": [1, "tapo:冷蔵庫"],
+                    },
                     {"key": "ldk", "device_id": 2},
                 ]
             }
@@ -381,7 +407,13 @@ def test_room_layout_rejects_broken_entries(data_dir):
     )
     assert saved[ui_settings.SETTING_ROOM_LAYOUT] == {
         "zones": [
-            {"key": "ldk", "device_id": None, "ac_id": None, "cleaning_task_ids": ["ok"]},
+            {
+                "key": "ldk",
+                "device_id": None,
+                "ac_id": None,
+                "cleaning_task_ids": ["ok"],
+                "tapo_sources": ["tapo:冷蔵庫"],
+            },
         ]
     }
 
@@ -391,7 +423,15 @@ def test_saving_other_settings_keeps_room_layout(data_dir):
     ui_settings.save_settings(
         {
             ui_settings.SETTING_ROOM_LAYOUT: {
-                "zones": [{"key": "ldk", "device_id": 2, "ac_id": None, "cleaning_task_ids": []}]
+                "zones": [
+                    {
+                        "key": "ldk",
+                        "device_id": 2,
+                        "ac_id": None,
+                        "cleaning_task_ids": [],
+                        "tapo_sources": ["tapo:冷蔵庫"],
+                    }
+                ]
             }
         }
     )
@@ -399,6 +439,14 @@ def test_saving_other_settings_keeps_room_layout(data_dir):
 
     loaded = ui_settings.get_settings()
     assert loaded[ui_settings.SETTING_ROOM_LAYOUT] == {
-        "zones": [{"key": "ldk", "device_id": 2, "ac_id": None, "cleaning_task_ids": []}]
+        "zones": [
+            {
+                "key": "ldk",
+                "device_id": 2,
+                "ac_id": None,
+                "cleaning_task_ids": [],
+                "tapo_sources": ["tapo:冷蔵庫"],
+            }
+        ]
     }
     assert loaded[ui_settings.SETTING_ENERGY_UNIT_PRICE] == 29.5

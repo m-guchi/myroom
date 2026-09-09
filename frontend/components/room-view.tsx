@@ -14,6 +14,7 @@ import {
   fetchAirconUnits,
   fetchCleaningSchedule,
   fetchDevices,
+  fetchEnergyBreakdown,
   fetchLatestBatch,
   fetchUiSettings,
 } from "@/lib/api";
@@ -44,6 +45,7 @@ import {
   type AirconData,
   type AirconUnitInfo,
   type DeviceInfo,
+  type EnergySourceRow,
   type LatestData,
 } from "@/lib/types";
 
@@ -78,6 +80,7 @@ interface RoomData {
   airconUnits: AirconUnitInfo[];
   airconByAcId: Record<number, AirconData | null>;
   cleaning: CleaningSchedule | null;
+  energySources: EnergySourceRow[];
   layout: RoomLayout;
   /** 届いた記録のうち一番新しい時刻（ms）。1つも取れていなければ null */
   updatedAtMs: number | null;
@@ -90,6 +93,7 @@ const EMPTY_ROOM_DATA: RoomData = {
   airconUnits: [],
   airconByAcId: {},
   cleaning: null,
+  energySources: [],
   layout: normalizeRoomLayout(null),
   updatedAtMs: null,
 };
@@ -105,17 +109,20 @@ function settled<T>(result: PromiseSettledResult<T>, fallback: T): T {
  * 例えば Nature Remo が不調でエアコンだけ取れなくても、室温と掃除は見られたほうがよい。
  */
 async function loadRoomData(): Promise<RoomData> {
-  const [devicesResult, unitsResult, cleaningResult, settingsResult] = await Promise.allSettled([
-    fetchDevices(),
-    fetchAirconUnits(),
-    fetchCleaningSchedule(),
-    fetchUiSettings(),
-  ]);
+  const [devicesResult, unitsResult, cleaningResult, settingsResult, energyResult] =
+    await Promise.allSettled([
+      fetchDevices(),
+      fetchAirconUnits(),
+      fetchCleaningSchedule(),
+      fetchUiSettings(),
+      fetchEnergyBreakdown(),
+    ]);
 
   const devices = settled(devicesResult, [] as DeviceInfo[]);
   const airconUnits = settled(unitsResult, [] as AirconUnitInfo[]);
   const cleaning = cleaningResult.status === "fulfilled" ? cleaningResult.value : null;
   const settings = settingsResult.status === "fulfilled" ? settingsResult.value : null;
+  const energySources = energyResult.status === "fulfilled" ? energyResult.value.sources : [];
 
   const deviceIds = getSensorDeviceIds(devices);
   const [latestResult, airconResults] = await Promise.all([
@@ -141,6 +148,7 @@ async function loadRoomData(): Promise<RoomData> {
     airconUnits,
     airconByAcId,
     cleaning,
+    energySources,
     layout: normalizeRoomLayout(settings?.room_layout),
     updatedAtMs: stamps.length > 0 ? Math.max(...stamps) : null,
   };
@@ -223,6 +231,7 @@ export function RoomView() {
         lightThresholds: data.lightThresholds,
         airconByAcId: data.airconByAcId,
         cleaningTasks: data.cleaning?.tasks ?? [],
+        energySources: data.energySources,
       }),
     [data]
   );
@@ -241,8 +250,12 @@ export function RoomView() {
     setLayers((current) => ({ ...current, [key]: !current[key] }));
   };
 
-  const sensorZones = zones.filter((zone) => zone.deviceId != null || zone.aircon != null);
-  const emptyZones = zones.filter((zone) => zone.deviceId == null && zone.aircon == null);
+  const sensorZones = zones.filter(
+    (zone) => zone.deviceId != null || zone.aircon != null || zone.appliances.length > 0
+  );
+  const emptyZones = zones.filter(
+    (zone) => zone.deviceId == null && zone.aircon == null && zone.appliances.length === 0
+  );
   const cleaningRows = zones
     .flatMap((zone) => zone.cleaning.map((task) => ({ zone, task })))
     .sort((a, b) => a.task.days_until - b.task.days_until);
@@ -427,6 +440,7 @@ export function RoomView() {
         devices={data.devices}
         airconUnits={data.airconUnits}
         cleaningTasks={data.cleaning?.tasks ?? []}
+        energySources={data.energySources}
         onClose={() => setSettingsOpen(false)}
         onChange={(next) => void handleLayoutChange(next)}
       />
@@ -495,6 +509,16 @@ function RoomZoneRow({
       airconOn
         ? `${formatAirconMode(zone.aircon.mode)} ${zone.aircon.target_temperature ?? "--"}℃`
         : "エアコン停止中"
+    );
+  }
+  if (zone.appliances.length > 0) {
+    const activeAppliances = zone.appliances.filter((appliance) => appliance.active);
+    meta.push(
+      activeAppliances.length > 0
+        ? `${activeAppliances.map((appliance) => appliance.label).join("・")} 動作中`
+        : zone.appliances.length === 1
+          ? `${zone.appliances[0].label} 待機中`
+          : `${zone.appliances.length}台待機中`
     );
   }
   if (meta.length === 0) meta.push(zone.deviceId == null ? "センサーなし" : "記録がありません");
